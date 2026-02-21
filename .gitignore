@@ -1,0 +1,28 @@
+# Build
+build/
+cmake-build-*/
+
+# ROMs and BIOS (copyrighted)
+roms/*.gba
+roms/*.bin
+bios/*.bin
+bios/*.rom
+
+# Save files
+saves/*.sav
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Compiled
+*.o
+*.out
+gba_emulator
