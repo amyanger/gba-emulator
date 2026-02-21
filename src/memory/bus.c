@@ -1,6 +1,7 @@
 #include "bus.h"
 #include "io_regs.h"
 #include "dma.h"
+#include "ppu/ppu.h"
 #include "cartridge/cartridge.h"
 #include "interrupt/interrupt.h"
 #include "timer/timer.h"
@@ -23,6 +24,26 @@ static uint8_t io_read8(Bus* bus, uint32_t addr) {
     uint32_t offset = addr & 0x3FF;
 
     switch (offset) {
+
+    /* --- PPU Registers (0x00-0x07) --- */
+    case 0x00:  /* REG_DISPCNT low byte */
+        if (bus->ppu) return (uint8_t)(bus->ppu->dispcnt);
+        return bus->io_regs[offset];
+    case 0x01:  /* REG_DISPCNT high byte */
+        if (bus->ppu) return (uint8_t)(bus->ppu->dispcnt >> 8);
+        return bus->io_regs[offset];
+    case 0x04:  /* REG_DISPSTAT low byte */
+        if (bus->ppu) return (uint8_t)(bus->ppu->dispstat);
+        return bus->io_regs[offset];
+    case 0x05:  /* REG_DISPSTAT high byte */
+        if (bus->ppu) return (uint8_t)(bus->ppu->dispstat >> 8);
+        return bus->io_regs[offset];
+    case 0x06:  /* REG_VCOUNT low byte */
+        if (bus->ppu) return (uint8_t)(bus->ppu->vcount);
+        return bus->io_regs[offset];
+    case 0x07:  /* REG_VCOUNT high byte */
+        if (bus->ppu) return (uint8_t)(bus->ppu->vcount >> 8);
+        return bus->io_regs[offset];
 
     /* --- Interrupt Controller (0x200-0x209) --- */
     case 0x200:  /* REG_IE low byte */
@@ -124,6 +145,41 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
     uint32_t offset = addr & 0x3FF;
 
     switch (offset) {
+
+    /* --- PPU Registers (0x00-0x07) --- */
+    case 0x00:  /* REG_DISPCNT low byte */
+        bus->io_regs[offset] = val;
+        if (bus->ppu) {
+            bus->ppu->dispcnt = (bus->ppu->dispcnt & 0xFF00) | (uint16_t)val;
+        }
+        return;
+    case 0x01:  /* REG_DISPCNT high byte */
+        bus->io_regs[offset] = val;
+        if (bus->ppu) {
+            bus->ppu->dispcnt = (bus->ppu->dispcnt & 0x00FF)
+                              | ((uint16_t)val << 8);
+        }
+        return;
+    case 0x04:  /* REG_DISPSTAT low byte — bits 0-2 are read-only */
+        if (bus->ppu) {
+            /* Preserve read-only flags (VBlank, HBlank, VCount match) */
+            bus->ppu->dispstat = (bus->ppu->dispstat & 0xFF07)
+                               | ((uint16_t)(val & 0xF8));
+            bus->io_regs[offset] = (uint8_t)(bus->ppu->dispstat & 0xFF);
+        } else {
+            bus->io_regs[offset] = val;
+        }
+        return;
+    case 0x05:  /* REG_DISPSTAT high byte (VCount target + upper bits) */
+        bus->io_regs[offset] = val;
+        if (bus->ppu) {
+            bus->ppu->dispstat = (bus->ppu->dispstat & 0x00FF)
+                               | ((uint16_t)val << 8);
+        }
+        return;
+    case 0x06:  /* REG_VCOUNT low byte — read-only, ignore writes */
+    case 0x07:  /* REG_VCOUNT high byte — read-only, ignore writes */
+        return;
 
     /* --- Interrupt Controller (0x200-0x209) --- */
     case 0x200:  /* REG_IE low byte */

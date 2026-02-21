@@ -57,4 +57,9 @@ void ppu_set_vblank(PPU* ppu, bool active);
 void ppu_increment_vcount(PPU* ppu);
 bool ppu_vcount_match(PPU* ppu);
 
+// Bitmap mode renderers (bitmap.c)
+void ppu_render_mode3(PPU* ppu);
+void ppu_render_mode4(PPU* ppu);
+void ppu_render_mode5(PPU* ppu);
+
 #endif // PPU_H
