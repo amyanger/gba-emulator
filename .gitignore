@@ -11,6 +11,9 @@ bios/*.rom
 # Save files
 saves/*.sav
 
+# Cache
+.cache/
+
 # IDE
 .vscode/
 .idea/
