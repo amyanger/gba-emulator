@@ -248,6 +248,188 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         return;
     }
 
+    /* --- Affine BG Parameters (0x20-0x3F) — write-only --- */
+    case 0x20: case 0x21:  /* BG2PA */
+    case 0x22: case 0x23:  /* BG2PB */
+    case 0x24: case 0x25:  /* BG2PC */
+    case 0x26: case 0x27:  /* BG2PD */
+    case 0x30: case 0x31:  /* BG3PA */
+    case 0x32: case 0x33:  /* BG3PB */
+    case 0x34: case 0x35:  /* BG3PC */
+    case 0x36: case 0x37:  /* BG3PD */
+    {
+        bus->io_regs[offset] = val;
+        if (!bus->ppu) return;
+        /*
+         * PA/PB/PC/PD are 16-bit signed values.
+         * BG2 params at 0x20-0x27 → affine_idx 0
+         * BG3 params at 0x30-0x37 → affine_idx 1
+         * Within each group: PA=+0, PB=+2, PC=+4, PD=+6
+         */
+        uint32_t affine_idx = (offset >= 0x30) ? 1 : 0;
+        uint32_t base_off = affine_idx ? 0x30 : 0x20;
+        uint32_t param_off = offset - base_off;
+        uint32_t param_idx = param_off >> 1;  /* 0=PA, 1=PB, 2=PC, 3=PD */
+        int16_t* target;
+        switch (param_idx) {
+        case 0: target = &bus->ppu->bg_pa[affine_idx]; break;
+        case 1: target = &bus->ppu->bg_pb[affine_idx]; break;
+        case 2: target = &bus->ppu->bg_pc[affine_idx]; break;
+        default: target = &bus->ppu->bg_pd[affine_idx]; break;
+        }
+        if (offset & 1) {
+            *target = (int16_t)(((uint16_t)*target & 0x00FF)
+                              | ((uint16_t)val << 8));
+        } else {
+            *target = (int16_t)(((uint16_t)*target & 0xFF00)
+                              | (uint16_t)val);
+        }
+        return;
+    }
+
+    /* --- Affine BG Reference Points (0x28-0x2F, 0x38-0x3F) — write-only --- */
+    case 0x28: case 0x29: case 0x2A: case 0x2B:  /* BG2X */
+    case 0x2C: case 0x2D: case 0x2E: case 0x2F:  /* BG2Y */
+    case 0x38: case 0x39: case 0x3A: case 0x3B:  /* BG3X */
+    case 0x3C: case 0x3D: case 0x3E: case 0x3F:  /* BG3Y */
+    {
+        bus->io_regs[offset] = val;
+        if (!bus->ppu) return;
+        /*
+         * Reference points are 28-bit signed, stored as 32-bit with sign
+         * extension from bit 27. Writing any byte updates io_regs, and
+         * when complete, the full 32-bit value is reconstructed and written
+         * to BOTH the latch and the internal reference point.
+         *
+         * BG2X: 0x28-0x2B, BG2Y: 0x2C-0x2F → affine_idx 0
+         * BG3X: 0x38-0x3B, BG3Y: 0x3C-0x3F → affine_idx 1
+         */
+        uint32_t affine_idx = (offset >= 0x38) ? 1 : 0;
+        uint32_t group_base = affine_idx ? 0x38 : 0x28;
+        uint32_t rel = offset - group_base;
+        bool is_y = (rel >= 4);
+        uint32_t reg_base = group_base + (is_y ? 4 : 0);
+
+        /* Reconstruct full 32-bit value from the 4 io_regs bytes */
+        uint32_t full = (uint32_t)bus->io_regs[reg_base]
+                      | ((uint32_t)bus->io_regs[reg_base + 1] << 8)
+                      | ((uint32_t)bus->io_regs[reg_base + 2] << 16)
+                      | ((uint32_t)bus->io_regs[reg_base + 3] << 24);
+
+        /* Sign-extend from bit 27 (28-bit signed value) */
+        int32_t signed_val = (int32_t)(full << 4) >> 4;
+
+        /* Write to both latch and internal reference point */
+        if (is_y) {
+            bus->ppu->bg_ref_y_latch[affine_idx] = signed_val;
+            bus->ppu->bg_ref_y[affine_idx] = signed_val;
+        } else {
+            bus->ppu->bg_ref_x_latch[affine_idx] = signed_val;
+            bus->ppu->bg_ref_x[affine_idx] = signed_val;
+        }
+        return;
+    }
+
+    /* --- Window Registers (0x40-0x4D) — write-only --- */
+    case 0x40: case 0x41:  /* WIN0H */
+    case 0x42: case 0x43:  /* WIN1H */
+    case 0x44: case 0x45:  /* WIN0V */
+    case 0x46: case 0x47:  /* WIN1V */
+    {
+        bus->io_regs[offset] = val;
+        if (!bus->ppu) return;
+        /*
+         * WIN0H=0x40, WIN1H=0x42, WIN0V=0x44, WIN1V=0x46
+         * Window index: bit 1 of (offset - 0x40) selects WIN1 vs WIN0
+         * H vs V: offsets 0x40-0x43 are H, 0x44-0x47 are V
+         */
+        uint32_t rel = offset - 0x40;
+        bool is_v = (rel >= 4);
+        uint32_t win_idx = (rel >> 1) & 1;
+        uint16_t* target = is_v ? &bus->ppu->win_v[win_idx]
+                                : &bus->ppu->win_h[win_idx];
+        if (offset & 1) {
+            *target = (*target & 0x00FF) | ((uint16_t)val << 8);
+        } else {
+            *target = (*target & 0xFF00) | (uint16_t)val;
+        }
+        return;
+    }
+    case 0x48: case 0x49:  /* WININ */
+    {
+        bus->io_regs[offset] = val;
+        if (!bus->ppu) return;
+        if (offset & 1) {
+            bus->ppu->winin = (bus->ppu->winin & 0x00FF)
+                            | ((uint16_t)val << 8);
+        } else {
+            bus->ppu->winin = (bus->ppu->winin & 0xFF00) | (uint16_t)val;
+        }
+        return;
+    }
+    case 0x4A: case 0x4B:  /* WINOUT */
+    {
+        bus->io_regs[offset] = val;
+        if (!bus->ppu) return;
+        if (offset & 1) {
+            bus->ppu->winout = (bus->ppu->winout & 0x00FF)
+                             | ((uint16_t)val << 8);
+        } else {
+            bus->ppu->winout = (bus->ppu->winout & 0xFF00) | (uint16_t)val;
+        }
+        return;
+    }
+    case 0x4C: case 0x4D:  /* MOSAIC */
+    {
+        bus->io_regs[offset] = val;
+        if (!bus->ppu) return;
+        if (offset & 1) {
+            bus->ppu->mosaic = (bus->ppu->mosaic & 0x00FF)
+                             | ((uint16_t)val << 8);
+        } else {
+            bus->ppu->mosaic = (bus->ppu->mosaic & 0xFF00) | (uint16_t)val;
+        }
+        return;
+    }
+
+    /* --- Blend Registers (0x50-0x55) --- */
+    case 0x50: case 0x51:  /* BLDCNT */
+    {
+        bus->io_regs[offset] = val;
+        if (!bus->ppu) return;
+        if (offset & 1) {
+            bus->ppu->bldcnt = (bus->ppu->bldcnt & 0x00FF)
+                             | ((uint16_t)val << 8);
+        } else {
+            bus->ppu->bldcnt = (bus->ppu->bldcnt & 0xFF00) | (uint16_t)val;
+        }
+        return;
+    }
+    case 0x52: case 0x53:  /* BLDALPHA */
+    {
+        bus->io_regs[offset] = val;
+        if (!bus->ppu) return;
+        if (offset & 1) {
+            bus->ppu->bldalpha = (bus->ppu->bldalpha & 0x00FF)
+                               | ((uint16_t)val << 8);
+        } else {
+            bus->ppu->bldalpha = (bus->ppu->bldalpha & 0xFF00) | (uint16_t)val;
+        }
+        return;
+    }
+    case 0x54: case 0x55:  /* BLDY — write-only */
+    {
+        bus->io_regs[offset] = val;
+        if (!bus->ppu) return;
+        if (offset & 1) {
+            bus->ppu->bldy = (bus->ppu->bldy & 0x00FF)
+                           | ((uint16_t)val << 8);
+        } else {
+            bus->ppu->bldy = (bus->ppu->bldy & 0xFF00) | (uint16_t)val;
+        }
+        return;
+    }
+
     /* --- Interrupt Controller (0x200-0x209) --- */
     case 0x200:  /* REG_IE low byte */
         bus->io_regs[offset] = val;
@@ -469,6 +651,12 @@ bool bus_load_bios(Bus* bus, const char* path) {
     if (read != BIOS_SIZE) {
         LOG_WARN("BIOS file size mismatch: expected %d, got %zu",
                  BIOS_SIZE, read);
+    }
+
+    /* Mark CPU as having a real BIOS so SWI instructions go through
+     * the normal exception vector instead of HLE dispatch. */
+    if (bus->cpu) {
+        bus->cpu->has_bios = true;
     }
 
     LOG_INFO("BIOS loaded: %zu bytes", read);

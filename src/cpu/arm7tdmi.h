@@ -60,6 +60,7 @@ struct ARM7TDMI {
 
     /* CPU state */
     bool halted;
+    bool has_bios;
     int cycles_executed;
 
     /* Bus pointer (wired during gba_init) */
@@ -82,8 +83,10 @@ void cpu_switch_mode(ARM7TDMI* cpu, CPUMode new_mode);
 /* Invalidate the pipeline (e.g. after branch or mode change with PC write) */
 void cpu_flush_pipeline(ARM7TDMI* cpu);
 
-/* Handle SWI (Software Interrupt) exception entry */
-void cpu_handle_swi(ARM7TDMI* cpu);
+/* Handle SWI (Software Interrupt) exception entry.
+ * swi_comment is the SWI function number (bits [23:16] of ARM SWI instr,
+ * or bits [7:0] of Thumb SWI instr). */
+void cpu_handle_swi(ARM7TDMI* cpu, uint32_t swi_comment);
 
 /* Set CPU to post-BIOS state when no BIOS ROM is loaded */
 void cpu_skip_bios(ARM7TDMI* cpu);

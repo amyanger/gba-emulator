@@ -183,7 +183,11 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
             uint16_t color = (uint16_t)ppu->palette_ram[pal_addr]
                            | ((uint16_t)ppu->palette_ram[pal_addr + 1] << 8);
 
+            // Track layers for blending: push current top pixel down to second
+            ppu->second_pixel[screen_x] = ppu->scanline_buffer[screen_x];
+            ppu->second_layer[screen_x] = ppu->top_layer[screen_x];
             ppu->scanline_buffer[screen_x] = color;
+            ppu->top_layer[screen_x] = 4;  // OBJ layer
         }
     }
 }

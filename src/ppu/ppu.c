@@ -27,6 +27,9 @@ void ppu_render_scanline(PPU* ppu) {
                       | ((uint16_t)ppu->palette_ram[1] << 8);
     for (uint32_t x = 0; x < SCREEN_WIDTH; x++) {
         ppu->scanline_buffer[x] = backdrop;
+        ppu->top_layer[x] = 5;       // backdrop
+        ppu->second_pixel[x] = backdrop;
+        ppu->second_layer[x] = 5;    // backdrop
     }
 
     switch (mode) {
@@ -89,9 +92,21 @@ void ppu_render_scanline(PPU* ppu) {
         break;
     }
 
+    // Apply color blending effects (fade-to-black, fade-to-white, alpha blend)
+    ppu_apply_blend_scanline(ppu);
+
     // Copy scanline to framebuffer
     memcpy(&ppu->framebuffer[line * SCREEN_WIDTH], ppu->scanline_buffer,
            SCREEN_WIDTH * sizeof(uint16_t));
+
+    // Advance affine internal reference points for the next scanline.
+    // Per GBATEK: after each visible scanline, ref_x += PB and ref_y += PD.
+    // This happens unconditionally for visible lines regardless of BG mode,
+    // because the hardware always ticks the affine counters.
+    ppu->bg_ref_x[0] += (int32_t)ppu->bg_pb[0];
+    ppu->bg_ref_y[0] += (int32_t)ppu->bg_pd[0];
+    ppu->bg_ref_x[1] += (int32_t)ppu->bg_pb[1];
+    ppu->bg_ref_y[1] += (int32_t)ppu->bg_pd[1];
 }
 
 void ppu_set_hblank(PPU* ppu, bool active) {

@@ -1,4 +1,5 @@
 #include "thumb_instr.h"
+#include "bios_hle.h"
 #include "memory/bus.h"
 
 /*
@@ -903,10 +904,12 @@ static int thumb_cond_branch(ARM7TDMI* cpu, uint16_t instr) {
 /* ========================================================================
  * Format 17: Software Interrupt (bits[15:8]=11011111)
  * SWI comment8
+ *
+ * Thumb SWI number is the low 8 bits of the instruction.
  * ======================================================================== */
 static int thumb_swi(ARM7TDMI* cpu, uint16_t instr) {
-    (void)instr; /* Comment byte is ignored by hardware */
-    cpu_handle_swi(cpu);
+    uint32_t swi_num = instr & 0xFF;
+    cpu_handle_swi(cpu, swi_num);
     return 3; /* 2S+1N */
 }
 

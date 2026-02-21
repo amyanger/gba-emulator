@@ -1,6 +1,7 @@
 #include "arm7tdmi.h"
 #include "arm_instr.h"
 #include "thumb_instr.h"
+#include "bios_hle.h"
 #include "memory/bus.h"
 #include "interrupt/interrupt.h"
 
@@ -186,10 +187,22 @@ void cpu_handle_irq(ARM7TDMI* cpu) {
 
 /* Enter SWI (Software Interrupt) exception.
  *
+ * When has_bios is false (HLE mode), the SWI function is executed directly
+ * in C without entering SVC mode or changing PC.  When has_bios is true,
+ * the standard exception entry occurs and the real BIOS handles the call.
+ *
  * Called during instruction execution.  LR_svc = address of instruction
  * after the SWI.  Since PC = executing_instr + 8 (ARM) or +4 (Thumb),
  * LR = PC - 4 (ARM) or PC - 2 (Thumb). */
-void cpu_handle_swi(ARM7TDMI* cpu) {
+void cpu_handle_swi(ARM7TDMI* cpu, uint32_t swi_comment) {
+    if (!cpu->has_bios) {
+        /* HLE path: execute the SWI function directly without entering
+         * SVC mode or modifying CPSR/LR/PC. */
+        bios_hle_execute(cpu, swi_comment);
+        return;
+    }
+
+    /* Real BIOS path: standard exception entry */
     uint32_t old_cpsr = cpu->cpsr;
     bool thumb = BIT(cpu->cpsr, CPSR_T);
 
@@ -218,6 +231,78 @@ void cpu_handle_swi(ARM7TDMI* cpu) {
     cpu_flush_pipeline(cpu);
 }
 
+/* Write a 32-bit little-endian value into a byte buffer */
+static void write_le32(uint8_t* dst, uint32_t offset, uint32_t val) {
+    dst[offset + 0] = (uint8_t)(val);
+    dst[offset + 1] = (uint8_t)(val >> 8);
+    dst[offset + 2] = (uint8_t)(val >> 16);
+    dst[offset + 3] = (uint8_t)(val >> 24);
+}
+
+/* Install a minimal HLE IRQ trampoline and SWI fallback into BIOS memory.
+ *
+ * When no BIOS ROM is loaded, the IRQ vector at 0x00000018 must contain
+ * working ARM code that:
+ *   1) Saves work registers
+ *   2) Reads and acknowledges pending interrupts (IE & IF)
+ *   3) Updates IntrCheckFlag at 0x03007FF8
+ *   4) Calls the game's IRQ handler via [0x03FFFFFC]
+ *   5) Restores registers and returns from exception
+ *
+ * All ARM instruction encodings below have been manually verified against
+ * the ARM7TDMI instruction set architecture.  Each encoding is annotated
+ * with the corresponding assembly mnemonic. */
+static void install_hle_bios_stubs(Bus* bus) {
+    uint8_t* b = bus->bios;
+
+    /* --- SWI vector at 0x08 ---
+     * In HLE mode SWIs are intercepted in C before they reach the vector,
+     * but install a safety MOVS PC, LR as a fallback. */
+    write_le32(b, 0x08, 0xE1B0F00E);  /* MOVS PC, R14 */
+
+    /* --- IRQ vector at 0x18 ---
+     * Branch to the handler body at 0x128.
+     * B 0x128: offset = (0x128 - 0x18 - 8) / 4 = 0x42 */
+    write_le32(b, 0x18, 0xEA000042);  /* B 0x128 */
+
+    /* --- IRQ handler body at 0x128 ---
+     *
+     * Matches the real GBA BIOS IRQ handler exactly.  The game's own
+     * handler (pointed to by [0x03FFFFFC]) is responsible for:
+     *   - Acknowledging IF bits (write to 0x04000202)
+     *   - Updating IntrCheckFlag at 0x03007FF8
+     *   - Any game-specific interrupt processing
+     *
+     * Using LDR PC (not BX) to call the handler so the CPU stays in ARM
+     * mode.  On ARMv4T, only BX switches modes based on bit 0.  The game
+     * handler is expected to start in ARM mode (possibly with a BX veneer
+     * to Thumb).  This matches real hardware behavior. */
+    uint32_t p = 0x128;
+
+    /* Save work registers onto IRQ stack */
+    write_le32(b, p, 0xE92D500F); p += 4;  /* STMFD SP!, {R0-R3, R12, LR} */
+
+    /* R0 = 0x04000000 (I/O base address) */
+    write_le32(b, p, 0xE3A00301); p += 4;  /* MOV R0, #0x04000000 */
+
+    /* LR = return address (PC = here + 8, so LR points to LDMFD below) */
+    write_le32(b, p, 0xE28FE000); p += 4;  /* ADD LR, PC, #0 */
+
+    /* Jump to game's IRQ handler via [0x03FFFFFC].
+     * 0x03FFFFFC = 0x04000000 - 4, so LDR PC, [R0, #-4].
+     * LDR PC does NOT switch modes on ARMv4T — stays in ARM. */
+    write_le32(b, p, 0xE510F004); p += 4;  /* LDR PC, [R0, #-4] */
+
+    /* Game handler returns here via BX LR.
+     * Restore work registers and return from IRQ exception. */
+    write_le32(b, p, 0xE8BD500F); p += 4;  /* LDMFD SP!, {R0-R3, R12, LR} */
+
+    /* Return from IRQ exception:
+     * SUBS PC, LR, #4 restores CPSR from SPSR and returns to the
+     * interrupted instruction. */
+    write_le32(b, p, 0xE25EF004); p += 4;  /* SUBS PC, LR, #4 */
+}
+
 /* Set CPU to the state the BIOS would leave it in.
  * Used when no BIOS ROM is loaded so execution starts directly in ROM. */
 void cpu_skip_bios(ARM7TDMI* cpu) {
@@ -236,6 +321,10 @@ void cpu_skip_bios(ARM7TDMI* cpu) {
 
     /* Jump to ROM entry point */
     cpu->regs[REG_PC] = 0x08000000;
+
+    /* Install HLE BIOS stubs (IRQ trampoline, SWI fallback) into
+     * the BIOS memory region so the CPU can execute them. */
+    install_hle_bios_stubs(cpu->bus);
 
     cpu_flush_pipeline(cpu);
 }
@@ -268,24 +357,33 @@ int cpu_step(ARM7TDMI* cpu) {
     }
 
     if (BIT(cpu->cpsr, CPSR_T)) {
-        /* Thumb mode: execute pipeline[0], shift, fetch next */
+        /* Thumb mode: execute first, then advance pipeline if no flush */
         uint16_t instr = (uint16_t)cpu->pipeline[0];
-        cpu->pipeline[0] = cpu->pipeline[1];
-        cpu->pipeline[1] = bus_read16(cpu->bus, cpu->regs[REG_PC]);
-        cpu->regs[REG_PC] += 2;
-        return thumb_execute(cpu, instr);
+        int cycles = thumb_execute(cpu, instr);
+        if (cpu->pipeline_valid) {
+            cpu->pipeline[0] = cpu->pipeline[1];
+            cpu->pipeline[1] = bus_read16(cpu->bus, cpu->regs[REG_PC]);
+            cpu->regs[REG_PC] += 2;
+        }
+        return cycles;
     } else {
-        /* ARM mode: execute pipeline[0], shift, fetch next */
+        /* ARM mode: execute first, then advance pipeline if no flush */
         uint32_t instr = cpu->pipeline[0];
-        cpu->pipeline[0] = cpu->pipeline[1];
-        cpu->pipeline[1] = bus_read32(cpu->bus, cpu->regs[REG_PC]);
-        cpu->regs[REG_PC] += 4;
+        int cycles;
 
         uint32_t cond = (instr >> 28) & 0xF;
         if (cpu_condition_passed(cpu, cond)) {
-            return arm_execute(cpu, instr);
+            cycles = arm_execute(cpu, instr);
+        } else {
+            cycles = 1; /* skipped conditional: 1S cycle */
         }
-        return 1; /* skipped conditional: 1S cycle */
+
+        if (cpu->pipeline_valid) {
+            cpu->pipeline[0] = cpu->pipeline[1];
+            cpu->pipeline[1] = bus_read32(cpu->bus, cpu->regs[REG_PC]);
+            cpu->regs[REG_PC] += 4;
+        }
+        return cycles;
     }
 }
 

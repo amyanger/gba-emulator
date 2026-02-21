@@ -104,7 +104,11 @@ void ppu_render_bg_regular(PPU* ppu, int bg_index) {
             uint32_t pal_offset = (pal_num * 16 + color_idx) * 2;
             uint16_t color = (uint16_t)ppu->palette_ram[pal_offset]
                            | ((uint16_t)ppu->palette_ram[pal_offset + 1] << 8);
+            // Track layers for blending: push current top pixel down to second
+            ppu->second_pixel[screen_x] = ppu->scanline_buffer[screen_x];
+            ppu->second_layer[screen_x] = ppu->top_layer[screen_x];
             ppu->scanline_buffer[screen_x] = color;
+            ppu->top_layer[screen_x] = (uint8_t)bg_index;
         } else {
             // 8bpp mode: 64 bytes per tile, 8 bytes per row, 1 byte per pixel
             uint32_t tile_addr = char_base + tile_num * 64 + ty * 8 + tx;
@@ -120,18 +124,90 @@ void ppu_render_bg_regular(PPU* ppu, int bg_index) {
             uint32_t pal_offset = color_idx * 2;
             uint16_t color = (uint16_t)ppu->palette_ram[pal_offset]
                            | ((uint16_t)ppu->palette_ram[pal_offset + 1] << 8);
+            // Track layers for blending: push current top pixel down to second
+            ppu->second_pixel[screen_x] = ppu->scanline_buffer[screen_x];
+            ppu->second_layer[screen_x] = ppu->top_layer[screen_x];
             ppu->scanline_buffer[screen_x] = color;
+            ppu->top_layer[screen_x] = (uint8_t)bg_index;
         }
     }
 }
 
-// Render a single scanline for an affine (rotation/scaling) background
+// Render a single scanline for an affine (rotation/scaling) background.
+// Only BG2 (bg_index=2) and BG3 (bg_index=3) support affine mode.
+// Per GBATEK: affine BGs use 8bpp tiles with single-byte map entries.
 void ppu_render_bg_affine(PPU* ppu, int bg_index) {
-    // TODO: Implement affine BG rendering
-    // 1. Use internal reference point (bg_ref_x, bg_ref_y)
-    // 2. For each pixel, apply affine matrix (pa, pb, pc, pd)
-    // 3. Sample from tile map at transformed coordinates
-    // 4. Advance reference point by (pb, pd) after the scanline
-    (void)ppu;
-    (void)bg_index;
+    uint32_t affine_idx = (uint32_t)(bg_index - 2);  /* BG2 → 0, BG3 → 1 */
+    uint16_t bgcnt = ppu->bg_cnt[bg_index];
+
+    // Extract BGCNT fields
+    uint32_t char_base   = BITS(bgcnt, 3, 2) * 0x4000;
+    uint32_t screen_base = BITS(bgcnt, 12, 8) * 0x800;
+    uint32_t wraparound  = BIT(bgcnt, 13);
+    uint32_t screen_size = BITS(bgcnt, 15, 14);
+
+    // Affine map dimensions: 16, 32, 64, or 128 tiles per side
+    static const uint32_t size_lut[4] = { 16, 32, 64, 128 };
+    uint32_t tiles_per_side = size_lut[screen_size];
+    int32_t map_size_px = (int32_t)(tiles_per_side * 8);
+
+    // Read the current internal reference point (NOT the latch).
+    // These are used for the horizontal walk across the scanline.
+    // The caller (ppu.c) advances bg_ref_x/y by PB/PD after each scanline.
+    int32_t px = ppu->bg_ref_x[affine_idx];
+    int32_t py = ppu->bg_ref_y[affine_idx];
+
+    // PA and PC control horizontal stepping within a scanline.
+    int16_t pa = ppu->bg_pa[affine_idx];
+    int16_t pc = ppu->bg_pc[affine_idx];
+
+    for (uint32_t screen_x = 0; screen_x < SCREEN_WIDTH; screen_x++) {
+        // Convert from 8.8 fixed-point to integer pixel coordinates
+        int32_t tex_x = px >> 8;
+        int32_t tex_y = py >> 8;
+
+        // Bounds check / wraparound
+        if (wraparound) {
+            // Modulo that handles negative values correctly
+            tex_x = ((tex_x % map_size_px) + map_size_px) % map_size_px;
+            tex_y = ((tex_y % map_size_px) + map_size_px) % map_size_px;
+        } else {
+            if (tex_x < 0 || tex_x >= map_size_px ||
+                tex_y < 0 || tex_y >= map_size_px) {
+                // Outside map and no wraparound — transparent
+                px += (int32_t)pa;
+                py += (int32_t)pc;
+                continue;
+            }
+        }
+
+        // Affine tilemap entries are 8-bit (one byte per tile, no flip bits)
+        uint32_t map_entry_addr = screen_base
+                                + (uint32_t)(tex_y / 8) * tiles_per_side
+                                + (uint32_t)(tex_x / 8);
+        uint8_t tile_num = ppu->vram[vram_mirror(map_entry_addr)];
+
+        // Always 8bpp: 64 bytes per tile, 8 bytes per row, 1 byte per pixel
+        uint32_t tile_addr = char_base
+                           + (uint32_t)tile_num * 64
+                           + (uint32_t)(tex_y % 8) * 8
+                           + (uint32_t)(tex_x % 8);
+        uint8_t pixel = ppu->vram[vram_mirror(tile_addr)];
+
+        if (pixel != 0) {
+            // Look up color from the 256-color palette
+            uint32_t pal_offset = (uint32_t)pixel * 2;
+            uint16_t color = (uint16_t)ppu->palette_ram[pal_offset]
+                           | ((uint16_t)ppu->palette_ram[pal_offset + 1] << 8);
+            // Track layers for blending: push current top pixel down to second
+            ppu->second_pixel[screen_x] = ppu->scanline_buffer[screen_x];
+            ppu->second_layer[screen_x] = ppu->top_layer[screen_x];
+            ppu->scanline_buffer[screen_x] = color;
+            ppu->top_layer[screen_x] = (uint8_t)bg_index;
+        }
+
+        // Advance texture coordinates by PA/PC for the next screen pixel
+        px += (int32_t)pa;
+        py += (int32_t)pc;
+    }
 }

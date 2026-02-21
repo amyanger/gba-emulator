@@ -24,6 +24,7 @@ set(SOURCES
     src/cpu/arm7tdmi.c
     src/cpu/arm_instr.c
     src/cpu/thumb_instr.c
+    src/cpu/bios_hle.c
     src/memory/bus.c
     src/memory/dma.c
     src/ppu/ppu.c

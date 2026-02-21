@@ -90,6 +90,15 @@ void gba_run_frame(GBA* gba) {
             ppu_set_vblank(&gba->ppu, true);
             interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_VBLANK);
             dma_on_vblank(&gba->dma);
+
+            // Reload affine reference points from latches at VBlank start.
+            // Per GBATEK: the internal reference point registers are reloaded
+            // from the latch values at the beginning of each VBlank period.
+            gba->ppu.bg_ref_x[0] = gba->ppu.bg_ref_x_latch[0];
+            gba->ppu.bg_ref_y[0] = gba->ppu.bg_ref_y_latch[0];
+            gba->ppu.bg_ref_x[1] = gba->ppu.bg_ref_x_latch[1];
+            gba->ppu.bg_ref_y[1] = gba->ppu.bg_ref_y_latch[1];
+
             gba->frame_complete = true;
         }
 

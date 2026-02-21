@@ -1,4 +1,5 @@
 #include "arm_instr.h"
+#include "bios_hle.h"
 #include "memory/bus.h"
 
 /*
@@ -233,10 +234,11 @@ static bool sub_overflow(uint32_t a, uint32_t b, uint32_t result) {
  * Instruction Handlers
  * ======================================================================== */
 
-/* Software Interrupt: enter SVC mode via cpu_handle_swi */
+/* Software Interrupt: extract SWI number and dispatch.
+ * ARM SWI comment field is bits [23:16] of the instruction word. */
 static int arm_swi(ARM7TDMI* cpu, uint32_t instr) {
-    (void)instr;
-    cpu_handle_swi(cpu);
+    uint32_t swi_num = (instr >> 16) & 0xFF;
+    cpu_handle_swi(cpu, swi_num);
     return 3;
 }
 

@@ -1,4 +1,5 @@
 #include "gba.h"
+#include "cpu/arm7tdmi.h"
 #include "frontend/frontend.h"
 #include <stdio.h>
 
@@ -35,7 +36,12 @@ int main(int argc, char* argv[]) {
     if (bios_path) {
         if (!gba_load_bios(&gba, bios_path)) {
             LOG_WARN("Failed to load BIOS, continuing without it");
+            cpu_skip_bios(&gba.cpu);
         }
+    } else {
+        // No BIOS provided — set CPU to post-BIOS state so execution
+        // starts at the ROM entry point with correct stack pointers.
+        cpu_skip_bios(&gba.cpu);
     }
 
     if (!gba_load_rom(&gba, rom_path)) {
