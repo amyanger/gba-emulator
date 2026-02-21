@@ -45,6 +45,23 @@ static uint8_t io_read8(Bus* bus, uint32_t addr) {
         if (bus->ppu) return (uint8_t)(bus->ppu->vcount >> 8);
         return bus->io_regs[offset];
 
+    /* --- BG Control Registers (0x08-0x0F) --- */
+    case 0x08: case 0x09:  /* BG0CNT */
+    case 0x0A: case 0x0B:  /* BG1CNT */
+    case 0x0C: case 0x0D:  /* BG2CNT */
+    case 0x0E: case 0x0F:  /* BG3CNT */
+    {
+        if (!bus->ppu) return bus->io_regs[offset];
+        /* bg_cnt index: each register is 2 bytes starting at 0x08 */
+        uint32_t bg_idx = (offset - 0x08) >> 1;
+        if (offset & 1) {
+            return (uint8_t)(bus->ppu->bg_cnt[bg_idx] >> 8);
+        }
+        return (uint8_t)(bus->ppu->bg_cnt[bg_idx]);
+    }
+
+    /* HOFS/VOFS (0x10-0x1F) are write-only — reads fall through to default */
+
     /* --- Interrupt Controller (0x200-0x209) --- */
     case 0x200:  /* REG_IE low byte */
         if (bus->interrupts) {
@@ -180,6 +197,56 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
     case 0x06:  /* REG_VCOUNT low byte — read-only, ignore writes */
     case 0x07:  /* REG_VCOUNT high byte — read-only, ignore writes */
         return;
+
+    /* --- BG Control Registers (0x08-0x0F) --- */
+    case 0x08: case 0x09:  /* BG0CNT */
+    case 0x0A: case 0x0B:  /* BG1CNT */
+    case 0x0C: case 0x0D:  /* BG2CNT */
+    case 0x0E: case 0x0F:  /* BG3CNT */
+    {
+        bus->io_regs[offset] = val;
+        if (!bus->ppu) return;
+        uint32_t bg_idx = (offset - 0x08) >> 1;
+        if (offset & 1) {
+            bus->ppu->bg_cnt[bg_idx] = (bus->ppu->bg_cnt[bg_idx] & 0x00FF)
+                                     | ((uint16_t)val << 8);
+        } else {
+            bus->ppu->bg_cnt[bg_idx] = (bus->ppu->bg_cnt[bg_idx] & 0xFF00)
+                                     | (uint16_t)val;
+        }
+        return;
+    }
+
+    /* --- BG Scroll Registers (0x10-0x1F) — write-only --- */
+    case 0x10: case 0x11:  /* BG0HOFS */
+    case 0x12: case 0x13:  /* BG0VOFS */
+    case 0x14: case 0x15:  /* BG1HOFS */
+    case 0x16: case 0x17:  /* BG1VOFS */
+    case 0x18: case 0x19:  /* BG2HOFS */
+    case 0x1A: case 0x1B:  /* BG2VOFS */
+    case 0x1C: case 0x1D:  /* BG3HOFS */
+    case 0x1E: case 0x1F:  /* BG3VOFS */
+    {
+        bus->io_regs[offset] = val;
+        if (!bus->ppu) return;
+        /*
+         * Scroll register layout: 4 BGs x (HOFS, VOFS) = 8 registers, 2 bytes each.
+         * Offset 0x10 = BG0HOFS, 0x12 = BG0VOFS, 0x14 = BG1HOFS, ...
+         * BG index: (offset - 0x10) / 4
+         * HOFS vs VOFS: bit 1 of (offset - 0x10) selects VOFS
+         */
+        uint32_t rel = offset - 0x10;
+        uint32_t bg_idx = rel >> 2;
+        bool is_vofs = (rel >> 1) & 1;
+        uint16_t* reg = is_vofs ? &bus->ppu->bg_vofs[bg_idx]
+                                : &bus->ppu->bg_hofs[bg_idx];
+        if (offset & 1) {
+            *reg = (*reg & 0x00FF) | ((uint16_t)val << 8);
+        } else {
+            *reg = (*reg & 0xFF00) | (uint16_t)val;
+        }
+        return;
+    }
 
     /* --- Interrupt Controller (0x200-0x209) --- */
     case 0x200:  /* REG_IE low byte */
