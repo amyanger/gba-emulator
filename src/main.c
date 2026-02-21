@@ -57,6 +57,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Initialize audio
+    frontend_audio_init(&fe);
+
     LOG_INFO("Starting emulation...");
 
     // Main loop
@@ -66,6 +69,8 @@ int main(int argc, char* argv[]) {
 
         if (gba.frame_complete) {
             frontend_present_frame(&fe, gba.ppu.framebuffer);
+            frontend_push_audio(&fe, &gba.apu);
+            frontend_frame_sync(&fe);
         }
     }
 

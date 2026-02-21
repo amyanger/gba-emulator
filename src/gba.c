@@ -35,6 +35,9 @@ void gba_init(GBA* gba) {
     gba->dma.bus = &gba->bus;
     gba->dma.interrupts = &gba->interrupts;
 
+    // APU needs DMA controller for FIFO refill triggering
+    gba->apu.dma = &gba->dma;
+
     gba->running = true;
     gba->frame_complete = false;
 
@@ -57,6 +60,7 @@ void gba_run_frame(GBA* gba) {
         int hdraw_cycles = HDRAW_PIXELS * CYCLES_PER_PIXEL; // 960
         cpu_run(&gba->cpu, hdraw_cycles);
         timer_tick(gba->timers, hdraw_cycles, &gba->interrupts, &gba->apu);
+        apu_tick(&gba->apu, hdraw_cycles);
 
         // --- HBlank ---
         ppu_set_hblank(&gba->ppu, true);
@@ -75,6 +79,7 @@ void gba_run_frame(GBA* gba) {
         int hblank_cycles = HBLANK_PIXELS * CYCLES_PER_PIXEL; // 272
         cpu_run(&gba->cpu, hblank_cycles);
         timer_tick(gba->timers, hblank_cycles, &gba->interrupts, &gba->apu);
+        apu_tick(&gba->apu, hblank_cycles);
 
         // --- End of scanline ---
         ppu_set_hblank(&gba->ppu, false);

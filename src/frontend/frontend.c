@@ -1,5 +1,6 @@
 #include "frontend.h"
 #include "gba.h"
+#include "apu/apu.h"
 #include "input/input.h"
 
 bool frontend_init(Frontend* fe, int scale) {
@@ -106,7 +107,7 @@ void frontend_audio_init(Frontend* fe) {
     want.format = AUDIO_S16SYS;
     want.channels = 2;
     want.samples = 1024;
-    want.callback = NULL; // TODO: Set audio callback
+    want.callback = NULL; /* Push mode via SDL_QueueAudio */
 
     fe->audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
     if (fe->audio_device == 0) {
@@ -114,6 +115,62 @@ void frontend_audio_init(Frontend* fe) {
         return;
     }
 
-    SDL_PauseAudioDevice(fe->audio_device, 0); // Start playback
+    SDL_PauseAudioDevice(fe->audio_device, 0);
     LOG_INFO("Audio initialized: %d Hz, %d channels", have.freq, have.channels);
+}
+
+void frontend_push_audio(Frontend* fe, APU* apu) {
+    if (fe->audio_device == 0) return;
+
+    /* Calculate how many samples are available in the ring buffer */
+    uint32_t write_pos = apu->write_pos;
+    uint32_t read_pos = apu->read_pos;
+
+    uint32_t available;
+    if (write_pos >= read_pos) {
+        available = write_pos - read_pos;
+    } else {
+        available = SAMPLE_BUFFER_SIZE - read_pos + write_pos;
+    }
+
+    if (available == 0) return;
+
+    /* Push samples from ring buffer to SDL */
+    if (write_pos > read_pos) {
+        /* Contiguous region */
+        SDL_QueueAudio(fe->audio_device,
+                       &apu->sample_buffer[read_pos * 2],
+                       available * 2 * sizeof(int16_t));
+    } else {
+        /* Wraps around: push in two parts */
+        uint32_t first_part = SAMPLE_BUFFER_SIZE - read_pos;
+        SDL_QueueAudio(fe->audio_device,
+                       &apu->sample_buffer[read_pos * 2],
+                       first_part * 2 * sizeof(int16_t));
+        if (write_pos > 0) {
+            SDL_QueueAudio(fe->audio_device,
+                           &apu->sample_buffer[0],
+                           write_pos * 2 * sizeof(int16_t));
+        }
+    }
+
+    apu->read_pos = write_pos;
+}
+
+void frontend_frame_sync(Frontend* fe) {
+    if (fe->audio_device != 0) {
+        /* Audio-driven sync: block until SDL's audio queue drains.
+         * This ties emulation speed to the audio playback rate (~60fps).
+         * Target: ~2 frames of audio buffered (low latency, no underrun).
+         * Cap iterations to avoid hanging if the audio device stalls. */
+        uint32_t target = 1100 * 2 * sizeof(int16_t);
+        int max_wait = 100;
+        while (SDL_GetQueuedAudioSize(fe->audio_device) > target && max_wait > 0) {
+            SDL_Delay(1);
+            max_wait--;
+        }
+    } else {
+        /* No audio device: timer-based fallback (~60fps). */
+        SDL_Delay(16);
+    }
 }
