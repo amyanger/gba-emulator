@@ -12,8 +12,22 @@ void ppu_render_scanline(PPU* ppu) {
 
     if (line >= VDRAW_LINES) return;
 
-    // Clear scanline buffer
-    memset(ppu->scanline_buffer, 0, sizeof(ppu->scanline_buffer));
+    // Forced blank (DISPCNT bit 7): display white when set
+    if (BIT(ppu->dispcnt, 7)) {
+        for (uint32_t x = 0; x < SCREEN_WIDTH; x++) {
+            ppu->scanline_buffer[x] = 0x7FFF; // White (all RGB bits set)
+        }
+        memcpy(&ppu->framebuffer[line * SCREEN_WIDTH], ppu->scanline_buffer,
+               SCREEN_WIDTH * sizeof(uint16_t));
+        return;
+    }
+
+    // Fill scanline with backdrop color (palette RAM entry 0)
+    uint16_t backdrop = (uint16_t)ppu->palette_ram[0]
+                      | ((uint16_t)ppu->palette_ram[1] << 8);
+    for (uint32_t x = 0; x < SCREEN_WIDTH; x++) {
+        ppu->scanline_buffer[x] = backdrop;
+    }
 
     switch (mode) {
     case 0:
@@ -26,13 +40,13 @@ void ppu_render_scanline(PPU* ppu) {
         // TODO: Mode 2 — two affine BG layers
         break;
     case 3:
-        // TODO: Mode 3 — 240x160 16bpp bitmap
+        ppu_render_mode3(ppu);
         break;
     case 4:
-        // TODO: Mode 4 — 240x160 8bpp indexed bitmap (page flipping)
+        ppu_render_mode4(ppu);
         break;
     case 5:
-        // TODO: Mode 5 — 160x128 16bpp bitmap (page flipping)
+        ppu_render_mode5(ppu);
         break;
     }
 
