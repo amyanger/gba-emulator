@@ -31,27 +31,63 @@ void ppu_render_scanline(PPU* ppu) {
 
     switch (mode) {
     case 0:
-        // TODO: Mode 0 — four regular tiled BG layers
+        // Mode 0: four regular tiled BG layers + sprites.
+        // Render back-to-front (priority 3 down to 0). Within each priority,
+        // higher-numbered BGs render first so lower-numbered BGs overwrite them.
+        // Sprites render after BGs at each priority so they appear on top.
+        for (int prio = 3; prio >= 0; prio--) {
+            for (int bg = 3; bg >= 0; bg--) {
+                if (!BIT(ppu->dispcnt, 8 + bg)) continue;
+                if ((ppu->bg_cnt[bg] & 3) != prio) continue;
+                ppu_render_bg_regular(ppu, bg);
+            }
+            if (BIT(ppu->dispcnt, 12)) {
+                ppu_render_sprites_at_priority(ppu, prio);
+            }
+        }
         break;
     case 1:
-        // TODO: Mode 1 — two regular + one affine BG
+        // Mode 1: BG0, BG1 regular + BG2 affine. BG3 not available.
+        for (int prio = 3; prio >= 0; prio--) {
+            if (BIT(ppu->dispcnt, 10) && (ppu->bg_cnt[2] & 3) == prio) {
+                ppu_render_bg_affine(ppu, 2);
+            }
+            for (int bg = 1; bg >= 0; bg--) {
+                if (!BIT(ppu->dispcnt, 8 + bg)) continue;
+                if ((ppu->bg_cnt[bg] & 3) != prio) continue;
+                ppu_render_bg_regular(ppu, bg);
+            }
+            if (BIT(ppu->dispcnt, 12)) {
+                ppu_render_sprites_at_priority(ppu, prio);
+            }
+        }
         break;
     case 2:
-        // TODO: Mode 2 — two affine BG layers
+        // Mode 2: BG2, BG3 affine. BG0, BG1 not available.
+        for (int prio = 3; prio >= 0; prio--) {
+            for (int bg = 3; bg >= 2; bg--) {
+                if (!BIT(ppu->dispcnt, 8 + bg)) continue;
+                if ((ppu->bg_cnt[bg] & 3) != prio) continue;
+                ppu_render_bg_affine(ppu, bg);
+            }
+            if (BIT(ppu->dispcnt, 12)) {
+                ppu_render_sprites_at_priority(ppu, prio);
+            }
+        }
         break;
     case 3:
         ppu_render_mode3(ppu);
+        if (BIT(ppu->dispcnt, 12)) ppu_render_sprites(ppu);
         break;
     case 4:
         ppu_render_mode4(ppu);
+        if (BIT(ppu->dispcnt, 12)) ppu_render_sprites(ppu);
         break;
     case 5:
         ppu_render_mode5(ppu);
+        if (BIT(ppu->dispcnt, 12)) ppu_render_sprites(ppu);
         break;
     }
-
-    // TODO: Render sprites (OBJ layer)
-    // TODO: Composite layers with priority, windowing, blending
 
     // Copy scanline to framebuffer
     memcpy(&ppu->framebuffer[line * SCREEN_WIDTH], ppu->scanline_buffer,
