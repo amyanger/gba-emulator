@@ -19,6 +19,8 @@ typedef enum {
     FLASH_CMD2,
     FLASH_AUTOSELECT,
     FLASH_ERASE,
+    FLASH_ERASE_CMD1,
+    FLASH_ERASE_CMD2,
     FLASH_WRITE,
     FLASH_BANKSWITCH
 } FlashState;

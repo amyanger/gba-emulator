@@ -14,16 +14,22 @@ void gba_init(GBA* gba) {
     gba->bus.cart = &gba->cart;
     gba->bus.input = &gba->input;
 
-    // PPU gets pointers to VRAM/palette/OAM in bus
-    gba->ppu.palette_ram = gba->bus.palette_ram;
-    gba->ppu.vram = gba->bus.vram;
-    gba->ppu.oam = gba->bus.oam;
-
+    // Initialize all subsystems (must happen before wiring pointers that
+    // init functions would otherwise zero via memset)
     cpu_init(&gba->cpu);
     bus_init(&gba->bus);
     ppu_init(&gba->ppu);
     apu_init(&gba->apu);
+    timer_init(gba->timers);
+    dma_init(&gba->dma);
+    interrupt_init(&gba->interrupts);
     input_init(&gba->input);
+
+    // PPU gets pointers to VRAM/palette/OAM in bus — AFTER ppu_init()
+    // so the memset inside ppu_init doesn't wipe them
+    gba->ppu.palette_ram = gba->bus.palette_ram;
+    gba->ppu.vram = gba->bus.vram;
+    gba->ppu.oam = gba->bus.oam;
 
     gba->running = true;
     gba->frame_complete = false;
@@ -46,7 +52,7 @@ void gba_run_frame(GBA* gba) {
         // --- HDraw period (visible pixel rendering time) ---
         int hdraw_cycles = HDRAW_PIXELS * CYCLES_PER_PIXEL; // 960
         cpu_run(&gba->cpu, hdraw_cycles);
-        timer_tick(gba->timers, hdraw_cycles, &gba->interrupts);
+        timer_tick(gba->timers, hdraw_cycles, &gba->interrupts, &gba->apu);
 
         // --- HBlank ---
         ppu_set_hblank(&gba->ppu, true);
@@ -64,7 +70,7 @@ void gba_run_frame(GBA* gba) {
 
         int hblank_cycles = HBLANK_PIXELS * CYCLES_PER_PIXEL; // 272
         cpu_run(&gba->cpu, hblank_cycles);
-        timer_tick(gba->timers, hblank_cycles, &gba->interrupts);
+        timer_tick(gba->timers, hblank_cycles, &gba->interrupts, &gba->apu);
 
         // --- End of scanline ---
         ppu_set_hblank(&gba->ppu, false);

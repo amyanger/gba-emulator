@@ -2,7 +2,8 @@
 
 void ppu_init(PPU* ppu) {
     memset(ppu, 0, sizeof(PPU));
-    // Don't zero the memory pointers — they'll be set by gba_init
+    // Note: palette_ram/vram/oam pointers are zeroed here.
+    // gba_init() must assign them AFTER calling ppu_init().
 }
 
 void ppu_render_scanline(PPU* ppu) {

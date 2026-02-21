@@ -1,5 +1,6 @@
 #include "timer.h"
 #include "interrupt/interrupt.h"
+#include "apu/apu.h"
 
 static const uint16_t prescaler_values[] = {1, 64, 256, 1024};
 
@@ -34,7 +35,7 @@ uint16_t timer_read_counter(Timer* timer) {
     return timer->counter;
 }
 
-void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts) {
+void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts, APU* apu) {
     static const uint16_t timer_irq_bits[] = {IRQ_TIMER0, IRQ_TIMER1, IRQ_TIMER2, IRQ_TIMER3};
 
     for (int i = 0; i < 4; i++) {
@@ -48,22 +49,35 @@ void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts) {
             t->counter++;
 
             if (t->counter == 0) {
-                // Overflow
+                // Overflow: reload and fire IRQ/audio callbacks
                 t->counter = t->reload;
 
                 if (t->irq_enable) {
                     interrupt_request(interrupts, timer_irq_bits[i]);
                 }
 
-                // TODO: Trigger FIFO playback if timer 0 or 1
-                // TODO: Cascade to next timer if enabled
-                if (i < 3 && timers[i + 1].enabled && timers[i + 1].cascade) {
-                    timers[i + 1].counter++;
-                    if (timers[i + 1].counter == 0) {
-                        timers[i + 1].counter = timers[i + 1].reload;
-                        if (timers[i + 1].irq_enable) {
-                            interrupt_request(interrupts, timer_irq_bits[i + 1]);
+                if (apu) {
+                    apu_on_timer_overflow(apu, i);
+                }
+
+                // Cascade forward through the chain: if timer N overflows
+                // and timer N+1 is a cascade timer, increment it. If N+1
+                // also overflows, continue to N+2, and so on up to timer 3.
+                int next = i + 1;
+                while (next < 4 && timers[next].enabled && timers[next].cascade) {
+                    timers[next].counter++;
+                    if (timers[next].counter == 0) {
+                        // Cascaded timer overflowed
+                        timers[next].counter = timers[next].reload;
+                        if (timers[next].irq_enable) {
+                            interrupt_request(interrupts, timer_irq_bits[next]);
                         }
+                        if (apu) {
+                            apu_on_timer_overflow(apu, next);
+                        }
+                        next++;
+                    } else {
+                        break; // No overflow, cascade chain stops
                     }
                 }
             }

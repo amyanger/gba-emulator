@@ -531,28 +531,25 @@ void bus_write16(Bus* bus, uint32_t addr, uint16_t val) {
 void bus_write32(Bus* bus, uint32_t addr, uint32_t val) {
     addr &= ~3u;
     switch (decode_region(addr)) {
-    case 0x05: { /* Palette RAM */
-        uint32_t off = addr & (PALETTE_SIZE - 1);
-        bus->palette_ram[off]     = (uint8_t)(val);
-        bus->palette_ram[off + 1] = (uint8_t)(val >> 8);
-        bus->palette_ram[off + 2] = (uint8_t)(val >> 16);
-        bus->palette_ram[off + 3] = (uint8_t)(val >> 24);
+    case 0x05: { /* Palette RAM -- mirror each byte independently to prevent OOB */
+        for (int i = 0; i < 4; i++) {
+            uint32_t off = (addr + i) & (PALETTE_SIZE - 1);
+            bus->palette_ram[off] = (uint8_t)(val >> (i * 8));
+        }
         return;
     }
-    case 0x06: { /* VRAM */
-        uint32_t off = vram_offset(addr);
-        bus->vram[off]     = (uint8_t)(val);
-        bus->vram[off + 1] = (uint8_t)(val >> 8);
-        bus->vram[off + 2] = (uint8_t)(val >> 16);
-        bus->vram[off + 3] = (uint8_t)(val >> 24);
+    case 0x06: { /* VRAM -- mirror each byte independently to prevent OOB */
+        for (int i = 0; i < 4; i++) {
+            uint32_t off = vram_offset(addr + i);
+            bus->vram[off] = (uint8_t)(val >> (i * 8));
+        }
         return;
     }
-    case 0x07: { /* OAM */
-        uint32_t off = addr & (OAM_SIZE - 1);
-        bus->oam[off]     = (uint8_t)(val);
-        bus->oam[off + 1] = (uint8_t)(val >> 8);
-        bus->oam[off + 2] = (uint8_t)(val >> 16);
-        bus->oam[off + 3] = (uint8_t)(val >> 24);
+    case 0x07: { /* OAM -- mirror each byte independently to prevent OOB */
+        for (int i = 0; i < 4; i++) {
+            uint32_t off = (addr + i) & (OAM_SIZE - 1);
+            bus->oam[off] = (uint8_t)(val >> (i * 8));
+        }
         return;
     }
     default:

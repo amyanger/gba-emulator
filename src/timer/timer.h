@@ -3,8 +3,9 @@
 
 #include "common.h"
 
-// Forward declaration
+// Forward declarations
 typedef struct InterruptController InterruptController;
+typedef struct APU APU;
 
 // IRQ bit positions for timers
 #define IRQ_TIMER0 (1 << 3)
@@ -29,7 +30,7 @@ struct Timer {
 typedef struct Timer Timer;
 
 void timer_init(Timer timers[4]);
-void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts);
+void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts, APU* apu);
 void timer_write_reload(Timer* timer, uint16_t val);
 void timer_write_control(Timer* timer, uint16_t val);
 uint16_t timer_read_counter(Timer* timer);

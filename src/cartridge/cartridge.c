@@ -26,8 +26,16 @@ bool cartridge_load(Cartridge* cart, const char* path) {
         return false;
     }
 
+    size_t bytes_read = fread(cart->rom, 1, size, f);
+    if (bytes_read != (size_t)size) {
+        LOG_ERROR("ROM read incomplete: expected %ld, got %zu", size, bytes_read);
+        free(cart->rom);
+        cart->rom = NULL;
+        fclose(f);
+        return false;
+    }
+
     cart->rom_size = (uint32_t)size;
-    fread(cart->rom, 1, size, f);
     fclose(f);
 
     // Parse header
@@ -65,6 +73,9 @@ void cartridge_destroy(Cartridge* cart) {
 
 void cartridge_detect_save_type(Cartridge* cart) {
     cart->save_type = SAVE_NONE;
+
+    // Guard: ROM too small to contain any save type string
+    if (cart->rom_size < 12) return;
 
     // Scan ROM for save type magic strings
     for (uint32_t i = 0; i < cart->rom_size - 12; i++) {
@@ -146,22 +157,32 @@ void cartridge_save_to_file(Cartridge* cart) {
         return;
     }
 
+    size_t expected = 0;
+    size_t written = 0;
     switch (cart->save_type) {
     case SAVE_SRAM:
-        fwrite(cart->sram, 1, sizeof(cart->sram), f);
+        expected = sizeof(cart->sram);
+        written = fwrite(cart->sram, 1, expected, f);
         break;
     case SAVE_FLASH64:
-        fwrite(cart->flash.data, 1, 0x10000, f);
+        expected = 0x10000;
+        written = fwrite(cart->flash.data, 1, expected, f);
         break;
     case SAVE_FLASH128:
-        fwrite(cart->flash.data, 1, 0x20000, f);
+        expected = 0x20000;
+        written = fwrite(cart->flash.data, 1, expected, f);
         break;
     default:
         break;
     }
 
     fclose(f);
-    LOG_INFO("Save written to %s", cart->save_path);
+
+    if (expected > 0 && written != expected) {
+        LOG_WARN("Save write incomplete: expected %zu, wrote %zu", expected, written);
+    } else {
+        LOG_INFO("Save written to %s", cart->save_path);
+    }
 }
 
 void cartridge_load_save_file(Cartridge* cart) {

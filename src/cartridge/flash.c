@@ -83,16 +83,35 @@ void flash_write(FlashChip* flash, uint32_t addr, uint8_t val) {
 
     case FLASH_ERASE:
         if (addr == 0x5555 && val == 0xAA) {
-            // Start of second command sequence for erase
-            flash->state = FLASH_CMD1;
+            // Start of second command sequence for erase (step 4 of 6)
+            flash->state = FLASH_ERASE_CMD1;
+        } else {
+            flash->state = FLASH_READY;
+        }
+        break;
+
+    case FLASH_ERASE_CMD1:
+        if (addr == 0x2AAA && val == 0x55) {
+            // Step 5 of 6 — advance to erase command selection
+            flash->state = FLASH_ERASE_CMD2;
+        } else {
+            flash->state = FLASH_READY;
+        }
+        break;
+
+    case FLASH_ERASE_CMD2:
+        if (addr == 0x5555 && val == 0x10) {
+            // Chip erase — fill all 128KB with 0xFF
+            memset(flash->data, 0xFF, sizeof(flash->data));
+            LOG_DEBUG("Flash: chip erase");
+            flash->state = FLASH_READY;
         } else if (val == 0x30) {
-            // Sector erase — erase 4KB sector
+            // Sector erase — erase 4KB sector at aligned address
             uint32_t sector = (flash->bank * 0x10000) + (addr & 0xF000);
             memset(&flash->data[sector], 0xFF, 0x1000);
+            LOG_DEBUG("Flash: sector erase at 0x%06X", sector);
             flash->state = FLASH_READY;
-        } else if (addr == 0x5555 && val == 0x10) {
-            // Chip erase
-            memset(flash->data, 0xFF, sizeof(flash->data));
+        } else {
             flash->state = FLASH_READY;
         }
         break;
