@@ -31,6 +31,10 @@ void gba_init(GBA* gba) {
     gba->ppu.vram = gba->bus.vram;
     gba->ppu.oam = gba->bus.oam;
 
+    // DMA needs bus (for memory transfers) and interrupts (for completion IRQs)
+    gba->dma.bus = &gba->bus;
+    gba->dma.interrupts = &gba->interrupts;
+
     gba->running = true;
     gba->frame_complete = false;
 
