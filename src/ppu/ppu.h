@@ -57,9 +57,17 @@ void ppu_set_vblank(PPU* ppu, bool active);
 void ppu_increment_vcount(PPU* ppu);
 bool ppu_vcount_match(PPU* ppu);
 
+// Background renderers (background.c)
+void ppu_render_bg_regular(PPU* ppu, int bg_index);
+void ppu_render_bg_affine(PPU* ppu, int bg_index);
+
 // Bitmap mode renderers (bitmap.c)
 void ppu_render_mode3(PPU* ppu);
 void ppu_render_mode4(PPU* ppu);
 void ppu_render_mode5(PPU* ppu);
+
+// Sprite renderer (sprites.c)
+void ppu_render_sprites_at_priority(PPU* ppu, int priority);
+void ppu_render_sprites(PPU* ppu);
 
 #endif // PPU_H
