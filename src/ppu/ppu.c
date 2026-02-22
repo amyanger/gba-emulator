@@ -1,5 +1,9 @@
 #include "ppu.h"
 
+#ifdef ENABLE_XRAY
+#include "frontend/xray/xray.h"
+#endif
+
 void ppu_init(PPU* ppu) {
     memset(ppu, 0, sizeof(PPU));
     // Note: palette_ram/vram/oam pointers are zeroed here.
@@ -98,6 +102,13 @@ void ppu_render_scanline(PPU* ppu) {
     // Copy scanline to framebuffer
     memcpy(&ppu->framebuffer[line * SCREEN_WIDTH], ppu->scanline_buffer,
            SCREEN_WIDTH * sizeof(uint16_t));
+
+#ifdef ENABLE_XRAY
+    // Accumulate layer map for X-Ray visualization
+    if (g_xray && g_xray->active && line < XRAY_LAYER_H) {
+        memcpy(g_xray->layer_map[line], ppu->top_layer, SCREEN_WIDTH);
+    }
+#endif
 
     // Advance affine internal reference points for the next scanline.
     // Per GBATEK: after each visible scanline, ref_x += PB and ref_y += PD.

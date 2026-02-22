@@ -3,6 +3,10 @@
 #include "apu/apu.h"
 #include "input/input.h"
 
+#ifdef ENABLE_XRAY
+#include "frontend/xray/xray.h"
+#endif
+
 bool frontend_init(Frontend* fe, int scale) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
         LOG_ERROR("SDL init failed: %s", SDL_GetError());
@@ -79,6 +83,16 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             gba->running = false;
             break;
 
+#ifdef ENABLE_XRAY
+        case SDL_WINDOWEVENT:
+            /* Handle X-Ray window close button */
+            if (event.window.event == SDL_WINDOWEVENT_CLOSE &&
+                g_xray && g_xray->window_id == event.window.windowID) {
+                xray_toggle(g_xray);
+            }
+            break;
+#endif
+
         case SDL_KEYDOWN: {
             uint16_t key = sdl_to_gba_key(event.key.keysym.scancode);
             if (key) input_press(&gba->input, key);
@@ -88,6 +102,13 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 fe->running = false;
                 gba->running = false;
             }
+
+#ifdef ENABLE_XRAY
+            // F2 toggles X-Ray mode
+            if (event.key.keysym.scancode == SDL_SCANCODE_F2 && g_xray) {
+                xray_toggle(g_xray);
+            }
+#endif
             break;
         }
 

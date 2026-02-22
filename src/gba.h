@@ -12,6 +12,10 @@
 #include "cartridge/cartridge.h"
 #include "input/input.h"
 
+#ifdef ENABLE_XRAY
+typedef struct XRayState XRayState;
+#endif
+
 struct GBA {
     ARM7TDMI cpu;
     Bus bus;
@@ -26,6 +30,10 @@ struct GBA {
     uint64_t total_cycles;
     bool frame_complete;
     bool running;
+
+#ifdef ENABLE_XRAY
+    XRayState* xray;
+#endif
 };
 typedef struct GBA GBA;
 

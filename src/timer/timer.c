@@ -2,6 +2,10 @@
 #include "interrupt/interrupt.h"
 #include "apu/apu.h"
 
+#ifdef ENABLE_XRAY
+#include "frontend/xray/xray.h"
+#endif
+
 static const uint16_t prescaler_values[] = {1, 64, 256, 1024};
 
 void timer_init(Timer timers[4]) {
@@ -51,6 +55,9 @@ void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts, AP
             if (t->counter == 0) {
                 // Overflow: reload and fire IRQ/audio callbacks
                 t->counter = t->reload;
+#ifdef ENABLE_XRAY
+                xray_notify_timer_overflow(g_xray, i);
+#endif
 
                 if (t->irq_enable) {
                     interrupt_request(interrupts, timer_irq_bits[i]);
@@ -69,6 +76,9 @@ void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts, AP
                     if (timers[next].counter == 0) {
                         // Cascaded timer overflowed
                         timers[next].counter = timers[next].reload;
+#ifdef ENABLE_XRAY
+                        xray_notify_timer_overflow(g_xray, next);
+#endif
                         if (timers[next].irq_enable) {
                             interrupt_request(interrupts, timer_irq_bits[next]);
                         }

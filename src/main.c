@@ -3,6 +3,11 @@
 #include "frontend/frontend.h"
 #include <stdio.h>
 
+#ifdef ENABLE_XRAY
+#include "frontend/xray/xray.h"
+static XRayState s_xray_state;
+#endif
+
 static void print_usage(const char* prog) {
     printf("Usage: %s <rom.gba> [options]\n", prog);
     printf("Options:\n");
@@ -60,6 +65,12 @@ int main(int argc, char* argv[]) {
     // Initialize audio
     frontend_audio_init(&fe);
 
+#ifdef ENABLE_XRAY
+    xray_init(&s_xray_state);
+    gba.xray = &s_xray_state;
+    g_xray = &s_xray_state;
+#endif
+
     LOG_INFO("Starting emulation...");
 
     // Main loop
@@ -70,12 +81,19 @@ int main(int argc, char* argv[]) {
         if (gba.frame_complete) {
             frontend_present_frame(&fe, gba.ppu.framebuffer);
             frontend_push_audio(&fe, &gba.apu);
+#ifdef ENABLE_XRAY
+            xray_render(&s_xray_state, &gba);
+#endif
             frontend_frame_sync(&fe);
         }
     }
 
     // Cleanup
     cartridge_save_to_file(&gba.cart);
+#ifdef ENABLE_XRAY
+    xray_destroy(&s_xray_state);
+    g_xray = NULL;
+#endif
     frontend_destroy(&fe);
     gba_destroy(&gba);
 

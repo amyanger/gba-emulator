@@ -1,6 +1,10 @@
 #include "interrupt.h"
 #include "ppu/ppu.h"
 
+#ifdef ENABLE_XRAY
+#include "frontend/xray/xray.h"
+#endif
+
 void interrupt_init(InterruptController* ic) {
     ic->ime = false;
     ic->ie = 0;
@@ -9,6 +13,9 @@ void interrupt_init(InterruptController* ic) {
 
 void interrupt_request(InterruptController* ic, uint16_t irq_bit) {
     ic->irf |= irq_bit;
+#ifdef ENABLE_XRAY
+    xray_notify_irq(g_xray, irq_bit);
+#endif
 }
 
 void interrupt_request_if_enabled(InterruptController* ic, PPU* ppu, uint16_t irq_bit) {
@@ -18,6 +25,9 @@ void interrupt_request_if_enabled(InterruptController* ic, PPU* ppu, uint16_t ir
     if (irq_bit == IRQ_VCOUNT && !(ppu->dispstat & (1 << 5))) return;
 
     ic->irf |= irq_bit;
+#ifdef ENABLE_XRAY
+    xray_notify_irq(g_xray, irq_bit);
+#endif
 }
 
 void interrupt_acknowledge(InterruptController* ic, uint16_t val) {

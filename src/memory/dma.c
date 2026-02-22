@@ -2,6 +2,10 @@
 #include "bus.h"
 #include "interrupt/interrupt.h"
 
+#ifdef ENABLE_XRAY
+#include "frontend/xray/xray.h"
+#endif
+
 void dma_init(DMAController* dma) {
     memset(dma->channels, 0, sizeof(dma->channels));
     dma->active_channel = -1;
@@ -63,6 +67,10 @@ int dma_execute(DMAController* dma, int ch) {
     if (!bus || !dc->enabled) return 0;
 
     dma->active_channel = ch;
+
+#ifdef ENABLE_XRAY
+    xray_notify_dma_trigger(g_xray, ch);
+#endif
 
     // Determine transfer count.
     // When count is 0, use the maximum: 0x4000 for channels 0-2, 0x10000 for ch 3.

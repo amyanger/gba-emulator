@@ -18,6 +18,9 @@ endif()
 
 find_package(SDL2 REQUIRED)
 
+# X-Ray hardware visualization mode (default ON)
+option(ENABLE_XRAY "Enable Hardware X-Ray Mode (F2 hotkey)" ON)
+
 set(SOURCES
     src/main.c
     src/gba.c
@@ -47,6 +50,21 @@ set(SOURCES
     src/frontend/frontend.c
 )
 
+# X-Ray source files (only compiled when ENABLE_XRAY is ON)
+set(XRAY_SOURCES
+    src/frontend/xray/xray.c
+    src/frontend/xray/xray_draw.c
+    src/frontend/xray/xray_cpu.c
+    src/frontend/xray/xray_activity.c
+    src/frontend/xray/xray_ppu.c
+    src/frontend/xray/xray_tiles.c
+    src/frontend/xray/xray_audio.c
+)
+
+if(ENABLE_XRAY)
+    list(APPEND SOURCES ${XRAY_SOURCES})
+endif()
+
 add_executable(gba_emulator ${SOURCES})
 
 target_include_directories(gba_emulator PRIVATE
@@ -56,3 +74,7 @@ target_include_directories(gba_emulator PRIVATE
 )
 
 target_link_libraries(gba_emulator PRIVATE ${SDL2_LIBRARIES})
+
+if(ENABLE_XRAY)
+    target_compile_definitions(gba_emulator PRIVATE ENABLE_XRAY)
+endif()
