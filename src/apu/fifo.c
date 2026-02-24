@@ -7,5 +7,6 @@ void fifo_reset(FIFO* fifo) {
     fifo->read_idx = 0;
     fifo->write_idx = 0;
     fifo->count = 0;
-    memset(fifo->buffer, 0, FIFO_SIZE);
+    /* Do NOT clear last_sample — hardware DAC holds its last output value
+     * even after FIFO flush. Buffer contents are dead once count == 0. */
 }

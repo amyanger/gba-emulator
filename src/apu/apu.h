@@ -21,6 +21,7 @@ typedef struct {
     uint8_t write_idx;
     uint8_t count;
     uint8_t timer_id; // Which timer drives playback (0 or 1)
+    int8_t last_sample; // Last output sample (held on underflow per hardware)
 } FIFO;
 
 typedef struct {
@@ -106,6 +107,10 @@ struct APU {
     int16_t sample_buffer[SAMPLE_BUFFER_SIZE * 2];
     uint32_t write_pos;
     uint32_t read_pos;
+
+    // Low-pass filter state (smooths FIFO step artifacts)
+    int16_t prev_left;
+    int16_t prev_right;
 
     // DMA controller (for FIFO refill triggering)
     DMAController* dma;

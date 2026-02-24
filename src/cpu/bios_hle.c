@@ -1,6 +1,7 @@
 #include "bios_hle.h"
 #include "arm7tdmi.h"
 #include "memory/bus.h"
+#include "apu/apu.h"
 #include <math.h>
 
 /*
@@ -857,6 +858,46 @@ static void swi_diff16bit_unfilter(ARM7TDMI* cpu) {
 }
 
 /* ======================================================================
+ * SWI 0x19 — SoundBias
+ * ====================================================================== */
+static void swi_sound_bias(ARM7TDMI* cpu) {
+    /* R0: 0 = ramp bias down to 0x000, nonzero = ramp up to 0x200.
+     * HLE: apply instantly (ramp delay is inaudible in emulation).
+     * Preserve bits 14-15 (amplitude resolution setting). */
+    Bus* bus = cpu->bus;
+    if (!bus || !bus->apu) return;
+
+    uint16_t target = cpu->regs[0] ? 0x200 : 0x000;
+    uint16_t upper = bus->apu->soundbias & 0xC000;
+    bus->apu->soundbias = upper | target;
+
+    /* Sync io_regs backing store */
+    bus->io_regs[0x88] = (uint8_t)(bus->apu->soundbias);
+    bus->io_regs[0x89] = (uint8_t)(bus->apu->soundbias >> 8);
+}
+
+/* ======================================================================
+ * SWI 0x1F — MidiKey2Freq
+ * ====================================================================== */
+static void swi_midi_key2freq(ARM7TDMI* cpu) {
+    /* R0 = pointer to WaveData struct, R1 = MIDI key, R2 = fine pitch
+     * WaveData.freq is at offset +4 (uint32_t).
+     * Formula: result = WaveData.freq / 2^((180 - mk - fp/256) / 12)
+     * Per GBATEK and mGBA reference implementation. */
+    uint32_t wave_freq = bus_read32(cpu->bus, cpu->regs[0] + 4);
+    uint32_t mk = cpu->regs[1];
+    uint32_t fp = cpu->regs[2];
+
+    float exponent = (180.0f - (float)mk - (float)fp / 256.0f) / 12.0f;
+    float divisor = exp2f(exponent);
+
+    float result = (float)wave_freq / divisor;
+    if (result > (float)UINT32_MAX) result = (float)UINT32_MAX;
+    if (result < 0.0f) result = 0.0f;
+    cpu->regs[0] = (uint32_t)result;
+}
+
+/* ======================================================================
  * Main SWI dispatch
  * ====================================================================== */
 void bios_hle_execute(ARM7TDMI* cpu, uint32_t swi_num) {
@@ -1019,6 +1060,25 @@ void bios_hle_execute(ARM7TDMI* cpu, uint32_t swi_num) {
 
     case 0x18: /* Diff16bitUnFilter */
         swi_diff16bit_unfilter(cpu);
+        break;
+
+    case 0x19: /* SoundBias */
+        swi_sound_bias(cpu);
+        break;
+
+    case 0x1A: /* SoundDriverInit — stub for HLE */
+    case 0x1B: /* SoundDriverMode — stub for HLE */
+    case 0x1C: /* SoundDriverMain — stub for HLE */
+    case 0x1D: /* SoundDriverVSync — stub for HLE */
+    case 0x1E: /* SoundChannelClear — stub for HLE */
+        break;
+
+    case 0x1F: /* MidiKey2Freq */
+        swi_midi_key2freq(cpu);
+        break;
+
+    case 0x28: /* SoundDriverVSyncOff — stub for HLE */
+    case 0x29: /* SoundDriverVSyncOn — stub for HLE */
         break;
 
     default:

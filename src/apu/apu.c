@@ -13,22 +13,25 @@ void apu_fifo_write(APU* apu, int fifo_id, uint32_t data) {
     FIFO* fifo = (fifo_id == 0) ? &apu->fifo_a : &apu->fifo_b;
 
     for (int i = 0; i < 4; i++) {
-        if (fifo->count < FIFO_SIZE) {
-            fifo->buffer[fifo->write_idx] = (int8_t)(data >> (i * 8));
-            fifo->write_idx = (fifo->write_idx + 1) % FIFO_SIZE;
-            fifo->count++;
+        /* Per hardware: writing to a full FIFO resets it to empty */
+        if (fifo->count >= FIFO_SIZE) {
+            fifo_reset(fifo);
         }
+        fifo->buffer[fifo->write_idx] = (int8_t)(data >> (i * 8));
+        fifo->write_idx = (fifo->write_idx + 1) % FIFO_SIZE;
+        fifo->count++;
     }
 }
 
 int8_t apu_fifo_pop(APU* apu, int fifo_id) {
     FIFO* fifo = (fifo_id == 0) ? &apu->fifo_a : &apu->fifo_b;
 
-    if (fifo->count == 0) return 0;
+    if (fifo->count == 0) return fifo->last_sample;
 
     int8_t sample = fifo->buffer[fifo->read_idx];
     fifo->read_idx = (fifo->read_idx + 1) % FIFO_SIZE;
     fifo->count--;
+    fifo->last_sample = sample;
     return sample;
 }
 
@@ -138,9 +141,11 @@ static void apu_mix_sample(APU* apu) {
     int32_t fifo_a = (int32_t)apu->fifo_a_latch;
     int32_t fifo_b = (int32_t)apu->fifo_b_latch;
 
-    /* FIFO volume: bit 2 = FIFO A (0=50%, 1=100%), bit 3 = FIFO B */
-    if (!BIT(cnt_h, 2)) fifo_a >>= 1;
-    if (!BIT(cnt_h, 3)) fifo_b >>= 1;
+    /* FIFO volume: bit 2 = FIFO A (0=50%, 1=100%), bit 3 = FIFO B.
+     * Scale int8 samples to signed 10-bit range to match PSG output:
+     * 100% = shift left 2, 50% = shift left 1. */
+    fifo_a <<= BIT(cnt_h, 2) ? 2 : 1;
+    fifo_b <<= BIT(cnt_h, 3) ? 2 : 1;
 
     /* FIFO routing */
     if (BIT(cnt_h, 9))  left += fifo_a;   /* FIFO A to left */
@@ -160,9 +165,25 @@ static void apu_mix_sample(APU* apu) {
     if (right < 0) right = 0;
     if (right > 0x3FF) right = 0x3FF;
 
-    /* Convert 10-bit unsigned (centered at bias) to int16_t for SDL */
-    int16_t left_s16 = (int16_t)((left - (int32_t)bias) * 64);
-    int16_t right_s16 = (int16_t)((right - (int32_t)bias) * 64);
+    /* Convert 10-bit unsigned (centered at bias) to int16_t for SDL.
+     * Signed range is [-bias, 0x3FF-bias]. With default bias 0x100,
+     * that's [-256, +767]. Scale by 32 to fill int16_t without overflow. */
+    int32_t left_signed = (left - (int32_t)bias) * 32;
+    int32_t right_signed = (right - (int32_t)bias) * 32;
+    if (left_signed > 32767) left_signed = 32767;
+    if (left_signed < -32768) left_signed = -32768;
+    if (right_signed > 32767) right_signed = 32767;
+    if (right_signed < -32768) right_signed = -32768;
+    int16_t left_s16 = (int16_t)left_signed;
+    int16_t right_s16 = (int16_t)right_signed;
+
+    /* Single-pole IIR low-pass filter (alpha=0.75, cutoff ~10 kHz @ 32768 Hz).
+     * Smooths the staircase from FIFO's ~13 kHz update rate being sampled at
+     * 32 kHz output rate — mimics the hardware DAC's analog RC filtering. */
+    left_s16 = (int16_t)((apu->prev_left + 3 * (int32_t)left_s16) / 4);
+    right_s16 = (int16_t)((apu->prev_right + 3 * (int32_t)right_s16) / 4);
+    apu->prev_left = left_s16;
+    apu->prev_right = right_s16;
 
     /* Write to ring buffer (leave 1-slot gap to distinguish full from empty) */
     uint32_t pos = apu->write_pos;
