@@ -151,5 +151,14 @@ bool ppu_vcount_match(PPU* ppu) {
     } else {
         ppu->dispstat &= ~(1 << 2);
     }
+
+    /* Diagnostic: log DISPSTAT and VCount match state */
+    static uint32_t vcount_diag_count = 0;
+    if (vcount_diag_count < 5 && (ppu->dispstat & (1 << 5))) {
+        LOG_INFO("[VCOUNT DIAG] vcount=%u target=%u match=%d dispstat=0x%04X",
+                 ppu->vcount, target, match, ppu->dispstat);
+        vcount_diag_count++;
+    }
+
     return match && (ppu->dispstat & (1 << 5)); // Only fire if VCount IRQ enabled
 }

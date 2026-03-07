@@ -397,6 +397,14 @@ void cpu_run(ARM7TDMI* cpu, int cycles) {
         if (cpu->halted) {
             if (cpu_check_irq(cpu)) {
                 cpu->halted = false;
+                /* Diagnostic: log IRQ wake-up */
+                static uint32_t wake_count = 0;
+                wake_count++;
+                if (wake_count <= 5 || wake_count % 300 == 0) {
+                    InterruptController* ic = cpu->bus->interrupts;
+                    LOG_INFO("[IRQ WAKE] #%u IE=0x%04X IF=0x%04X IME=%d",
+                             wake_count, ic->ie, ic->irf, ic->ime);
+                }
                 cpu_handle_irq(cpu);
             } else {
                 /* Stay halted: consume all remaining cycles */
@@ -407,6 +415,14 @@ void cpu_run(ARM7TDMI* cpu, int cycles) {
 
         /* Check for pending IRQ before each instruction */
         if (cpu_check_irq(cpu)) {
+            /* Diagnostic: log active IRQ dispatch */
+            static uint32_t active_irq_count = 0;
+            active_irq_count++;
+            if (active_irq_count <= 10 || active_irq_count % 300 == 0) {
+                InterruptController* ic = cpu->bus->interrupts;
+                LOG_INFO("[IRQ ACTIVE] #%u IE=0x%04X IF=0x%04X PC=0x%08X",
+                         active_irq_count, ic->ie, ic->irf, cpu->regs[REG_PC]);
+            }
             cpu_handle_irq(cpu);
         }
 

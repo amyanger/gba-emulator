@@ -263,6 +263,16 @@ static uint8_t io_read8(Bus* bus, uint32_t addr) {
 static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
     uint32_t offset = addr & 0x3FF;
 
+    /* Diagnostic: catch ANY write to low I/O (PPU regs) */
+    if (offset <= 0x0F) {
+        static uint32_t low_io_writes = 0;
+        low_io_writes++;
+        if (low_io_writes <= 40) {
+            LOG_INFO("[LOW IO WRITE] #%u addr=0x%08X offset=0x%03X val=0x%02X",
+                     low_io_writes, addr, offset, val);
+        }
+    }
+
     switch (offset) {
 
     /* --- PPU Registers (0x00-0x07) --- */
@@ -280,6 +290,15 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         }
         return;
     case 0x04:  /* REG_DISPSTAT low byte — bits 0-2 are read-only */
+    {
+        /* Diagnostic: log ALL DISPSTAT low byte writes */
+        static uint32_t dispstat_lo_log = 0;
+        dispstat_lo_log++;
+        if (dispstat_lo_log <= 20) {
+            LOG_INFO("[DISPSTAT DIAG] lo write #%u: val=0x%02X ppu=%p dispstat_before=0x%04X",
+                     dispstat_lo_log, val, (void*)bus->ppu,
+                     bus->ppu ? bus->ppu->dispstat : 0xFFFF);
+        }
         if (bus->ppu) {
             /* Preserve read-only flags (VBlank, HBlank, VCount match) */
             bus->ppu->dispstat = (bus->ppu->dispstat & 0xFF07)
@@ -289,13 +308,24 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
             bus->io_regs[offset] = val;
         }
         return;
+    }
     case 0x05:  /* REG_DISPSTAT high byte (VCount target + upper bits) */
+    {
+        /* Diagnostic: log ALL DISPSTAT high byte writes */
+        static uint32_t dispstat_hi_log = 0;
+        dispstat_hi_log++;
+        if (dispstat_hi_log <= 20) {
+            LOG_INFO("[DISPSTAT DIAG] hi write #%u: val=0x%02X dispstat_before=0x%04X",
+                     dispstat_hi_log, val,
+                     bus->ppu ? bus->ppu->dispstat : 0xFFFF);
+        }
         bus->io_regs[offset] = val;
         if (bus->ppu) {
             bus->ppu->dispstat = (bus->ppu->dispstat & 0x00FF)
                                | ((uint16_t)val << 8);
         }
         return;
+    }
     case 0x06:  /* REG_VCOUNT low byte — read-only, ignore writes */
     case 0x07:  /* REG_VCOUNT high byte — read-only, ignore writes */
         return;
@@ -996,6 +1026,19 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
     case 0xC8: case 0xC9: case 0xCA: case 0xCB:  /* DMA2 SAD */
     case 0xCC: case 0xCD: case 0xCE: case 0xCF:  /* DMA2 DAD */
     case 0xD0: case 0xD1: case 0xD2:              /* DMA2 CNT_L + CNT_H lo */
+    {
+        /* Diagnostic: watch DMA1/DMA2 SAD writes after init */
+        static uint32_t dma_sad_write_count = 0;
+        if (offset >= 0xBC && offset <= 0xCB) {
+            dma_sad_write_count++;
+            if (dma_sad_write_count <= 20 || dma_sad_write_count % 500 == 0) {
+                LOG_INFO("[DMA SAD] #%u offset=0x%02X val=0x%02X",
+                         dma_sad_write_count, offset, val);
+            }
+        }
+        bus->io_regs[offset] = val;
+        return;
+    }
     case 0xD4: case 0xD5: case 0xD6: case 0xD7:  /* DMA3 SAD */
     case 0xD8: case 0xD9: case 0xDA: case 0xDB:  /* DMA3 DAD */
     case 0xDC: case 0xDD: case 0xDE:              /* DMA3 CNT_L + CNT_H lo */
