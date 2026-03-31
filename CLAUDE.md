@@ -11,26 +11,33 @@ mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make
 # Run
 ./gba_emulator <rom.gba> --bios <bios.bin> --scale 3
 
+# Run without BIOS (HLE BIOS kicks in automatically)
+./gba_emulator <rom.gba> --scale 3
+
+# Build without Hardware X-Ray Mode
+mkdir -p build && cd build && cmake .. -DENABLE_XRAY=OFF && make
+
 # Clean rebuild
 rm -rf build && mkdir build && cd build && cmake .. && make
 ```
 
 ## Dependencies
 
-- **SDL2**: `brew install sdl2`
-- **CMake 3.16+**: `brew install cmake`
+- **SDL2**: `apt install libsdl2-dev` (Linux) / `brew install sdl2` (macOS)
+- **CMake 3.16+**: `apt install cmake` (Linux) / `brew install cmake` (macOS)
 - No other external libraries. SDL2 is the only dependency.
 
 ## Project Structure
 
 ```
 src/
-  main.c              Entry point, CLI, main loop
+  main.c              Entry point, CLI argument parsing, main loop
   gba.h/c             Top-level system struct, frame orchestration
   cpu/                 ARM7TDMI processor
     arm7tdmi.h/c       CPU state, registers, mode switching, run loop
     arm_instr.h/c      ARM (32-bit) instruction decoder/executor
     thumb_instr.h/c    Thumb (16-bit) instruction decoder/executor
+    bios_hle.h/c       High-Level Emulation of BIOS calls (no BIOS ROM required)
   memory/
     bus.h/c            Memory bus — ALL subsystem communication goes through here
     dma.h/c            4-channel DMA controller
@@ -49,18 +56,29 @@ src/
   timer/timer.h/c      4 cascadable 16-bit timers
   interrupt/interrupt.h/c  IRQ controller (IE/IF/IME)
   cartridge/
-    cartridge.h/c      ROM loading, save detection, file persistence
-    flash.h/c          Flash 128K save (Macronix protocol — Pokemon Emerald)
-    rtc.h/c            Real-time clock via GPIO pins
+    cartridge.h/c      ROM loading, save type auto-detection, file persistence
+    flash.h/c          Flash 64K/128K save (Macronix protocol — Pokemon Emerald)
+    rtc.h/c            Real-time clock via GPIO pins (partially implemented)
     sram.c             Battery-backed SRAM
-    eeprom.c           EEPROM (stub, not needed for Emerald)
-  input/input.h/c      Keypad registers (active-low)
+    eeprom.c           EEPROM (stub — not needed for Emerald)
+  input/input.h/c      Keypad registers (active-low), KEYCNT for key IRQs
   frontend/
-    frontend.h/c       SDL2 window, rendering, input polling, audio
+    frontend.h/c       SDL2 window, rendering, input polling, audio output
     debug.c            Register dump, instruction tracing (DEBUG builds only)
+    xray/              Hardware X-Ray visualization overlay (toggled with F2)
+      xray.h/c         X-Ray mode controller and main overlay
+      xray_draw.h/c    Primitive drawing helpers for overlay
+      xray_font.h      Built-in bitmap font for overlay text
+      xray_cpu.c       CPU state viewer (registers, flags, PC, cycles)
+      xray_ppu.c       PPU activity monitor (VCOUNT, DISPSTAT, scanline timing)
+      xray_tiles.c     Tile/sprite preview tools
+      xray_audio.c     Audio FIFO and channel visualization
+      xray_activity.c  Activity heatmap for memory/register access
 include/
   common.h             Fixed-width types, BIT/BITS macros, LOG macros, timing constants
-tests/                 Unit tests and test ROM runner scripts
+bios/                  Place GBA BIOS ROM here (optional — HLE BIOS works without it)
+roms/                  Place ROM files here for testing
+saves/                 Save files are written here automatically
 ```
 
 ## Architecture Rules
@@ -108,10 +126,8 @@ These are non-obvious behaviors that MUST be correct. Verify against GBATEK when
 
 ## Testing
 
-### Build and run tests
-```bash
-cd build && make gba_tests && ./gba_tests
-```
+### No unit test framework yet
+There is no automated test suite. The `tests/` directory does not exist yet. Validation is done via test ROMs and manual inspection.
 
 ### Test ROMs (place in `roms/` directory)
 - **jsmolka/gba-tests**: ARM/Thumb instruction correctness. Screen shows pass/fail per group.
@@ -129,8 +145,9 @@ cd build && make gba_tests && ./gba_tests
 7. Save -> close -> reload -> continue works
 8. Play 30+ minutes without crash
 
-### Debugging (DEBUG builds only)
-- **F1**: Register dump to stderr
+### Debugging
+- **F1**: Register dump to stderr (DEBUG builds only)
+- **F2**: Toggle Hardware X-Ray Mode — real-time overlay showing CPU state, PPU activity, audio FIFOs, tile/sprite previews, and memory access heatmaps. Built with `ENABLE_XRAY=ON` (default).
 - **Instruction trace**: Enable in `debug.c`, compare against mGBA trace output to find divergence points. This is the most valuable debugging tool.
 
 ## Implementation Phases
@@ -139,12 +156,19 @@ Current target: **Pokemon Emerald from boot to credits.**
 
 | Phase | Focus | Status |
 |-------|-------|--------|
-| 1 | CPU (ARM + Thumb instructions) + Memory Bus | In progress |
-| 2 | PPU basics + SDL2 frontend (see pixels) | Not started |
-| 3 | Full PPU + sprites (title screen renders) | Not started |
-| 4 | Audio (timers + DMA + FIFO chain) | Not started |
-| 5 | Flash 128K save + RTC | Not started |
-| 6 | Polish + accuracy (full playthrough) | Not started |
+| 1 | CPU (ARM + Thumb instructions) + Memory Bus | **Complete** — full ARM/Thumb decoders, HLE BIOS, DMA, pipeline |
+| 2 | PPU basics + SDL2 frontend (see pixels) | **Complete** — bitmap modes, tiled BG, scanline renderer |
+| 3 | Full PPU + sprites (title screen renders) | **Mostly complete** — sprites, affine, blending work. Windowing & mosaic stubbed |
+| 4 | Audio (timers + DMA + FIFO chain) | **Complete** — FIFO playback, legacy channels, DAC filter, SDL audio |
+| 5 | Flash 128K save + RTC | **Partially complete** — Flash 64K/128K + SRAM work. EEPROM & RTC stubbed |
+| 6 | Polish + accuracy (full playthrough) | In progress |
+
+### Known gaps (not yet implemented)
+- **Windowing** (WIN0, WIN1, OBJWIN) — declared in effects.c but not functional
+- **Mosaic effect** — declared in effects.c but not functional
+- **EEPROM save protocol** — bit-serial protocol not implemented (not needed for Emerald)
+- **RTC GPIO serial** — partially implemented, not fully functional
+- **Automated test suite** — no unit tests or CI
 
 ## Key References
 
