@@ -73,7 +73,7 @@ target_include_directories(gba_emulator PRIVATE
     ${SDL2_INCLUDE_DIRS}
 )
 
-target_link_libraries(gba_emulator PRIVATE ${SDL2_LIBRARIES})
+target_link_libraries(gba_emulator PRIVATE ${SDL2_LIBRARIES} m)
 
 if(ENABLE_XRAY)
     target_compile_definitions(gba_emulator PRIVATE ENABLE_XRAY)
