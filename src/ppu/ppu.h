@@ -45,6 +45,12 @@ struct PPU {
     uint16_t second_pixel[SCREEN_WIDTH]; // Color of second-highest-priority pixel
     uint8_t second_layer[SCREEN_WIDTH];  // Layer ID of second pixel
 
+    // OBJ window: true if an OBJ-window sprite covers this pixel on the current scanline
+    bool obj_window[SCREEN_WIDTH];
+
+    // Per-pixel flag set by windowing: false = color effects disabled for this pixel
+    bool win_blend_enable[SCREEN_WIDTH];
+
     // Memory pointers (point into bus memory)
     uint8_t* palette_ram;
     uint8_t* vram;
@@ -74,8 +80,10 @@ void ppu_render_mode5(PPU* ppu);
 // Sprite renderer (sprites.c)
 void ppu_render_sprites_at_priority(PPU* ppu, int priority);
 void ppu_render_sprites(PPU* ppu);
+void ppu_build_obj_window(PPU* ppu);
 
 // Effects (effects.c)
+void ppu_apply_windowing_scanline(PPU* ppu);
 void ppu_apply_blend_scanline(PPU* ppu);
 
 #endif // PPU_H
