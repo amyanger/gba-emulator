@@ -34,6 +34,7 @@ void ppu_render_scanline(PPU* ppu) {
         ppu->top_layer[x] = 5;       // backdrop
         ppu->second_pixel[x] = backdrop;
         ppu->second_layer[x] = 5;    // backdrop
+        ppu->win_blend_enable[x] = true;
     }
 
     switch (mode) {
@@ -95,6 +96,13 @@ void ppu_render_scanline(PPU* ppu) {
         if (BIT(ppu->dispcnt, 12)) ppu_render_sprites(ppu);
         break;
     }
+
+    // Build OBJ window mask (must happen after sprite rendering)
+    ppu_build_obj_window(ppu);
+
+    // Apply windowing: mask out layers that are disabled in each window region.
+    // Must happen after all compositing, before blending.
+    ppu_apply_windowing_scanline(ppu);
 
     // Apply color blending effects (fade-to-black, fade-to-white, alpha blend)
     ppu_apply_blend_scanline(ppu);
