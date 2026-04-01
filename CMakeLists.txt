@@ -47,6 +47,8 @@ set(SOURCES
     src/cartridge/eeprom.c
     src/cartridge/rtc.c
     src/input/input.c
+    src/cheat/cheat.c
+    src/cheat/cheat_file.c
     src/frontend/frontend.c
 )
 

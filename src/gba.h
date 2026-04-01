@@ -11,6 +11,7 @@
 #include "interrupt/interrupt.h"
 #include "cartridge/cartridge.h"
 #include "input/input.h"
+#include "cheat/cheat.h"
 
 #ifdef ENABLE_XRAY
 typedef struct XRayState XRayState;
@@ -26,6 +27,7 @@ struct GBA {
     InterruptController interrupts;
     Cartridge cart;
     InputState input;
+    CheatEngine cheats;
 
     uint64_t total_cycles;
     bool frame_complete;

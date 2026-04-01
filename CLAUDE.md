@@ -14,6 +14,9 @@ mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make
 # Run without BIOS (HLE BIOS kicks in automatically)
 ./gba_emulator <rom.gba> --scale 3
 
+# Run with cheat codes
+./gba_emulator <rom.gba> --cheats cheats/emerald.cht
+
 # Build without Hardware X-Ray Mode
 mkdir -p build && cd build && cmake .. -DENABLE_XRAY=OFF && make
 
@@ -61,6 +64,9 @@ src/
     rtc.h/c            Real-time clock via GPIO pins (partially implemented)
     sram.c             Battery-backed SRAM
     eeprom.c           EEPROM (stub — not needed for Emerald)
+  cheat/
+    cheat.h/c          Cheat engine — GameShark/Action Replay + CodeBreaker
+    cheat_file.h/c     Cheat file (.cht) parser and writer
   input/input.h/c      Keypad registers (active-low), KEYCNT for key IRQs
   frontend/
     frontend.h/c       SDL2 window, rendering, input polling, audio output

@@ -24,6 +24,7 @@ void gba_init(GBA* gba) {
     dma_init(&gba->dma);
     interrupt_init(&gba->interrupts);
     input_init(&gba->input);
+    cheat_init(&gba->cheats);
 
     // PPU gets pointers to VRAM/palette/OAM in bus — AFTER ppu_init()
     // so the memset inside ppu_init doesn't wipe them
@@ -95,6 +96,9 @@ void gba_run_frame(GBA* gba) {
             ppu_set_vblank(&gba->ppu, true);
             interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_VBLANK);
             dma_on_vblank(&gba->dma);
+
+            // Apply cheat codes at VBlank (matches real cheat device timing)
+            cheat_apply(&gba->cheats, &gba->bus);
 
             // Reload affine reference points from latches at VBlank start.
             // Per GBATEK: the internal reference point registers are reloaded
