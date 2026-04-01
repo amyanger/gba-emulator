@@ -14,6 +14,9 @@ mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make
 # Run without BIOS (HLE BIOS kicks in automatically)
 ./gba_emulator <rom.gba> --scale 3
 
+# Run with cheat codes
+./gba_emulator <rom.gba> --cheats cheats/emerald.cht
+
 # Build without Hardware X-Ray Mode
 mkdir -p build && cd build && cmake .. -DENABLE_XRAY=OFF && make
 
@@ -47,7 +50,7 @@ src/
     background.c       Tiled BG rendering (modes 0-2)
     bitmap.c           Bitmap modes 3-5
     sprites.c          OAM sprite rendering
-    effects.c          Blending, windowing (functional), mosaic (stub)
+    effects.c          Blending, windowing, mosaic
     affine.c           Rotation/scaling math
   apu/                 Audio Processing Unit
     apu.h/c            Mixer, FIFO management, sample buffer
@@ -61,6 +64,9 @@ src/
     rtc.h/c            Real-time clock via GPIO pins (partially implemented)
     sram.c             Battery-backed SRAM
     eeprom.c           EEPROM (stub — not needed for Emerald)
+  cheat/
+    cheat.h/c          Cheat engine — GameShark/Action Replay + CodeBreaker
+    cheat_file.h/c     Cheat file (.cht) parser and writer
   input/input.h/c      Keypad registers (active-low), KEYCNT for key IRQs
   frontend/
     frontend.h/c       SDL2 window, rendering, input polling, audio output
@@ -158,13 +164,12 @@ Current target: **Pokemon Emerald from boot to credits.**
 |-------|-------|--------|
 | 1 | CPU (ARM + Thumb instructions) + Memory Bus | **Complete** — full ARM/Thumb decoders, HLE BIOS, DMA, pipeline |
 | 2 | PPU basics + SDL2 frontend (see pixels) | **Complete** — bitmap modes, tiled BG, scanline renderer |
-| 3 | Full PPU + sprites (title screen renders) | **Complete** — sprites, affine, blending, windowing work. Mosaic stubbed |
+| 3 | Full PPU + sprites (title screen renders) | **Complete** — sprites, affine, blending, windowing, mosaic |
 | 4 | Audio (timers + DMA + FIFO chain) | **Complete** — FIFO playback, legacy channels, DAC filter, SDL audio |
 | 5 | Flash 128K save + RTC | **Partially complete** — Flash 64K/128K + SRAM work. EEPROM & RTC stubbed |
 | 6 | Polish + accuracy (full playthrough) | In progress |
 
 ### Known gaps (not yet implemented)
-- **Mosaic effect** — declared in effects.c but not functional
 - **EEPROM save protocol** — bit-serial protocol not implemented (not needed for Emerald)
 - **RTC GPIO serial** — partially implemented, not fully functional
 - **WAITCNT register** — stubbed, no cartridge wait-state timing

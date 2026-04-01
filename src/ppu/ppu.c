@@ -35,6 +35,7 @@ void ppu_render_scanline(PPU* ppu) {
         ppu->second_pixel[x] = backdrop;
         ppu->second_layer[x] = 5;    // backdrop
         ppu->win_blend_enable[x] = true;
+        ppu->obj_mosaic[x] = false;
     }
 
     switch (mode) {
@@ -96,6 +97,10 @@ void ppu_render_scanline(PPU* ppu) {
         if (BIT(ppu->dispcnt, 12)) ppu_render_sprites(ppu);
         break;
     }
+
+    // Apply mosaic: horizontal post-process on composited pixels.
+    // Vertical mosaic is already applied during BG/sprite rendering.
+    ppu_apply_mosaic_scanline(ppu);
 
     // Build OBJ window mask (must happen after sprite rendering)
     ppu_build_obj_window(ppu);

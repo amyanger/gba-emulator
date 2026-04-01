@@ -1,5 +1,6 @@
 #include "gba.h"
 #include "cpu/arm7tdmi.h"
+#include "cheat/cheat_file.h"
 #include "frontend/frontend.h"
 #include <stdio.h>
 
@@ -13,6 +14,7 @@ static void print_usage(const char* prog) {
     printf("Options:\n");
     printf("  --bios <file>   Load GBA BIOS ROM\n");
     printf("  --scale <n>     Window scale factor (default: 3)\n");
+    printf("  --cheats <file> Load cheat codes from file (.cht format)\n");
 }
 
 int main(int argc, char* argv[]) {
@@ -23,6 +25,7 @@ int main(int argc, char* argv[]) {
 
     const char* rom_path = argv[1];
     const char* bios_path = NULL;
+    const char* cheat_path = NULL;
     int scale = 3;
 
     // Parse arguments
@@ -31,6 +34,8 @@ int main(int argc, char* argv[]) {
             bios_path = argv[++i];
         } else if (strcmp(argv[i], "--scale") == 0 && i + 1 < argc) {
             scale = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--cheats") == 0 && i + 1 < argc) {
+            cheat_path = argv[++i];
         }
     }
 
@@ -52,6 +57,16 @@ int main(int argc, char* argv[]) {
     if (!gba_load_rom(&gba, rom_path)) {
         LOG_ERROR("Failed to load ROM: %s", rom_path);
         return 1;
+    }
+
+    // Load cheat codes if provided
+    if (cheat_path) {
+        int32_t loaded = cheat_file_load(&gba.cheats, cheat_path);
+        if (loaded < 0) {
+            LOG_WARN("Failed to load cheat file: %s", cheat_path);
+        } else {
+            LOG_INFO("Loaded %d cheats from %s", loaded, cheat_path);
+        }
     }
 
     // Initialize frontend (SDL2)
