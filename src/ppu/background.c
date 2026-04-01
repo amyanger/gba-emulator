@@ -33,8 +33,18 @@ void ppu_render_bg_regular(PPU* ppu, int bg_index) {
     uint32_t hofs = ppu->bg_hofs[bg_index] & 0x1FF;
     uint32_t vofs = ppu->bg_vofs[bg_index] & 0x1FF;
 
+    // Apply vertical mosaic: snap Y to the top of the current mosaic block.
+    // BGxCNT bit 6 enables mosaic for this BG.
+    uint16_t effective_vcount = ppu->vcount;
+    if (BIT(bgcnt, 6)) {
+        uint16_t bg_v_size = BITS(ppu->mosaic, 7, 4) + 1;
+        if (bg_v_size > 1) {
+            effective_vcount = ppu->vcount - (ppu->vcount % bg_v_size);
+        }
+    }
+
     // Y coordinate within the full map (wrapping)
-    uint32_t map_y = (ppu->vcount + vofs) % map_height;
+    uint32_t map_y = (effective_vcount + vofs) % map_height;
 
     // Which tile row (0-31 or 0-63) and pixel row within that tile (0-7)
     uint32_t tile_row = map_y / 8;
@@ -43,9 +53,21 @@ void ppu_render_bg_regular(PPU* ppu, int bg_index) {
     // Number of screen blocks per row: 2 if map is 512 wide, else 1
     uint32_t sbb_width = (map_width > 256) ? 2 : 1;
 
+    // Horizontal mosaic size for this BG (only used if mosaic enabled)
+    uint16_t bg_h_size = 1;
+    if (BIT(bgcnt, 6)) {
+        bg_h_size = BITS(ppu->mosaic, 3, 0) + 1;
+    }
+
     for (uint32_t screen_x = 0; screen_x < SCREEN_WIDTH; screen_x++) {
+        // Apply horizontal mosaic: snap X to the leftmost pixel in the block
+        uint32_t fetch_x = screen_x;
+        if (bg_h_size > 1) {
+            fetch_x = screen_x - (screen_x % bg_h_size);
+        }
+
         // X coordinate within the full map (wrapping)
-        uint32_t map_x = (screen_x + hofs) % map_width;
+        uint32_t map_x = (fetch_x + hofs) % map_width;
 
         // Which tile column and pixel column within that tile
         uint32_t tile_col = map_x / 8;
@@ -157,14 +179,43 @@ void ppu_render_bg_affine(PPU* ppu, int bg_index) {
     int32_t px = ppu->bg_ref_x[affine_idx];
     int32_t py = ppu->bg_ref_y[affine_idx];
 
+    // Apply vertical mosaic: rewind ref point to the top of the mosaic block.
+    // Each scanline advances ref by PB/PD, so we subtract the delta for
+    // (vcount - mosaic_start) scanlines.
+    if (BIT(bgcnt, 6)) {
+        uint16_t bg_v_size = BITS(ppu->mosaic, 7, 4) + 1;
+        if (bg_v_size > 1) {
+            uint16_t lines_back = ppu->vcount % bg_v_size;
+            px -= (int32_t)ppu->bg_pb[affine_idx] * (int32_t)lines_back;
+            py -= (int32_t)ppu->bg_pd[affine_idx] * (int32_t)lines_back;
+        }
+    }
+
     // PA and PC control horizontal stepping within a scanline.
     int16_t pa = ppu->bg_pa[affine_idx];
     int16_t pc = ppu->bg_pc[affine_idx];
 
+    // Horizontal mosaic size for affine BG
+    uint16_t bg_h_size = 1;
+    if (BIT(bgcnt, 6)) {
+        bg_h_size = BITS(ppu->mosaic, 3, 0) + 1;
+    }
+
     for (uint32_t screen_x = 0; screen_x < SCREEN_WIDTH; screen_x++) {
+        // Apply horizontal mosaic: use texture coords from the block-start column.
+        // The reference point at block_start = px - (screen_x % bg_h_size) * PA,
+        // py - (screen_x % bg_h_size) * PC.
+        int32_t sample_px = px;
+        int32_t sample_py = py;
+        if (bg_h_size > 1) {
+            uint32_t offset_in_block = screen_x % bg_h_size;
+            sample_px = px - (int32_t)pa * (int32_t)offset_in_block;
+            sample_py = py - (int32_t)pc * (int32_t)offset_in_block;
+        }
+
         // Convert from 8.8 fixed-point to integer pixel coordinates
-        int32_t tex_x = px >> 8;
-        int32_t tex_y = py >> 8;
+        int32_t tex_x = sample_px >> 8;
+        int32_t tex_y = sample_py >> 8;
 
         // Bounds check / wraparound
         if (wraparound) {

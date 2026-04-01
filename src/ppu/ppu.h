@@ -48,6 +48,9 @@ struct PPU {
     // OBJ window: true if an OBJ-window sprite covers this pixel on the current scanline
     bool obj_window[SCREEN_WIDTH];
 
+    // Per-pixel flag: true if the top OBJ pixel was from a mosaic-enabled sprite
+    bool obj_mosaic[SCREEN_WIDTH];
+
     // Per-pixel flag set by windowing: false = color effects disabled for this pixel
     bool win_blend_enable[SCREEN_WIDTH];
 
@@ -83,6 +86,7 @@ void ppu_render_sprites(PPU* ppu);
 void ppu_build_obj_window(PPU* ppu);
 
 // Effects (effects.c)
+void ppu_apply_mosaic_scanline(PPU* ppu);
 void ppu_apply_windowing_scanline(PPU* ppu);
 void ppu_apply_blend_scanline(PPU* ppu);
 

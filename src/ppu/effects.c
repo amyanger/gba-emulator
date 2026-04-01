@@ -223,15 +223,34 @@ void ppu_apply_windowing_scanline(PPU* ppu) {
 }
 
 // ---------------------------------------------------------------------------
-// Mosaic (stub -- not yet implemented)
+// Mosaic
 // ---------------------------------------------------------------------------
 
-// Apply mosaic effect to background or sprite scanline
-void ppu_apply_mosaic(PPU* ppu, uint16_t* scanline, int width, bool is_obj) {
-    // TODO: Group pixels into mosaic_h x mosaic_v blocks
-    // All pixels in a block take the color of the top-left pixel
-    (void)ppu;
-    (void)scanline;
-    (void)width;
-    (void)is_obj;
+// Apply mosaic post-processing to the composited scanline.
+//
+// BG horizontal mosaic is handled during per-BG rendering (background.c snaps
+// the source X coordinate). BG vertical mosaic is also in background.c.
+// OBJ vertical mosaic is in sprites.c (snaps local_y per-sprite).
+//
+// This function handles OBJ horizontal mosaic as a post-process, using the
+// per-pixel obj_mosaic[] flag set by sprites.c to respect per-sprite enable.
+//
+// MOSAIC register (0x400004C):
+//   Bits 8-11:  OBJ mosaic H-size (minus 1)
+void ppu_apply_mosaic_scanline(PPU* ppu) {
+    uint16_t obj_h_size = BITS(ppu->mosaic, 11, 8) + 1;
+    if (obj_h_size <= 1) return;
+
+    for (uint32_t x = 0; x < SCREEN_WIDTH; x++) {
+        // Only apply to OBJ pixels from mosaic-enabled sprites
+        if (ppu->top_layer[x] != 4) continue;
+        if (!ppu->obj_mosaic[x]) continue;
+
+        uint32_t block_start = x - (x % obj_h_size);
+        if (block_start != x
+            && ppu->top_layer[block_start] == 4
+            && ppu->obj_mosaic[block_start]) {
+            ppu->scanline_buffer[x] = ppu->scanline_buffer[block_start];
+        }
+    }
 }

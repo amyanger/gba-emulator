@@ -90,6 +90,15 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
         int32_t local_y = (int32_t)scanline - sprite_y;
         if (local_y < 0 || local_y >= height) continue;
 
+        // Apply vertical mosaic: snap sprite row to the top of the mosaic block.
+        // OAM attr0 bit 12 enables mosaic for this sprite.
+        if (BIT(attr0, 12)) {
+            uint16_t obj_v_size = BITS(ppu->mosaic, 15, 12) + 1;
+            if (obj_v_size > 1) {
+                local_y = local_y - (local_y % (int32_t)obj_v_size);
+            }
+        }
+
         // X coordinate: attr1 bits 8-0 (9-bit signed via sign-extending bit 8)
         int32_t sprite_x = BITS(attr1, 8, 0);
         if (BIT(attr1, 8)) {
@@ -196,6 +205,7 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
             ppu->second_layer[screen_x] = ppu->top_layer[screen_x];
             ppu->scanline_buffer[screen_x] = color;
             ppu->top_layer[screen_x] = 4;  // OBJ layer
+            ppu->obj_mosaic[screen_x] = BIT(attr0, 12);
         }
     }
 }
