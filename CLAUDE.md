@@ -156,6 +156,27 @@ There is no automated test suite. The `tests/` directory does not exist yet. Val
 - **F2**: Toggle Hardware X-Ray Mode — real-time overlay showing CPU state, PPU activity, audio FIFOs, tile/sprite previews, and memory access heatmaps. Built with `ENABLE_XRAY=ON` (default).
 - **Instruction trace**: Enable in `debug.c`, compare against mGBA trace output to find divergence points. This is the most valuable debugging tool.
 
+## Monitor Tool — Streaming Error Detection
+
+Use the Monitor tool to watch for errors in real-time during builds and testing:
+
+```bash
+# Stream build errors/warnings
+cd build && cmake .. && make 2>&1 | grep --line-buffered -E "error:|warning:|undefined reference|fatal"
+
+# Watch test ROM output for failures
+./gba_emulator <rom.gba> 2>&1 | grep --line-buffered -E "ERROR|FAIL|WARN|assertion"
+
+# Monitor debug trace divergence (compare against mGBA)
+./gba_emulator <rom.gba> 2>&1 | grep --line-buffered -E "PC=|SIGABRT|segfault|Bus error"
+```
+
+- Set `persistent: true` for session-length watches (e.g., monitoring emulator output during test ROM runs)
+- Use selective `grep` filters — instruction traces are extremely verbose
+- Use `TaskStop` to cancel early
+
+---
+
 ## Implementation Phases
 
 Current target: **Pokemon Emerald from boot to credits.**
