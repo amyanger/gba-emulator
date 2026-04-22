@@ -1,5 +1,6 @@
 #include "cartridge.h"
 #include "flash.h"
+#include "gpio.h"
 
 bool cartridge_load(Cartridge* cart, const char* path) {
     FILE* f = fopen(path, "rb");
@@ -57,6 +58,8 @@ bool cartridge_load(Cartridge* cart, const char* path) {
     if (cart->save_type == SAVE_FLASH128 || cart->save_type == SAVE_FLASH64) {
         flash_init(&cart->flash, cart->save_type == SAVE_FLASH128);
     }
+
+    gpio_init(cart);
 
     // Try to load existing save
     cartridge_load_save_file(cart);

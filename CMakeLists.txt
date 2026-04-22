@@ -46,6 +46,7 @@ set(SOURCES
     src/cartridge/sram.c
     src/cartridge/eeprom.c
     src/cartridge/rtc.c
+    src/cartridge/gpio.c
     src/input/input.c
     src/cheat/cheat.c
     src/cheat/cheat_file.c
@@ -109,6 +110,7 @@ set(LIB_SOURCES
     src/cartridge/sram.c
     src/cartridge/eeprom.c
     src/cartridge/rtc.c
+    src/cartridge/gpio.c
     src/input/input.c
     src/cheat/cheat.c
     src/cheat/cheat_file.c
@@ -119,6 +121,7 @@ add_executable(gba_tests
     tests/test_savestate.c
     tests/test_bus.c
     tests/test_cpu.c
+    tests/test_rtc.c
     ${LIB_SOURCES}
 )
 

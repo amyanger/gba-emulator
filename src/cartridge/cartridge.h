@@ -50,6 +50,12 @@ typedef struct {
     uint8_t data_buffer[8];
 } RTCState;
 
+typedef struct {
+    uint16_t data;        /* 0x080000C4: bits 0=SCK, 1=SIO, 2=CS, 3=unused */
+    uint16_t direction;   /* 0x080000C6: per-bit 1 = GBA output, 0 = GBA input */
+    uint16_t control;     /* 0x080000C8: bit 0 = read_enable */
+} GPIOState;
+
 struct Cartridge {
     uint8_t* rom;
     uint32_t rom_size;
@@ -58,6 +64,7 @@ struct Cartridge {
     FlashChip flash;
     uint8_t sram[0x8000]; // 32KB
     RTCState rtc;
+    GPIOState gpio;
 
     // ROM header info
     char title[13];
