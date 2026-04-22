@@ -220,7 +220,7 @@ void cartridge_save_to_file(Cartridge* cart) {
         break;
     }
 
-    if (expected > 0) write_rtc_trailer(f, cart);
+    if (expected > 0 && written == expected) write_rtc_trailer(f, cart);
     fclose(f);
 
     if (expected > 0 && written != expected) {
