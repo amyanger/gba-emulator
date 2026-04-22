@@ -242,12 +242,11 @@ Current target: **Pokemon Emerald from boot to credits.**
 | 2 | PPU basics + SDL2 frontend (see pixels) | **Complete** — bitmap modes, tiled BG, scanline renderer |
 | 3 | Full PPU + sprites (title screen renders) | **Complete** — sprites, affine, blending, windowing, mosaic |
 | 4 | Audio (timers + DMA + FIFO chain) | **Complete** — FIFO playback, legacy channels, DAC filter, SDL audio |
-| 5 | Flash 128K save + RTC | **Partially complete** — Flash 64K/128K + SRAM work. EEPROM & RTC stubbed |
+| 5 | Flash 128K save + RTC | **Complete** — Flash 64K/128K + SRAM + S-3511A RTC over GPIO with persistent offset. EEPROM still stubbed. |
 | 6 | Polish + accuracy (full playthrough) | In progress |
 
 ### Known gaps (not yet implemented)
 - **EEPROM save protocol** — bit-serial protocol not implemented (not needed for Emerald)
-- **RTC GPIO serial** — partially implemented, not fully functional
 - **WAITCNT register** — stubbed, no cartridge wait-state timing
 - **CI pipeline** — no GitHub Actions / CI yet (local unit tests exist via `gba_tests`)
 
