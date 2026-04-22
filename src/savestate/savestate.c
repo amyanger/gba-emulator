@@ -389,8 +389,8 @@ static void save_irq_chunk(WriteBuffer* wb, InterruptController* ic) {
 }
 
 static void save_cart_chunk(WriteBuffer* wb, Cartridge* cart) {
-    /* save_type + flash + flash meta + sram + GPIO (6) + RTC (22) */
-    uint32_t payload_size = 1 + 0x20000 + 4 + 0x8000 + 6 + 22;
+    /* save_type + flash + flash meta + sram + GPIO (6) + RTC (23) */
+    uint32_t payload_size = 1 + 0x20000 + 4 + 0x8000 + 6 + 23;
     write_chunk_header(wb, CHUNK_CART, payload_size);
 
     write_u8(wb, (uint8_t)cart->save_type);
