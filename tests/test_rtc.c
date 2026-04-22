@@ -209,6 +209,67 @@ TEST(rtc_status_roundtrip) {
     rtc_cs_low(&r);
 }
 
+/* End-to-end: drive a DateTime read through cartridge_read8/write8. */
+TEST(rtc_e2e_datetime_read_via_cartridge) {
+    Cartridge c = make_cart();
+    uint8_t rom[0x100]; memset(rom, 0xFF, sizeof(rom));
+    c.rom = rom; c.rom_size = sizeof(rom);
+    rtc_init(&c.rtc);
+
+    rtc_set_time_source(fake_time);
+    struct tm t = {0};
+    t.tm_year = 126; t.tm_mon = 3; t.tm_mday = 22;
+    t.tm_hour = 9;   t.tm_min = 5;  t.tm_sec = 0;
+    t.tm_isdst = -1;
+    g_fake_now = mktime(&t);
+    c.rtc.status_reg = 0x40;
+
+    /* read_enable = 1, direction = all output (SCK/SIO/CS driven by GBA) */
+    cartridge_write8(&c, 0x080000C8, 0x01);
+    cartridge_write8(&c, 0x080000C6, 0x07); /* SCK+SIO+CS outputs */
+
+    /* Helper: one pin update per call — each cartridge_write8 triggers one
+     * edge-detect pass inside gpio_write. */
+    #define PIN(cs, sck, sio) cartridge_write8(&c, 0x080000C4, \
+        (uint8_t)(((cs) << 2) | ((sio) << 1) | (sck)))
+
+    /* CS rising edge while SCK=0. */
+    PIN(1, 0, 0);
+
+    /* Send 0x65 MSB-first (DateTime read). */
+    uint8_t cmd = 0x65;
+    for (int i = 7; i >= 0; i--) {
+        uint8_t bit = (cmd >> i) & 1;
+        PIN(1, 0, bit);
+        PIN(1, 1, bit);
+    }
+
+    /* Now read 7 bytes. SIO must be switched to input so the RTC can drive it. */
+    cartridge_write8(&c, 0x080000C6, 0x05); /* SCK+CS output, SIO input */
+    uint8_t buf[7];
+    for (int i = 0; i < 7; i++) {
+        buf[i] = 0;
+        for (int b = 0; b < 8; b++) {
+            PIN(1, 0, 0);
+            PIN(1, 1, 0);
+            uint8_t data = cartridge_read8(&c, 0x080000C4);
+            buf[i] |= (uint8_t)(((data >> 1) & 1) << b);
+        }
+    }
+
+    /* CS falling */
+    PIN(0, 0, 0);
+    #undef PIN
+
+    ASSERT_EQ(from_bcd(buf[0]), 26);
+    ASSERT_EQ(from_bcd(buf[1]), 4);
+    ASSERT_EQ(from_bcd(buf[2]), 22);
+    ASSERT_EQ(from_bcd(buf[4] & 0x7F), 9);
+
+    rtc_set_time_source(NULL);
+    c.rom = NULL;
+}
+
 void run_rtc_tests(void) {
     printf("\nRTC tests:\n");
     RUN_TEST(gpio_power_on_defaults);
@@ -221,4 +282,5 @@ void run_rtc_tests(void) {
     RUN_TEST(rtc_datetime_write_sets_offset);
     RUN_TEST(rtc_force_reset_clears_offset_and_status);
     RUN_TEST(rtc_status_roundtrip);
+    RUN_TEST(rtc_e2e_datetime_read_via_cartridge);
 }
