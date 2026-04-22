@@ -315,6 +315,37 @@ TEST(rtc_sav_legacy_no_trailer) {
     unlink(path);
 }
 
+/* Verify the fields serialized by savestate_save are sufficient to reproduce
+ * the RTC output stream. Seed an RTC mid-DataTime-read, take a struct copy
+ * with transient pin-tracking fields cleared (mirroring load_cart_chunk),
+ * and assert both continue producing identical bits. */
+TEST(rtc_savestate_midtransaction) {
+    RTCState a; rtc_init(&a);
+    rtc_set_time_source(fake_time);
+    struct tm t = {0};
+    t.tm_year = 126; t.tm_mon = 3; t.tm_mday = 22;
+    t.tm_hour = 10; t.tm_min = 0; t.tm_sec = 0;
+    g_fake_now = mktime(&t);
+    a.status_reg = 0x40;
+
+    rtc_send_cmd(&a, 0x65);
+    for (int i = 0; i < 3; i++)
+        rtc_shift_bit(&a, 0);
+
+    RTCState b = a;
+    b.prev_cs = 0; b.prev_sck = 0; b.sio_out = 0;
+
+    int remaining_bits = 7 * 8 - 3;
+    for (int i = 0; i < remaining_bits; i++) {
+        uint8_t oa = rtc_shift_bit(&a, 0);
+        uint8_t ob = rtc_shift_bit(&b, 0);
+        ASSERT_EQ(oa, ob);
+    }
+
+    rtc_cs_low(&a); rtc_cs_low(&b);
+    rtc_set_time_source(NULL);
+}
+
 void run_rtc_tests(void) {
     printf("\nRTC tests:\n");
     RUN_TEST(gpio_power_on_defaults);
@@ -330,4 +361,5 @@ void run_rtc_tests(void) {
     RUN_TEST(rtc_e2e_datetime_read_via_cartridge);
     RUN_TEST(rtc_sav_trailer_roundtrip);
     RUN_TEST(rtc_sav_legacy_no_trailer);
+    RUN_TEST(rtc_savestate_midtransaction);
 }

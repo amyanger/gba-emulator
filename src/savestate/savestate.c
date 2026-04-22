@@ -389,8 +389,8 @@ static void save_irq_chunk(WriteBuffer* wb, InterruptController* ic) {
 }
 
 static void save_cart_chunk(WriteBuffer* wb, Cartridge* cart) {
-    /* RTC fields omitted — wire back up in Task 7 */
-    uint32_t payload_size = 1 + 0x20000 + 4 + 0x8000; /* save_type + flash + flash meta + sram */
+    /* save_type + flash + flash meta + sram + GPIO (6) + RTC (22) */
+    uint32_t payload_size = 1 + 0x20000 + 4 + 0x8000 + 6 + 22;
     write_chunk_header(wb, CHUNK_CART, payload_size);
 
     write_u8(wb, (uint8_t)cart->save_type);
@@ -400,15 +400,24 @@ static void save_cart_chunk(WriteBuffer* wb, Cartridge* cart) {
     write_u8(wb, cart->flash.manufacturer);
     write_u8(wb, cart->flash.device);
     write_bytes(wb, cart->sram, 0x8000);
-    /* RTC fields omitted — wire back up in Task 7 */
-    /* write_u8(wb, cart->rtc.data_pin); */
-    /* write_u8(wb, cart->rtc.direction); */
-    /* write_u8(wb, cart->rtc.control); */
-    /* write_u8(wb, (uint8_t)cart->rtc.state); */
-    /* write_u8(wb, cart->rtc.command); */
-    /* write_u8(wb, cart->rtc.bit_index); */
-    /* write_u8(wb, cart->rtc.byte_index); */
-    /* write_bytes(wb, cart->rtc.data_buffer, 8); */
+
+    /* GPIO registers (6 bytes) */
+    write_u16(wb, cart->gpio.data);
+    write_u16(wb, cart->gpio.direction);
+    write_u16(wb, cart->gpio.control);
+
+    /* RTC protocol state (22 bytes). Transient pin-tracking fields
+     * (prev_cs, prev_sck, sio_out) are NOT persisted — they're
+     * reconstructed from pin edges after load. */
+    write_u8(wb, (uint8_t)cart->rtc.phase);
+    write_u8(wb, cart->rtc.cmd_byte);
+    write_u8(wb, cart->rtc.cmd_bits);
+    write_bytes(wb, cart->rtc.payload, 8);
+    write_u8(wb, cart->rtc.payload_len);
+    write_u8(wb, cart->rtc.payload_byte);
+    write_u8(wb, cart->rtc.payload_bit);
+    write_u8(wb, cart->rtc.status_reg);
+    write_u64(wb, (uint64_t)cart->rtc.offset_secs);
 }
 
 static void save_inpt_chunk(WriteBuffer* wb, InputState* input) {
@@ -604,15 +613,27 @@ static void load_cart_chunk(const uint8_t** cur, Cartridge* cart) {
     cart->flash.manufacturer = read_u8(cur);
     cart->flash.device = read_u8(cur);
     read_bytes(cur, cart->sram, 0x8000);
-    /* RTC fields omitted — wire back up in Task 7 */
-    /* cart->rtc.data_pin = read_u8(cur); */
-    /* cart->rtc.direction = read_u8(cur); */
-    /* cart->rtc.control = read_u8(cur); */
-    /* cart->rtc.state = (RTCStateEnum)read_u8(cur); */
-    /* cart->rtc.command = read_u8(cur); */
-    /* cart->rtc.bit_index = read_u8(cur); */
-    /* cart->rtc.byte_index = read_u8(cur); */
-    /* read_bytes(cur, cart->rtc.data_buffer, 8); */
+
+    /* GPIO registers (6 bytes) */
+    cart->gpio.data = read_u16(cur);
+    cart->gpio.direction = read_u16(cur);
+    cart->gpio.control = read_u16(cur);
+
+    /* RTC protocol state (22 bytes) */
+    cart->rtc.phase = (RTCPhase)read_u8(cur);
+    cart->rtc.cmd_byte = read_u8(cur);
+    cart->rtc.cmd_bits = read_u8(cur);
+    read_bytes(cur, cart->rtc.payload, 8);
+    cart->rtc.payload_len = read_u8(cur);
+    cart->rtc.payload_byte = read_u8(cur);
+    cart->rtc.payload_bit = read_u8(cur);
+    cart->rtc.status_reg = read_u8(cur);
+    cart->rtc.offset_secs = (int64_t)read_u64(cur);
+
+    /* Transient pin-tracking state is reset — edges will rebuild it. */
+    cart->rtc.prev_cs = 0;
+    cart->rtc.prev_sck = 0;
+    cart->rtc.sio_out = 0;
 }
 
 static void load_inpt_chunk(const uint8_t** cur, InputState* input) {

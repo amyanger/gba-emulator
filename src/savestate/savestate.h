@@ -7,7 +7,7 @@
 
 typedef struct GBA GBA;
 
-#define SAVESTATE_VERSION 1
+#define SAVESTATE_VERSION 2
 #define SAVESTATE_MAGIC   0x53414247  /* "GBAS" little-endian */
 typedef enum {
     SS_OK,
