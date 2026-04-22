@@ -2,6 +2,7 @@
 #include "cpu/arm7tdmi.h"
 #include "cheat/cheat_file.h"
 #include "frontend/frontend.h"
+#include "savestate/savestate.h"
 #include <stdio.h>
 
 #ifdef ENABLE_XRAY
@@ -77,6 +78,8 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    snprintf(fe.rom_path, sizeof(fe.rom_path), "%s", rom_path);
+
     // Initialize audio
     frontend_audio_init(&fe);
 
@@ -91,15 +94,71 @@ int main(int argc, char* argv[]) {
     // Main loop
     while (fe.running && gba.running) {
         frontend_poll_input(&fe, &gba);
+
+        // Save state handling (at frame boundary)
+        if (fe.save_requested || fe.load_requested) {
+            char ss_path[512];
+            savestate_slot_path(fe.rom_path, fe.savestate_slot,
+                                ss_path, sizeof(ss_path));
+            if (fe.save_requested) {
+                fe.save_requested = false;
+                SaveStateResult res = savestate_save(&gba, ss_path);
+                if (res == SS_OK) {
+                    LOG_INFO("State saved to slot %d", fe.savestate_slot);
+                } else {
+                    LOG_ERROR("Failed to save state (error %d)", res);
+                }
+            }
+            if (fe.load_requested) {
+                fe.load_requested = false;
+                SaveStateResult res = savestate_load(&gba, ss_path);
+                if (res == SS_OK) {
+                    LOG_INFO("State loaded from slot %d", fe.savestate_slot);
+                    SDL_ClearQueuedAudio(fe.audio_device);
+                } else {
+                    LOG_ERROR("Failed to load state (error %d)", res);
+                }
+            }
+        }
+
         gba_run_frame(&gba);
 
         if (gba.frame_complete) {
-            frontend_present_frame(&fe, gba.ppu.framebuffer);
-            frontend_push_audio(&fe, &gba.apu);
+            bool ff_active = fe.ff_hold || fe.ff_toggle;
+
+            // Update window title on FF state change
+            {
+                static bool prev_ff = false;
+                if (ff_active != prev_ff) {
+                    frontend_set_ff_indicator(&fe, ff_active);
+                    if (!ff_active) {
+                        // Returning to normal speed: clean audio state
+                        SDL_ClearQueuedAudio(fe.audio_device);
+                        gba.apu.read_pos = gba.apu.write_pos;
+                        fe.ff_frame_count = 0;
+                    }
+                    prev_ff = ff_active;
+                }
+            }
+
+            if (ff_active) {
+                // Fast-forward: render every Nth frame, skip audio and sync
+                if (fe.ff_frame_count++ % fe.ff_frame_skip == 0) {
+                    frontend_present_frame(&fe, gba.ppu.framebuffer);
 #ifdef ENABLE_XRAY
-            xray_render(&s_xray_state, &gba);
+                    xray_render(&s_xray_state, &gba);
 #endif
-            frontend_frame_sync(&fe);
+                }
+                // Drain APU ring buffer to prevent stall
+                gba.apu.read_pos = gba.apu.write_pos;
+            } else {
+                frontend_present_frame(&fe, gba.ppu.framebuffer);
+                frontend_push_audio(&fe, &gba.apu);
+#ifdef ENABLE_XRAY
+                xray_render(&s_xray_state, &gba);
+#endif
+                frontend_frame_sync(&fe);
+            }
         }
     }
 

@@ -12,9 +12,25 @@ typedef struct {
     SDL_Renderer* renderer;
     SDL_Texture* texture;
     SDL_AudioDeviceID audio_device;
+    SDL_GameController* controller;
 
     int scale;
     bool running;
+
+    // Save state
+    int32_t savestate_slot;    // Current slot (0-9), default 0
+    bool save_requested;
+    bool load_requested;
+    char rom_path[256];        // Copy of ROM path for building slot filenames
+
+    // Fast-forward
+    bool ff_hold;            // true while Tab is held
+    bool ff_toggle;          // persistent toggle via backtick
+    uint32_t ff_frame_skip;  // render every N frames during FF (default 4)
+    uint32_t ff_frame_count; // rolling counter for frame skip
+
+    bool fullscreen;
+    uint16_t controller_keys;  // bitmask of keys held by gamepad (avoids clobbering keyboard)
 } Frontend;
 
 // Forward declaration
@@ -27,5 +43,6 @@ void frontend_poll_input(Frontend* fe, GBA* gba);
 void frontend_audio_init(Frontend* fe);
 void frontend_push_audio(Frontend* fe, APU* apu);
 void frontend_frame_sync(Frontend* fe);
+void frontend_set_ff_indicator(Frontend* fe, bool active);
 
 #endif // FRONTEND_H

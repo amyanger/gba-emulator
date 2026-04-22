@@ -8,7 +8,7 @@
 #endif
 
 bool frontend_init(Frontend* fe, int scale) {
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) {
+    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0) {
         LOG_ERROR("SDL init failed: %s", SDL_GetError());
         return false;
     }
@@ -37,9 +37,40 @@ bool frontend_init(Frontend* fe, int scale) {
     }
 
     fe->running = true;
+    fe->savestate_slot = 0;
+    fe->save_requested = false;
+    fe->load_requested = false;
+
+    fe->ff_hold = false;
+    fe->ff_toggle = false;
+    fe->ff_frame_skip = 4;
+    fe->ff_frame_count = 0;
+
+    fe->fullscreen = false;
+    fe->controller_keys = 0;
+
+    fe->controller = NULL;
+    for (int i = 0; i < SDL_NumJoysticks(); i++) {
+        if (SDL_IsGameController(i)) {
+            fe->controller = SDL_GameControllerOpen(i);
+            if (fe->controller) {
+                LOG_INFO("Controller connected: %s",
+                         SDL_GameControllerName(fe->controller));
+                break;
+            }
+        }
+    }
 
     LOG_INFO("Frontend initialized (%dx scale)", scale);
     return true;
+}
+
+void frontend_set_ff_indicator(Frontend* fe, bool active) {
+    if (active) {
+        SDL_SetWindowTitle(fe->window, "GBA Emulator [FF]");
+    } else {
+        SDL_SetWindowTitle(fe->window, "GBA Emulator");
+    }
 }
 
 void frontend_destroy(Frontend* fe) {
@@ -47,6 +78,7 @@ void frontend_destroy(Frontend* fe) {
     if (fe->renderer) SDL_DestroyRenderer(fe->renderer);
     if (fe->window) SDL_DestroyWindow(fe->window);
     if (fe->audio_device) SDL_CloseAudioDevice(fe->audio_device);
+    if (fe->controller) SDL_GameControllerClose(fe->controller);
     SDL_Quit();
 }
 
@@ -109,12 +141,149 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 xray_toggle(g_xray);
             }
 #endif
+
+            // Save state hotkeys
+            if (event.key.keysym.scancode == SDL_SCANCODE_F5) {
+                fe->save_requested = true;
+            }
+            if (event.key.keysym.scancode == SDL_SCANCODE_F8) {
+                fe->load_requested = true;
+            }
+
+            // Slot selection (number keys 0-9)
+            // SDL scancodes: 1-9 are 30-38, 0 is 39 (not contiguous)
+            {
+                int32_t slot = -1;
+                SDL_Scancode sc = event.key.keysym.scancode;
+                if (sc >= SDL_SCANCODE_1 && sc <= SDL_SCANCODE_9) {
+                    slot = sc - SDL_SCANCODE_1 + 1;
+                } else if (sc == SDL_SCANCODE_0) {
+                    slot = 0;
+                }
+                if (slot >= 0 && slot != fe->savestate_slot) {
+                    fe->savestate_slot = slot;
+                    LOG_INFO("Save state slot: %d", slot);
+                }
+            }
+
+            // Fast-forward: backtick toggles, Tab holds
+            if (event.key.keysym.scancode == SDL_SCANCODE_GRAVE &&
+                !event.key.repeat) {
+                fe->ff_toggle = !fe->ff_toggle;
+                LOG_INFO("Fast-forward %s", fe->ff_toggle ? "ON" : "OFF");
+            }
+            if (event.key.keysym.scancode == SDL_SCANCODE_TAB) {
+                fe->ff_hold = true;
+            }
+            if (event.key.keysym.scancode == SDL_SCANCODE_F11 &&
+                !event.key.repeat) {
+                fe->fullscreen = !fe->fullscreen;
+                SDL_SetWindowFullscreen(fe->window,
+                    fe->fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+                LOG_INFO("Fullscreen %s", fe->fullscreen ? "ON" : "OFF");
+            }
             break;
         }
 
         case SDL_KEYUP: {
             uint16_t key = sdl_to_gba_key(event.key.keysym.scancode);
             if (key) input_release(&gba->input, key);
+            if (event.key.keysym.scancode == SDL_SCANCODE_TAB) {
+                fe->ff_hold = false;
+            }
+            break;
+        }
+
+        case SDL_CONTROLLERDEVICEADDED:
+            if (!fe->controller && SDL_IsGameController(event.cdevice.which)) {
+                fe->controller = SDL_GameControllerOpen(event.cdevice.which);
+                if (fe->controller)
+                    LOG_INFO("Controller connected: %s",
+                             SDL_GameControllerName(fe->controller));
+            }
+            break;
+
+        case SDL_CONTROLLERDEVICEREMOVED:
+            if (fe->controller &&
+                event.cdevice.which ==
+                    SDL_JoystickInstanceID(
+                        SDL_GameControllerGetJoystick(fe->controller))) {
+                LOG_INFO("Controller disconnected");
+                SDL_GameControllerClose(fe->controller);
+                fe->controller = NULL;
+            }
+            break;
+
+        case SDL_CONTROLLERBUTTONDOWN:
+        case SDL_CONTROLLERBUTTONUP: {
+            uint16_t key = 0;
+            switch (event.cbutton.button) {
+            case SDL_CONTROLLER_BUTTON_A:             key = KEY_A;      break;
+            case SDL_CONTROLLER_BUTTON_B:             key = KEY_B;      break;
+            case SDL_CONTROLLER_BUTTON_X:             key = KEY_A;      break;
+            case SDL_CONTROLLER_BUTTON_Y:             key = KEY_B;      break;
+            case SDL_CONTROLLER_BUTTON_START:         key = KEY_START;  break;
+            case SDL_CONTROLLER_BUTTON_BACK:          key = KEY_SELECT; break;
+            case SDL_CONTROLLER_BUTTON_DPAD_UP:       key = KEY_UP;     break;
+            case SDL_CONTROLLER_BUTTON_DPAD_DOWN:     key = KEY_DOWN;   break;
+            case SDL_CONTROLLER_BUTTON_DPAD_LEFT:     key = KEY_LEFT;   break;
+            case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:    key = KEY_RIGHT;  break;
+            case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  key = KEY_L;      break;
+            case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: key = KEY_R;      break;
+            default: break;
+            }
+            if (key) {
+                uint16_t prev = fe->controller_keys;
+                if (event.type == SDL_CONTROLLERBUTTONDOWN)
+                    fe->controller_keys |= key;
+                else
+                    fe->controller_keys &= ~key;
+                uint16_t changed = prev ^ fe->controller_keys;
+                if (changed & key) {
+                    if (fe->controller_keys & key)
+                        input_press(&gba->input, key);
+                    else
+                        input_release(&gba->input, key);
+                }
+            }
+            break;
+        }
+
+        case SDL_CONTROLLERAXISMOTION: {
+            #define AXIS_THRESHOLD 8000
+            uint16_t prev = fe->controller_keys;
+            if (event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
+                if (event.caxis.value < -AXIS_THRESHOLD)
+                    fe->controller_keys |= KEY_LEFT;
+                else
+                    fe->controller_keys &= ~KEY_LEFT;
+                if (event.caxis.value > AXIS_THRESHOLD)
+                    fe->controller_keys |= KEY_RIGHT;
+                else
+                    fe->controller_keys &= ~KEY_RIGHT;
+            } else if (event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
+                if (event.caxis.value < -AXIS_THRESHOLD)
+                    fe->controller_keys |= KEY_UP;
+                else
+                    fe->controller_keys &= ~KEY_UP;
+                if (event.caxis.value > AXIS_THRESHOLD)
+                    fe->controller_keys |= KEY_DOWN;
+                else
+                    fe->controller_keys &= ~KEY_DOWN;
+            }
+            uint16_t changed = prev ^ fe->controller_keys;
+            if (changed) {
+                uint16_t dirs[] = {KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN};
+                for (int i = 0; i < 4; i++) {
+                    if (changed & dirs[i]) {
+                        if (fe->controller_keys & dirs[i])
+                            input_press(&gba->input, dirs[i]);
+                        else
+                            input_release(&gba->input, dirs[i]);
+                    }
+                }
+            }
+            #undef AXIS_THRESHOLD
             break;
         }
         }

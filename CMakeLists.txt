@@ -49,6 +49,7 @@ set(SOURCES
     src/input/input.c
     src/cheat/cheat.c
     src/cheat/cheat_file.c
+    src/savestate/savestate.c
     src/frontend/frontend.c
 )
 
@@ -80,3 +81,53 @@ target_link_libraries(gba_emulator PRIVATE ${SDL2_LIBRARIES} m)
 if(ENABLE_XRAY)
     target_compile_definitions(gba_emulator PRIVATE ENABLE_XRAY)
 endif()
+
+# ── Test suite ──────────────────────────────────────────────────────
+enable_testing()
+
+set(LIB_SOURCES
+    src/gba.c
+    src/cpu/arm7tdmi.c
+    src/cpu/arm_instr.c
+    src/cpu/thumb_instr.c
+    src/cpu/bios_hle.c
+    src/memory/bus.c
+    src/memory/dma.c
+    src/ppu/ppu.c
+    src/ppu/background.c
+    src/ppu/bitmap.c
+    src/ppu/sprites.c
+    src/ppu/effects.c
+    src/ppu/affine.c
+    src/apu/apu.c
+    src/apu/channel.c
+    src/apu/fifo.c
+    src/timer/timer.c
+    src/interrupt/interrupt.c
+    src/cartridge/cartridge.c
+    src/cartridge/flash.c
+    src/cartridge/sram.c
+    src/cartridge/eeprom.c
+    src/cartridge/rtc.c
+    src/input/input.c
+    src/cheat/cheat.c
+    src/cheat/cheat_file.c
+)
+
+add_executable(gba_tests
+    tests/test_runner.c
+    tests/test_savestate.c
+    tests/test_bus.c
+    tests/test_cpu.c
+    ${LIB_SOURCES}
+)
+
+target_include_directories(gba_tests PRIVATE
+    ${CMAKE_SOURCE_DIR}/src
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/tests
+)
+
+target_link_libraries(gba_tests PRIVATE m)
+
+add_test(NAME gba_tests COMMAND gba_tests)
