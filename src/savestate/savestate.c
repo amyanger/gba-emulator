@@ -406,7 +406,7 @@ static void save_cart_chunk(WriteBuffer* wb, Cartridge* cart) {
     write_u16(wb, cart->gpio.direction);
     write_u16(wb, cart->gpio.control);
 
-    /* RTC protocol state (22 bytes). Transient pin-tracking fields
+    /* RTC protocol state (23 bytes). Transient pin-tracking fields
      * (prev_cs, prev_sck, sio_out) are NOT persisted — they're
      * reconstructed from pin edges after load. */
     write_u8(wb, (uint8_t)cart->rtc.phase);
@@ -630,9 +630,10 @@ static void load_cart_chunk(const uint8_t** cur, Cartridge* cart) {
     cart->rtc.status_reg = read_u8(cur);
     cart->rtc.offset_secs = (int64_t)read_u64(cur);
 
-    /* Transient pin-tracking state is reset — edges will rebuild it. */
-    cart->rtc.prev_cs = 0;
-    cart->rtc.prev_sck = 0;
+    /* Re-seed edge-detection shadow from restored pin state so the next gpio_write
+     * doesn't fabricate a spurious CS/SCK rising edge. bit 0 = SCK, bit 2 = CS. */
+    cart->rtc.prev_cs = (cart->gpio.data >> 2) & 1;
+    cart->rtc.prev_sck = cart->gpio.data & 1;
     cart->rtc.sio_out = 0;
 }
 
