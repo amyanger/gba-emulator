@@ -5,6 +5,11 @@ cmake-build-*/
 # Worktrees
 .worktrees/
 
+# Internal planning / specs — never commit
+docs/superpowers/
+docs/plans/
+docs/specs/
+
 # ROMs and BIOS (copyrighted)
 roms/*.gba
 roms/*.bin
