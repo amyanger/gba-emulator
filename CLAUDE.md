@@ -15,7 +15,7 @@ mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make
 ./gba_emulator <rom.gba> --scale 3
 
 # Run with cheat codes
-./gba_emulator <rom.gba> --cheats cheats/emerald.cht
+./gba_emulator <rom.gba> --cheats path/to/cheats.cht
 
 # Build without Hardware X-Ray Mode
 mkdir -p build && cd build && cmake .. -DENABLE_XRAY=OFF && make
@@ -23,6 +23,27 @@ mkdir -p build && cd build && cmake .. -DENABLE_XRAY=OFF && make
 # Clean rebuild
 rm -rf build && mkdir build && cd build && cmake .. && make
 ```
+
+## Controls
+
+| GBA Button | Keyboard |
+|-----------|----------|
+| A | Z |
+| B | X |
+| Start | Enter |
+| Select | Right Shift |
+| D-Pad | Arrow Keys |
+| L | A |
+| R | S |
+
+### Emulator hotkeys
+- **F1**: Register dump to stderr (DEBUG builds)
+- **F2**: Toggle Hardware X-Ray Mode
+- **F5 / F8**: Save / load state (current slot)
+- **0–9**: Select save state slot (written next to ROM as `<rom>.ss<N>`)
+- **Tab** (hold) / **`** (toggle): Fast-forward — skips audio, renders every Nth frame
+- **F11**: Toggle fullscreen
+- **Escape**: Quit
 
 ## Dependencies
 
@@ -67,6 +88,8 @@ src/
   cheat/
     cheat.h/c          Cheat engine — GameShark/Action Replay + CodeBreaker
     cheat_file.h/c     Cheat file (.cht) parser and writer
+  savestate/
+    savestate.h/c      Save state serialization (versioned, magic-tagged, ROM-hash guarded)
   input/input.h/c      Keypad registers (active-low), KEYCNT for key IRQs
   frontend/
     frontend.h/c       SDL2 window, rendering, input polling, audio output
@@ -86,6 +109,30 @@ bios/                  Place GBA BIOS ROM here (optional — HLE BIOS works with
 roms/                  Place ROM files here for testing
 saves/                 Save files are written here automatically
 ```
+
+## Cheat File Format (.cht)
+
+```ini
+# Lines starting with # are comments
+[GameShark]
+Cheat Name
+XXXXXXXX YYYYYYYY
+
+[CodeBreaker]
+Another Cheat
+XXXXXXXX YYYY
+```
+
+Each block starts with `[GameShark]` or `[CodeBreaker]`, followed by the cheat name, then one or more code lines. Cheats are enabled by default.
+
+## Git & GitHub
+
+- **Claude must never appear as a contributor on GitHub.** This repo is public; it stays a human-authored project on the GitHub UI.
+  - No `Co-Authored-By: Claude ...` trailers on commits.
+  - No "Generated with Claude Code", "🤖", or other AI attribution in commit messages, PR titles, PR bodies, or issue comments.
+  - No Claude/Anthropic identifiers in author/committer fields — always use the user's real git identity.
+  - Applies to `gh pr create`, `gh issue comment`, `git commit`, amendments, rebases, and any other GitHub-visible surface.
+- Only commit when explicitly asked. Write commit messages focused on the "why".
 
 ## Architecture Rules
 
@@ -132,8 +179,16 @@ These are non-obvious behaviors that MUST be correct. Verify against GBATEK when
 
 ## Testing
 
-### No unit test framework yet
-There is no automated test suite. The `tests/` directory does not exist yet. Validation is done via test ROMs and manual inspection.
+### Unit tests
+A minimal unit test suite lives in `tests/` (`test_runner.c`, `test_bus.c`, `test_cpu.c`, `test_savestate.c`, shared `test_harness.h`). Wired into CMake as the `gba_tests` target.
+
+```bash
+cd build && cmake .. && make gba_tests && ctest --output-on-failure
+# or run the binary directly:
+./gba_tests
+```
+
+Test ROMs remain the primary validation path for full-system behavior.
 
 ### Test ROMs (place in `roms/` directory)
 - **jsmolka/gba-tests**: ARM/Thumb instruction correctness. Screen shows pass/fail per group.
@@ -194,7 +249,7 @@ Current target: **Pokemon Emerald from boot to credits.**
 - **EEPROM save protocol** — bit-serial protocol not implemented (not needed for Emerald)
 - **RTC GPIO serial** — partially implemented, not fully functional
 - **WAITCNT register** — stubbed, no cartridge wait-state timing
-- **Automated test suite** — no unit tests or CI
+- **CI pipeline** — no GitHub Actions / CI yet (local unit tests exist via `gba_tests`)
 
 ## Key References
 
@@ -206,45 +261,16 @@ Current target: **Pokemon Emerald from boot to credits.**
 - **mGBA source** (reference emulator): https://github.com/mgba-emu/mgba
 - **Tonc (GBA hardware tutorial)**: https://www.coranac.com/tonc/text/hardware.htm
 
-## Git Commit Rules
+## Agent Workflow (GBA-specific)
 
-**CRITICAL: Never include any AI attribution in commits.** This applies to every commit for the entire lifetime of this project:
-- Do NOT add `Co-Authored-By` lines mentioning Claude, Anthropic, or any AI
-- Do NOT mention Claude, AI, or any AI tool in commit messages
-- Do NOT add AI-related credits, attributions, or signatures of any kind
-- Commit messages should read as if written by the developer — because they are
+All agent rules from the parent CLAUDE.md apply. Additional GBA-specific guidance:
 
-## Agent Workflow
-
-IMPORTANT: Always use specialized agents when working on this project. Do not skip agent steps.
-
-### Before implementing anything new
-Use the **senior-architect** agent to analyze the GBA hardware behavior and design the approach. Cross-reference against GBATEK documentation. Do not write implementation code without understanding the hardware specification first.
-
-### For all implementation work
-Use the **precision-implementer** agent. It must follow the code style, architecture rules, and naming conventions defined in this file. Every implementation must include the correct bit-level hardware behavior per GBATEK.
-
-### After every implementation
-IMPORTANT: Always run the **quality-reviewer** agent after writing or modifying code. This is mandatory, not optional. The reviewer must check for:
-- Incorrect bit manipulation (off-by-one in shifts, wrong mask widths)
-- Missing edge cases in hardware emulation (overflow, underflow, wraparound)
-- Memory safety issues (buffer overruns on mirrored regions, null pointer dereference)
-- Incorrect register read/write behavior (write-only registers returning wrong values, read side effects)
-- Integer overflow in cycle counting and timer arithmetic
-- Broken subsystem wiring (bus dispatch routing to wrong handler)
-
-### For codebase exploration and research
-Use the **Explore** agent to search files and understand existing code without filling the main context window. Use this before making changes to unfamiliar modules.
-
-### For complex multi-step tasks
-Use the **general-purpose** agent when a task spans multiple modules or requires both research and implementation.
-
-### For planning multi-file changes
-Use **Plan** mode to design the approach before touching code. This is especially important for cross-cutting changes (e.g., adding a new I/O register that touches bus.c, the owning subsystem, and possibly DMA/interrupts).
-
-### Workflow summary for every task
-1. **Explore** the relevant code and hardware docs
-2. **Architect** the approach (senior-architect agent)
-3. **Implement** the code (precision-implementer agent)
-4. **Review** the implementation (quality-reviewer agent)
-5. **Build and test** — must compile with zero warnings, pass relevant test ROMs
+- **Before implementing**: Cross-reference the hardware behavior against GBATEK. Do not implement from memory alone.
+- **Quality review checklist** (in addition to standard review):
+  - Incorrect bit manipulation (off-by-one in shifts, wrong mask widths)
+  - Missing edge cases in hardware emulation (overflow, underflow, wraparound)
+  - Memory safety issues (buffer overruns on mirrored regions, null pointer dereference)
+  - Incorrect register read/write behavior (write-only regs returning wrong values, read side effects)
+  - Integer overflow in cycle counting and timer arithmetic
+  - Broken subsystem wiring (bus dispatch routing to wrong handler)
+- **Cross-cutting changes** (new I/O register, new DMA trigger): Use Plan mode first.
