@@ -1,6 +1,7 @@
 #include "test_harness.h"
 #include "cartridge/cartridge.h"
 #include "cartridge/gpio.h"
+#include "cartridge/rtc.h"
 
 static Cartridge make_cart(void) {
     Cartridge c;
@@ -54,10 +55,57 @@ TEST(gpio_write_always_routes) {
     ASSERT_EQ(c.gpio.control & 1, 1);
 }
 
+/* Bit-bang helpers for tests: clock one bit into the RTC. */
+static uint8_t rtc_shift_bit(RTCState* r, uint8_t sio_in) __attribute__((unused));
+static void rtc_cs_high(RTCState* r) __attribute__((unused));
+static void rtc_cs_low(RTCState* r) __attribute__((unused));
+static void rtc_send_cmd(RTCState* r, uint8_t cmd) __attribute__((unused));
+
+static uint8_t rtc_shift_bit(RTCState* r, uint8_t sio_in) {
+    /* CS held high, SCK falling then rising. */
+    uint8_t out = rtc_gpio_exchange(r, /*cs=*/1, /*sck=*/0, sio_in,
+                                    /*cs_r=*/0, /*cs_f=*/0, /*sck_r=*/0);
+    out = rtc_gpio_exchange(r, /*cs=*/1, /*sck=*/1, sio_in,
+                            /*cs_r=*/0, /*cs_f=*/0, /*sck_r=*/1);
+    return out;
+}
+
+static void rtc_cs_high(RTCState* r) {
+    rtc_gpio_exchange(r, 1, 0, 0, /*cs_r=*/1, 0, 0);
+}
+
+static void rtc_cs_low(RTCState* r) {
+    rtc_gpio_exchange(r, 0, 0, 0, 0, /*cs_f=*/1, 0);
+}
+
+/* Send an 8-bit command MSB-first. */
+static void rtc_send_cmd(RTCState* r, uint8_t cmd) {
+    rtc_cs_high(r);
+    for (int i = 7; i >= 0; i--) rtc_shift_bit(r, (cmd >> i) & 1);
+}
+
+TEST(rtc_power_on_state) {
+    RTCState r;
+    rtc_init(&r);
+    ASSERT_EQ(r.phase, RTC_PHASE_IDLE);
+    ASSERT_EQ_HEX(r.status_reg, 0x80);
+}
+
+TEST(rtc_bad_command_nibble_ignored) {
+    RTCState r;
+    rtc_init(&r);
+    rtc_send_cmd(&r, 0xE1); /* top nibble 0xE — not 0x6 */
+    ASSERT_EQ(r.phase, RTC_PHASE_STALL);
+    rtc_cs_low(&r);
+    ASSERT_EQ(r.phase, RTC_PHASE_IDLE);
+}
+
 void run_rtc_tests(void) {
     printf("\nRTC tests:\n");
     RUN_TEST(gpio_power_on_defaults);
     RUN_TEST(gpio_read_disabled_returns_rom);
     RUN_TEST(gpio_read_enabled_returns_register);
     RUN_TEST(gpio_write_always_routes);
+    RUN_TEST(rtc_power_on_state);
+    RUN_TEST(rtc_bad_command_nibble_ignored);
 }

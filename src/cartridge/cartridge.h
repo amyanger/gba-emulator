@@ -34,20 +34,28 @@ typedef struct {
 } FlashChip;
 
 typedef enum {
-    RTC_IDLE,
-    RTC_COMMAND,
-    RTC_DATA
-} RTCStateEnum;
+    RTC_PHASE_IDLE,
+    RTC_PHASE_CMD,
+    RTC_PHASE_DATA_OUT,
+    RTC_PHASE_DATA_IN,
+    RTC_PHASE_STALL     /* bad command byte — wait for CS falling */
+} RTCPhase;
 
 typedef struct {
-    uint8_t data_pin;
-    uint8_t direction;
-    uint8_t control;
-    RTCStateEnum state;
-    uint8_t command;
-    uint8_t bit_index;
-    uint8_t byte_index;
-    uint8_t data_buffer[8];
+    RTCPhase phase;
+    uint8_t  cmd_byte;       /* accumulated command bits */
+    uint8_t  cmd_bits;       /* number of bits shifted so far (0..8) */
+    uint8_t  payload[8];     /* max payload is 7 (DateTime); allow 8 for safety */
+    uint8_t  payload_len;    /* bytes expected for the current command */
+    uint8_t  payload_byte;   /* current byte index into payload */
+    uint8_t  payload_bit;    /* current bit index within the current byte (0..7) */
+    uint8_t  status_reg;     /* status register: bits 6=24H, 7=POWER, others reserved */
+    int64_t  offset_secs;    /* signed offset applied to host time */
+
+    /* Edge-detection scratch used by gpio.c. Not part of the protocol itself. */
+    uint8_t  prev_cs;
+    uint8_t  prev_sck;
+    uint8_t  sio_out;        /* bit the RTC is currently driving */
 } RTCState;
 
 typedef struct {

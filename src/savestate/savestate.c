@@ -389,8 +389,8 @@ static void save_irq_chunk(WriteBuffer* wb, InterruptController* ic) {
 }
 
 static void save_cart_chunk(WriteBuffer* wb, Cartridge* cart) {
-    /* 1 + 0x20000 + 1 + 1 + 1 + 1 + 0x8000 + 3 + 1 + 3 + 8 = 163852 */
-    uint32_t payload_size = 1 + 0x20000 + 4 + 0x8000 + 3 + 1 + 3 + 8;
+    /* RTC fields omitted — wire back up in Task 7 */
+    uint32_t payload_size = 1 + 0x20000 + 4 + 0x8000; /* save_type + flash + flash meta + sram */
     write_chunk_header(wb, CHUNK_CART, payload_size);
 
     write_u8(wb, (uint8_t)cart->save_type);
@@ -400,14 +400,15 @@ static void save_cart_chunk(WriteBuffer* wb, Cartridge* cart) {
     write_u8(wb, cart->flash.manufacturer);
     write_u8(wb, cart->flash.device);
     write_bytes(wb, cart->sram, 0x8000);
-    write_u8(wb, cart->rtc.data_pin);
-    write_u8(wb, cart->rtc.direction);
-    write_u8(wb, cart->rtc.control);
-    write_u8(wb, (uint8_t)cart->rtc.state);
-    write_u8(wb, cart->rtc.command);
-    write_u8(wb, cart->rtc.bit_index);
-    write_u8(wb, cart->rtc.byte_index);
-    write_bytes(wb, cart->rtc.data_buffer, 8);
+    /* RTC fields omitted — wire back up in Task 7 */
+    /* write_u8(wb, cart->rtc.data_pin); */
+    /* write_u8(wb, cart->rtc.direction); */
+    /* write_u8(wb, cart->rtc.control); */
+    /* write_u8(wb, (uint8_t)cart->rtc.state); */
+    /* write_u8(wb, cart->rtc.command); */
+    /* write_u8(wb, cart->rtc.bit_index); */
+    /* write_u8(wb, cart->rtc.byte_index); */
+    /* write_bytes(wb, cart->rtc.data_buffer, 8); */
 }
 
 static void save_inpt_chunk(WriteBuffer* wb, InputState* input) {
@@ -603,14 +604,15 @@ static void load_cart_chunk(const uint8_t** cur, Cartridge* cart) {
     cart->flash.manufacturer = read_u8(cur);
     cart->flash.device = read_u8(cur);
     read_bytes(cur, cart->sram, 0x8000);
-    cart->rtc.data_pin = read_u8(cur);
-    cart->rtc.direction = read_u8(cur);
-    cart->rtc.control = read_u8(cur);
-    cart->rtc.state = (RTCStateEnum)read_u8(cur);
-    cart->rtc.command = read_u8(cur);
-    cart->rtc.bit_index = read_u8(cur);
-    cart->rtc.byte_index = read_u8(cur);
-    read_bytes(cur, cart->rtc.data_buffer, 8);
+    /* RTC fields omitted — wire back up in Task 7 */
+    /* cart->rtc.data_pin = read_u8(cur); */
+    /* cart->rtc.direction = read_u8(cur); */
+    /* cart->rtc.control = read_u8(cur); */
+    /* cart->rtc.state = (RTCStateEnum)read_u8(cur); */
+    /* cart->rtc.command = read_u8(cur); */
+    /* cart->rtc.bit_index = read_u8(cur); */
+    /* cart->rtc.byte_index = read_u8(cur); */
+    /* read_bytes(cur, cart->rtc.data_buffer, 8); */
 }
 
 static void load_inpt_chunk(const uint8_t** cur, InputState* input) {
