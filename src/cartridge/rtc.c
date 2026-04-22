@@ -67,28 +67,36 @@ static void rtc_write_datetime_payload(RTCState* rtc, const struct tm* t) {
 
 /* Pre-load payload bytes for a READ command (reg 1/2/4/5/6). */
 static void rtc_fill_payload_for_read(RTCState* rtc, uint8_t reg) {
-    time_t now = g_time_source(NULL);
-    time_t effective = now + (time_t)rtc->offset_secs;
-    struct tm t = *localtime(&effective);
-
     switch (reg) {
     case 1: /* Status */
         rtc->payload[0] = rtc->status_reg;
         break;
-    case 2: /* DateTime (7 bytes) */
-        rtc_write_datetime_payload(rtc, &t);
-        break;
-    case 4: /* Time only (3 bytes: hour, min, sec) */
-        if (rtc->status_reg & 0x40) {
-            rtc->payload[0] = to_bcd(t.tm_hour);
-        } else {
-            int h12 = t.tm_hour % 12;
-            if (h12 == 0) h12 = 12;
-            rtc->payload[0] = (uint8_t)(to_bcd(h12) | (t.tm_hour >= 12 ? 0x80 : 0));
+    case 2:   /* DateTime (7 bytes) */
+    case 4: { /* Time only (3 bytes: hour, min, sec) */
+        time_t now = g_time_source(NULL);
+        time_t effective = now + (time_t)rtc->offset_secs;
+        struct tm* tmp = localtime(&effective);
+        if (!tmp) {
+            /* Out-of-range time_t: zero the payload rather than UB on NULL deref. */
+            memset(rtc->payload, 0, sizeof(rtc->payload));
+            break;
         }
-        rtc->payload[1] = to_bcd(t.tm_min);
-        rtc->payload[2] = to_bcd(t.tm_sec);
+        struct tm t = *tmp;
+        if (reg == 2) {
+            rtc_write_datetime_payload(rtc, &t);
+        } else {
+            if (rtc->status_reg & 0x40) {
+                rtc->payload[0] = to_bcd(t.tm_hour);
+            } else {
+                int h12 = t.tm_hour % 12;
+                if (h12 == 0) h12 = 12;
+                rtc->payload[0] = (uint8_t)(to_bcd(h12) | (t.tm_hour >= 12 ? 0x80 : 0));
+            }
+            rtc->payload[1] = to_bcd(t.tm_min);
+            rtc->payload[2] = to_bcd(t.tm_sec);
+        }
         break;
+    }
     case 5: /* Alarm 1 — stubbed: return zeros */
     case 6: /* Alarm 2 — stubbed: return zeros */
         memset(rtc->payload, 0, 3);
@@ -131,7 +139,9 @@ static void rtc_commit_write(RTCState* rtc, uint8_t reg) {
     case 4: { /* Time only: preserve current effective date, slide time-of-day. */
         time_t now = g_time_source(NULL);
         time_t eff = now + (time_t)rtc->offset_secs;
-        struct tm t = *localtime(&eff);
+        struct tm* tmp = localtime(&eff);
+        if (!tmp) break; /* bail — malformed offset, don't commit */
+        struct tm t = *tmp;
         t.tm_hour = decode_hour(rtc, rtc->payload[0]);
         t.tm_min  = from_bcd(rtc->payload[1]);
         t.tm_sec  = from_bcd(rtc->payload[2]);
