@@ -3,6 +3,32 @@
 #include "gpio.h"
 #include "rtc.h"
 
+#define RTC_TRAILER_MAGIC "GRTC"
+#define RTC_TRAILER_VERSION 1u
+#define RTC_TRAILER_SIZE 16
+
+static size_t payload_size_for(const Cartridge* cart) {
+    switch (cart->save_type) {
+    case SAVE_SRAM:     return sizeof(cart->sram);
+    case SAVE_FLASH64:  return 0x10000;
+    case SAVE_FLASH128: return 0x20000;
+    default:            return 0;
+    }
+}
+
+static void write_rtc_trailer(FILE* f, const Cartridge* cart) {
+    uint8_t trailer[RTC_TRAILER_SIZE];
+    memcpy(trailer, RTC_TRAILER_MAGIC, 4);
+    uint32_t v = RTC_TRAILER_VERSION;
+    trailer[4] = (uint8_t)v;
+    trailer[5] = (uint8_t)(v >> 8);
+    trailer[6] = (uint8_t)(v >> 16);
+    trailer[7] = (uint8_t)(v >> 24);
+    uint64_t u = (uint64_t)cart->rtc.offset_secs;
+    for (int i = 0; i < 8; i++) trailer[8 + i] = (uint8_t)(u >> (i * 8));
+    fwrite(trailer, 1, RTC_TRAILER_SIZE, f);
+}
+
 bool cartridge_load(Cartridge* cart, const char* path) {
     FILE* f = fopen(path, "rb");
     if (!f) {
@@ -194,6 +220,7 @@ void cartridge_save_to_file(Cartridge* cart) {
         break;
     }
 
+    if (expected > 0) write_rtc_trailer(f, cart);
     fclose(f);
 
     if (expected > 0 && written != expected) {
@@ -209,18 +236,49 @@ void cartridge_load_save_file(Cartridge* cart) {
     FILE* f = fopen(cart->save_path, "rb");
     if (!f) return; // No save file yet, that's fine
 
+    size_t payload = payload_size_for(cart);
+    if (payload == 0) { fclose(f); return; }
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    size_t to_read = (size >= (long)payload) ? payload : (size > 0 ? (size_t)size : 0);
     switch (cart->save_type) {
     case SAVE_SRAM:
-        fread(cart->sram, 1, sizeof(cart->sram), f);
+        fread(cart->sram, 1, to_read, f);
         break;
     case SAVE_FLASH64:
-        fread(cart->flash.data, 1, 0x10000, f);
-        break;
     case SAVE_FLASH128:
-        fread(cart->flash.data, 1, 0x20000, f);
+        fread(cart->flash.data, 1, to_read, f);
         break;
     default:
         break;
+    }
+
+    cart->rtc.offset_secs = 0;
+
+    if ((size_t)size == payload + RTC_TRAILER_SIZE) {
+        uint8_t trailer[RTC_TRAILER_SIZE];
+        if (fread(trailer, 1, RTC_TRAILER_SIZE, f) == RTC_TRAILER_SIZE &&
+            memcmp(trailer, RTC_TRAILER_MAGIC, 4) == 0) {
+            uint32_t ver = (uint32_t)trailer[4]
+                         | ((uint32_t)trailer[5] << 8)
+                         | ((uint32_t)trailer[6] << 16)
+                         | ((uint32_t)trailer[7] << 24);
+            if (ver == RTC_TRAILER_VERSION) {
+                uint64_t u = 0;
+                for (int i = 0; i < 8; i++) u |= (uint64_t)trailer[8 + i] << (i * 8);
+                cart->rtc.offset_secs = (int64_t)u;
+            } else {
+                LOG_WARN("RTC trailer version %u not supported, ignoring", ver);
+            }
+        } else {
+            LOG_WARN("RTC trailer magic mismatch, ignoring");
+        }
+    } else if ((size_t)size != payload) {
+        LOG_WARN("Unexpected save size %ld (expected %zu or %zu), trailer ignored",
+                 size, payload, payload + RTC_TRAILER_SIZE);
     }
 
     fclose(f);

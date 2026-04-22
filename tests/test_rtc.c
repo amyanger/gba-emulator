@@ -3,6 +3,8 @@
 #include "cartridge/gpio.h"
 #include "cartridge/rtc.h"
 #include <time.h>
+#include <stdio.h>
+#include <unistd.h>
 
 static Cartridge make_cart(void) {
     Cartridge c;
@@ -270,6 +272,49 @@ TEST(rtc_e2e_datetime_read_via_cartridge) {
     c.rom = NULL;
 }
 
+/* Build a minimal cart with SAVE_SRAM so the save path runs. */
+static void prep_cart_for_save(Cartridge* c, const char* path) {
+    memset(c, 0, sizeof(*c));
+    c->save_type = SAVE_SRAM;
+    gpio_init(c);
+    rtc_init(&c->rtc);
+    snprintf(c->save_path, sizeof(c->save_path), "%s", path);
+}
+
+TEST(rtc_sav_trailer_roundtrip) {
+    const char* path = "/tmp/gba_rtc_trailer_test.sav";
+    unlink(path);
+
+    Cartridge a; prep_cart_for_save(&a, path);
+    a.rtc.offset_secs = 86400; /* +1 day */
+    cartridge_save_to_file(&a);
+
+    Cartridge b; prep_cart_for_save(&b, path);
+    cartridge_load_save_file(&b);
+    ASSERT_EQ(b.rtc.offset_secs, 86400);
+
+    unlink(path);
+}
+
+TEST(rtc_sav_legacy_no_trailer) {
+    const char* path = "/tmp/gba_rtc_legacy_test.sav";
+    unlink(path);
+
+    /* Create a payload-only file (no trailer) - 32KB of zeros. */
+    FILE* f = fopen(path, "wb");
+    ASSERT_TRUE(f != NULL);
+    uint8_t zero[0x8000] = {0};
+    fwrite(zero, 1, sizeof(zero), f);
+    fclose(f);
+
+    Cartridge c; prep_cart_for_save(&c, path);
+    c.rtc.offset_secs = 99999; /* should be overwritten */
+    cartridge_load_save_file(&c);
+    ASSERT_EQ(c.rtc.offset_secs, 0);
+
+    unlink(path);
+}
+
 void run_rtc_tests(void) {
     printf("\nRTC tests:\n");
     RUN_TEST(gpio_power_on_defaults);
@@ -283,4 +328,6 @@ void run_rtc_tests(void) {
     RUN_TEST(rtc_force_reset_clears_offset_and_status);
     RUN_TEST(rtc_status_roundtrip);
     RUN_TEST(rtc_e2e_datetime_read_via_cartridge);
+    RUN_TEST(rtc_sav_trailer_roundtrip);
+    RUN_TEST(rtc_sav_legacy_no_trailer);
 }
