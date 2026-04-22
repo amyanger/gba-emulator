@@ -17,15 +17,137 @@ void rtc_init(RTCState* rtc) {
     rtc->status_reg = 0x80; /* POWER bit set until the game writes status */
 }
 
-/* Helpers we'll flesh out in Task 4 — stub for now so the state machine can link. */
-static void rtc_fill_payload_for_read(RTCState* rtc, uint8_t reg) {
-    (void)rtc; (void)reg;
-    /* filled in Task 4 */
+/* --- BCD + time helpers --------------------------------------------------- */
+
+static uint8_t to_bcd(int v) {
+    return (uint8_t)(((v / 10) << 4) | (v % 10));
 }
 
+static int from_bcd(uint8_t b) {
+    return ((b >> 4) * 10) + (b & 0x0F);
+}
+
+/* Decode an hour byte per the current 24H/12H mode flag (status bit 6).
+ * 24H mode: plain BCD 0..23 (upper bits masked).
+ * 12H mode: BCD 1..12 with bit 7 = PM. */
+static int decode_hour(const RTCState* rtc, uint8_t hb) {
+    if (rtc->status_reg & 0x40) {
+        return from_bcd((uint8_t)(hb & 0x3F));
+    }
+    int h12 = from_bcd((uint8_t)(hb & 0x1F));
+    if (hb & 0x80) {
+        if (h12 != 12) h12 += 12;
+    } else {
+        if (h12 == 12) h12 = 0;
+    }
+    return h12;
+}
+
+/* Fill payload[0..6] with the 7-byte DateTime record for the given broken-down
+ * time, honoring the 24H/12H status bit. */
+static void rtc_write_datetime_payload(RTCState* rtc, const struct tm* t) {
+    int hour = t->tm_hour;
+    uint8_t hour_byte;
+    if (rtc->status_reg & 0x40) {
+        hour_byte = to_bcd(hour);
+    } else {
+        int h12 = hour % 12;
+        if (h12 == 0) h12 = 12;
+        hour_byte = to_bcd(h12);
+        if (hour >= 12) hour_byte |= 0x80;
+    }
+    rtc->payload[0] = to_bcd(t->tm_year - 100);
+    rtc->payload[1] = to_bcd(t->tm_mon + 1);
+    rtc->payload[2] = to_bcd(t->tm_mday);
+    rtc->payload[3] = to_bcd(t->tm_wday);
+    rtc->payload[4] = hour_byte;
+    rtc->payload[5] = to_bcd(t->tm_min);
+    rtc->payload[6] = to_bcd(t->tm_sec);
+}
+
+/* Pre-load payload bytes for a READ command (reg 1/2/4/5/6). */
+static void rtc_fill_payload_for_read(RTCState* rtc, uint8_t reg) {
+    time_t now = g_time_source(NULL);
+    time_t effective = now + (time_t)rtc->offset_secs;
+    struct tm t = *localtime(&effective);
+
+    switch (reg) {
+    case 1: /* Status */
+        rtc->payload[0] = rtc->status_reg;
+        break;
+    case 2: /* DateTime (7 bytes) */
+        rtc_write_datetime_payload(rtc, &t);
+        break;
+    case 4: /* Time only (3 bytes: hour, min, sec) */
+        if (rtc->status_reg & 0x40) {
+            rtc->payload[0] = to_bcd(t.tm_hour);
+        } else {
+            int h12 = t.tm_hour % 12;
+            if (h12 == 0) h12 = 12;
+            rtc->payload[0] = (uint8_t)(to_bcd(h12) | (t.tm_hour >= 12 ? 0x80 : 0));
+        }
+        rtc->payload[1] = to_bcd(t.tm_min);
+        rtc->payload[2] = to_bcd(t.tm_sec);
+        break;
+    case 5: /* Alarm 1 — stubbed: return zeros */
+    case 6: /* Alarm 2 — stubbed: return zeros */
+        memset(rtc->payload, 0, 3);
+        break;
+    default:
+        break;
+    }
+}
+
+/* Commit the assembled payload (or no-payload command) back into RTC state. */
 static void rtc_commit_write(RTCState* rtc, uint8_t reg) {
-    (void)rtc; (void)reg;
-    /* filled in Task 4 */
+    switch (reg) {
+    case 0: /* Force Reset: clears status to POWER-on and zeroes the offset. */
+        rtc->status_reg = 0x80;
+        rtc->offset_secs = 0;
+        break;
+
+    case 1: /* Status: bit 7 (POWER) is sticky-on and cleared by the write. */
+        rtc->status_reg = (uint8_t)(rtc->payload[0] & 0x7F);
+        break;
+
+    case 2: { /* DateTime: rebuild struct tm, compute signed offset vs host. */
+        struct tm t = {0};
+        t.tm_year = from_bcd(rtc->payload[0]) + 100;
+        t.tm_mon  = from_bcd(rtc->payload[1]) - 1;
+        t.tm_mday = from_bcd(rtc->payload[2]);
+        t.tm_hour = decode_hour(rtc, rtc->payload[4]);
+        t.tm_min  = from_bcd(rtc->payload[5]);
+        t.tm_sec  = from_bcd(rtc->payload[6]);
+        t.tm_isdst = -1;
+        time_t written = mktime(&t);
+        time_t now = g_time_source(NULL);
+        rtc->offset_secs = (int64_t)written - (int64_t)now;
+        break;
+    }
+
+    case 3: /* Force IRQ: acknowledged, no state change. */
+        break;
+
+    case 4: { /* Time only: preserve current effective date, slide time-of-day. */
+        time_t now = g_time_source(NULL);
+        time_t eff = now + (time_t)rtc->offset_secs;
+        struct tm t = *localtime(&eff);
+        t.tm_hour = decode_hour(rtc, rtc->payload[0]);
+        t.tm_min  = from_bcd(rtc->payload[1]);
+        t.tm_sec  = from_bcd(rtc->payload[2]);
+        t.tm_isdst = -1;
+        time_t written = mktime(&t);
+        rtc->offset_secs = (int64_t)written - (int64_t)now;
+        break;
+    }
+
+    case 5:
+    case 6: /* Alarms — stubbed: accept write but ignore. */
+        break;
+
+    default:
+        break;
+    }
 }
 
 static void rtc_decode_command(RTCState* rtc) {
