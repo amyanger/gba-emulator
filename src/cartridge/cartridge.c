@@ -1,6 +1,7 @@
 #include "cartridge.h"
 #include "flash.h"
 #include "gpio.h"
+#include "rtc.h"
 
 bool cartridge_load(Cartridge* cart, const char* path) {
     FILE* f = fopen(path, "rb");
@@ -60,6 +61,7 @@ bool cartridge_load(Cartridge* cart, const char* path) {
     }
 
     gpio_init(cart);
+    rtc_init(&cart->rtc);
 
     // Try to load existing save
     cartridge_load_save_file(cart);
