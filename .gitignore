@@ -2,6 +2,9 @@
 build/
 cmake-build-*/
 
+# Worktrees
+.worktrees/
+
 # ROMs and BIOS (copyrighted)
 roms/*.gba
 roms/*.bin
