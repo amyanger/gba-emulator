@@ -109,16 +109,18 @@ void cartridge_detect_save_type(Cartridge* cart) {
 
 uint8_t cartridge_read8(Cartridge* cart, uint32_t addr) {
     if (addr >= 0x08000000 && addr < 0x0E000000) {
-        // ROM region
         uint32_t offset = addr & 0x01FFFFFF;
+        if (offset >= 0xC4 && offset <= 0xC9 && (cart->gpio.control & 1)) {
+            uint32_t reg = offset & ~1u;
+            uint16_t hw = gpio_read(cart, reg);
+            return (offset & 1) ? (uint8_t)(hw >> 8) : (uint8_t)hw;
+        }
         if (offset < cart->rom_size) {
             return cart->rom[offset];
         }
         return 0;
     }
-
     if (addr >= 0x0E000000 && addr < 0x10000000) {
-        // SRAM/Flash region
         uint32_t offset = addr & 0xFFFF;
         switch (cart->save_type) {
         case SAVE_SRAM:
@@ -130,11 +132,22 @@ uint8_t cartridge_read8(Cartridge* cart, uint32_t addr) {
             return 0;
         }
     }
-
     return 0;
 }
 
 void cartridge_write8(Cartridge* cart, uint32_t addr, uint8_t val) {
+    if (addr >= 0x08000000 && addr < 0x0E000000) {
+        uint32_t offset = addr & 0x01FFFFFF;
+        if (offset >= 0xC4 && offset <= 0xC9) {
+            uint32_t reg = offset & ~1u;
+            uint16_t hw = gpio_read(cart, reg);
+            uint16_t updated = (offset & 1)
+                ? (uint16_t)((hw & 0x00FF) | ((uint16_t)val << 8))
+                : (uint16_t)((hw & 0xFF00) | val);
+            gpio_write(cart, reg, updated);
+        }
+        return;
+    }
     if (addr >= 0x0E000000 && addr < 0x10000000) {
         uint32_t offset = addr & 0xFFFF;
         switch (cart->save_type) {
