@@ -78,8 +78,9 @@ bool cartridge_load(Cartridge* cart, const char* path) {
     // Detect save type
     cartridge_detect_save_type(cart);
 
-    // Build save file path
-    snprintf(cart->save_path, sizeof(cart->save_path), "saves/%s.sav", cart->game_code);
+    // Save file sits next to the ROM (append .sav). Absolute-path-correct
+    // regardless of the emulator's CWD, and matches the savestate convention.
+    snprintf(cart->save_path, sizeof(cart->save_path), "%s.sav", path);
 
     // Initialize save hardware
     if (cart->save_type == SAVE_FLASH128 || cart->save_type == SAVE_FLASH64) {

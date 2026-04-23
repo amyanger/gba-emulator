@@ -107,7 +107,7 @@ include/
   common.h             Fixed-width types, BIT/BITS macros, LOG macros, timing constants
 bios/                  Place GBA BIOS ROM here (optional — HLE BIOS works without it)
 roms/                  Place ROM files here for testing
-saves/                 Save files are written here automatically
+saves/                 Legacy save dir (pre-2026-04). New saves sit next to the ROM.
 ```
 
 ## Cheat File Format (.cht)

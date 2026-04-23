@@ -914,21 +914,6 @@ SaveStateResult savestate_load(GBA* gba, const char* path) {
 }
 
 void savestate_slot_path(const char* rom_path, int32_t slot, char* out, size_t out_size) {
-    /* Find the basename: skip directory separators */
-    const char* base = rom_path;
-    const char* p = rom_path;
-    while (*p) {
-        if (*p == '/' || *p == '\\') base = p + 1;
-        p++;
-    }
-
-    /* Strip extension */
-    char name[256];
-    strncpy(name, base, sizeof(name) - 1);
-    name[sizeof(name) - 1] = '\0';
-
-    char* dot = strrchr(name, '.');
-    if (dot) *dot = '\0';
-
-    snprintf(out, out_size, "saves/%s.ss%d", name, slot);
+    /* Savestate sits next to the ROM (append .ss<slot>). Works from any CWD. */
+    snprintf(out, out_size, "%s.ss%d", rom_path, slot);
 }

@@ -16,8 +16,12 @@ roms/*.bin
 bios/*.bin
 bios/*.rom
 
-# Save files
+# Save files (cart saves + savestates live next to the ROM)
+roms/*.sav
+roms/*.ss[0-9]
+# Legacy saves/ dir (pre-2026-04 layout)
 saves/*.sav
+saves/*.ss[0-9]
 
 # Cache
 .cache/

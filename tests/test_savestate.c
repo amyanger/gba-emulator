@@ -30,25 +30,25 @@ TEST(crc32_single_byte) {
 TEST(slot_path_basic) {
     char buf[256];
     savestate_slot_path("roms/emerald.gba", 1, buf, sizeof(buf));
-    ASSERT_STR_EQ(buf, "saves/emerald.ss1");
+    ASSERT_STR_EQ(buf, "roms/emerald.gba.ss1");
 }
 
 TEST(slot_path_nested_dir) {
     char buf[256];
     savestate_slot_path("/home/user/roms/fire_red.gba", 3, buf, sizeof(buf));
-    ASSERT_STR_EQ(buf, "saves/fire_red.ss3");
+    ASSERT_STR_EQ(buf, "/home/user/roms/fire_red.gba.ss3");
 }
 
 TEST(slot_path_no_extension) {
     char buf[256];
     savestate_slot_path("myrom", 0, buf, sizeof(buf));
-    ASSERT_STR_EQ(buf, "saves/myrom.ss0");
+    ASSERT_STR_EQ(buf, "myrom.ss0");
 }
 
 TEST(slot_path_slot_9) {
     char buf[256];
     savestate_slot_path("test.gba", 9, buf, sizeof(buf));
-    ASSERT_STR_EQ(buf, "saves/test.ss9");
+    ASSERT_STR_EQ(buf, "test.gba.ss9");
 }
 
 TEST(slot_path_small_buffer) {
