@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            install: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+          - os: macos-latest
+            install: brew install sdl2
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL2
+        run: ${{ matrix.install }}
+
+      - name: Configure (Debug)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build emulator
+        run: cmake --build build --target gba_emulator -j
+
+      - name: Build tests
+        run: cmake --build build --target gba_tests -j
+
+      - name: Run tests
+        working-directory: build
+        run: ctest --output-on-failure
