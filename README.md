@@ -43,7 +43,7 @@ cmake .. -DENABLE_XRAY=OFF
 - **DMA Controller** — 4-channel with immediate, VBlank, HBlank, and FIFO timing modes
 - **Timers** — 4 cascadable 16-bit timers with prescaler and IRQ generation
 - **Interrupts** — IE/IF/IME with write-1-to-clear semantics
-- **Flash 128K Save** — Macronix MX29L010 protocol (Pokemon Emerald compatible)
+- **Flash 128K Save** — Macronix MX29L010 protocol (Pokemon Emerald, Ruby, Sapphire, FireRed, LeafGreen)
 - **Cartridge** — ROM loading (up to 32MB), auto save detection, file persistence
 - **Input** — Active-low KEYINPUT register with SDL2 keyboard mapping
 - **SDL2 Frontend** — Windowed rendering, configurable scale, audio-driven frame sync
@@ -254,6 +254,13 @@ The ARM7TDMI uses a 3-stage pipeline (fetch-decode-execute). The PC is always 2 
 | 7 | Polish + accuracy (full playthrough) | In progress |
 
 **Target milestone**: Full Pokemon Emerald playthrough from title screen to credits.
+
+### Game compatibility
+
+| Game | Status |
+|------|--------|
+| Pokemon Emerald (BPEE) | Playable |
+| Pokemon FireRed (BPRE) | Boots, save type auto-detected (Flash 128K). Not yet verified end-to-end. |
 
 ## Testing
 
