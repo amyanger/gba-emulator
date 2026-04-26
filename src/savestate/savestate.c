@@ -238,8 +238,11 @@ static void save_dma_chunk(WriteBuffer* wb, DMAController* dma) {
 }
 
 static void save_ppu_chunk(WriteBuffer* wb, PPU* ppu) {
-    /* 3*2 + 4*2 + 4*2 + 4*2 + 2*2*4 + 2*4*4 + 2*4*4 + 2*2 + 2*2 + 2*2 + 3*2 + 2 + 4 */
-    uint32_t payload_size = 6 + 8 + 8 + 8 + 16 + 32 + 32 + 8 + 4 + 4 + 6 + 2 + 4;
+    /* 3*u16 (dispXX) + 3*4*u16 (bg_cnt/hofs/vofs) + 4*2*u16 (bg_pa..pd)
+     * + 4*2*u32 (bg_ref_xy + latches) + 2*2*u16 (win_h/v) + 2*u16 (winin/out)
+     * + 3*u16 (bld) + u16 (mosaic) + u32 (cycle_counter)
+     * = 6 + 24 + 16 + 32 + 8 + 4 + 6 + 2 + 4 = 102 */
+    uint32_t payload_size = 6 + 24 + 16 + 32 + 8 + 4 + 6 + 2 + 4;
     write_chunk_header(wb, CHUNK_PPU, payload_size);
 
     write_u16(wb, ppu->dispcnt);
@@ -664,7 +667,11 @@ static uint32_t get_rom_crc(const Cartridge* cart) {
 /* -------------------------------------------------------------------------- */
 /*  Public API                                                                */
 /* -------------------------------------------------------------------------- */
-SaveStateResult savestate_save(GBA* gba, const char* path) {
+SaveStateResult savestate_save_to_buffer(GBA* gba, uint8_t** out, size_t* out_size) {
+    if (!gba || !out || !out_size) return SS_ERR_FILE_OPEN;
+    *out = NULL;
+    *out_size = 0;
+
     WriteBuffer wb;
     if (!wbuf_init(&wb, 512 * 1024)) {
         LOG_ERROR("Save state: allocation failed");
@@ -740,27 +747,153 @@ SaveStateResult savestate_save(GBA* gba, const char* path) {
     /* Reserved */
     memset(h + HEADER_OFF_RSVD, 0, 4);
 
-    /* Ensure saves directory exists */
+    /* Hand ownership of the buffer to the caller — caller frees with free(). */
+    *out = wb.data;
+    *out_size = wb.size;
+    return SS_OK;
+}
+
+SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t size) {
+    if (!gba || !buf) return SS_ERR_FILE_READ;
+
+    if (size < HEADER_SIZE) {
+        LOG_ERROR("Save state: buffer too small (%zu bytes)", size);
+        return SS_ERR_TRUNCATED;
+    }
+
+    /* Parse header */
+    const uint8_t* hdr = buf;
+    uint32_t magic = (uint32_t)hdr[0]
+                   | ((uint32_t)hdr[1] << 8)
+                   | ((uint32_t)hdr[2] << 16)
+                   | ((uint32_t)hdr[3] << 24);
+    if (magic != SAVESTATE_MAGIC) {
+        LOG_ERROR("Save state: bad magic 0x%08X (expected 0x%08X)", magic, SAVESTATE_MAGIC);
+        return SS_ERR_BAD_MAGIC;
+    }
+
+    uint32_t version = (uint32_t)hdr[4]
+                     | ((uint32_t)hdr[5] << 8)
+                     | ((uint32_t)hdr[6] << 16)
+                     | ((uint32_t)hdr[7] << 24);
+    if (version != SAVESTATE_VERSION) {
+        LOG_ERROR("Save state: version %u not supported (expected %u)", version, SAVESTATE_VERSION);
+        return SS_ERR_BAD_VERSION;
+    }
+
+    uint32_t total_size = (uint32_t)hdr[8]
+                        | ((uint32_t)hdr[9] << 8)
+                        | ((uint32_t)hdr[10] << 16)
+                        | ((uint32_t)hdr[11] << 24);
+    if (total_size != (uint32_t)size) {
+        LOG_ERROR("Save state: size mismatch (header=%u, buffer=%zu)", total_size, size);
+        return SS_ERR_CORRUPT;
+    }
+
+    uint32_t stored_crc = (uint32_t)hdr[12]
+                        | ((uint32_t)hdr[13] << 8)
+                        | ((uint32_t)hdr[14] << 16)
+                        | ((uint32_t)hdr[15] << 24);
+
+    uint32_t stored_rom_crc = (uint32_t)hdr[16]
+                            | ((uint32_t)hdr[17] << 8)
+                            | ((uint32_t)hdr[18] << 16)
+                            | ((uint32_t)hdr[19] << 24);
+
+    uint32_t rom_crc = get_rom_crc(&gba->cart);
+    if (rom_crc != stored_rom_crc) {
+        LOG_ERROR("Save state: ROM mismatch (state=0x%08X, loaded=0x%08X)",
+                  stored_rom_crc, rom_crc);
+        return SS_ERR_ROM_MISMATCH;
+    }
+
+    /* Validate data CRC */
+    uint32_t computed_crc = crc32(buf + HEADER_SIZE, size - HEADER_SIZE);
+    if (computed_crc != stored_crc) {
+        LOG_ERROR("Save state: CRC mismatch (stored=0x%08X, computed=0x%08X)",
+                  stored_crc, computed_crc);
+        return SS_ERR_CORRUPT;
+    }
+
+    /* Parse chunks */
+    const uint8_t* cur = buf + HEADER_SIZE;
+    const uint8_t* end = buf + size;
+
+    while (cur + 8 <= end) {
+        uint32_t chunk_id = (uint32_t)cur[0]
+                          | ((uint32_t)cur[1] << 8)
+                          | ((uint32_t)cur[2] << 16)
+                          | ((uint32_t)cur[3] << 24);
+        uint32_t chunk_size = (uint32_t)cur[4]
+                            | ((uint32_t)cur[5] << 8)
+                            | ((uint32_t)cur[6] << 16)
+                            | ((uint32_t)cur[7] << 24);
+        cur += 8;
+
+        if (cur + chunk_size > end) {
+            LOG_ERROR("Save state: chunk 0x%08X truncated (need %u, have %td)",
+                      chunk_id, chunk_size, end - cur);
+            return SS_ERR_TRUNCATED;
+        }
+
+        const uint8_t* chunk_data = cur;
+
+        switch (chunk_id) {
+        case CHUNK_GBA:  load_gba_chunk(&chunk_data, gba);              break;
+        case CHUNK_CPU:  load_cpu_chunk(&chunk_data, &gba->cpu);        break;
+        case CHUNK_BRAM: load_bram_chunk(&chunk_data, &gba->bus);       break;
+        case CHUNK_DMA:  load_dma_chunk(&chunk_data, &gba->dma);        break;
+        case CHUNK_PPU:  load_ppu_chunk(&chunk_data, &gba->ppu);        break;
+        case CHUNK_APU:  load_apu_chunk(&chunk_data, &gba->apu);        break;
+        case CHUNK_TMR:  load_tmr_chunk(&chunk_data, gba->timers);      break;
+        case CHUNK_IRQ:  load_irq_chunk(&chunk_data, &gba->interrupts); break;
+        case CHUNK_CART: load_cart_chunk(&chunk_data, &gba->cart);       break;
+        case CHUNK_INPT: load_inpt_chunk(&chunk_data, &gba->input);     break;
+        default:
+            LOG_WARN("Save state: skipping unknown chunk 0x%08X (%u bytes)",
+                     chunk_id, chunk_size);
+            break;
+        }
+
+        /* Advance past chunk data regardless of how much the loader consumed */
+        cur += chunk_size;
+    }
+
+    /* Reset APU ring buffer positions to avoid stale audio data */
+    gba->apu.write_pos = 0;
+    gba->apu.read_pos = 0;
+    memset(gba->apu.sample_buffer, 0, sizeof(gba->apu.sample_buffer));
+
+    return SS_OK;
+}
+
+SaveStateResult savestate_save(GBA* gba, const char* path) {
+    uint8_t* buf = NULL;
+    size_t   buf_size = 0;
+    SaveStateResult r = savestate_save_to_buffer(gba, &buf, &buf_size);
+    if (r != SS_OK) return r;
+
+    /* Ensure saves directory exists (legacy path; harmless for ROM-adjacent paths) */
     mkdir("saves", 0755);
 
-    /* Write to file */
     FILE* f = fopen(path, "wb");
     if (!f) {
         LOG_ERROR("Save state: cannot open '%s' for writing", path);
-        wbuf_free(&wb);
+        free(buf);
         return SS_ERR_FILE_OPEN;
     }
 
-    size_t written = fwrite(wb.data, 1, wb.size, f);
+    size_t written = fwrite(buf, 1, buf_size, f);
     fclose(f);
-    wbuf_free(&wb);
 
-    if (written != (size_t)total_size) {
-        LOG_ERROR("Save state: write error (wrote %zu of %u bytes)", written, total_size);
+    if (written != buf_size) {
+        LOG_ERROR("Save state: write error (wrote %zu of %zu bytes)", written, buf_size);
+        free(buf);
         return SS_ERR_FILE_WRITE;
     }
 
-    LOG_INFO("Save state written to '%s' (%u bytes)", path, total_size);
+    LOG_INFO("Save state written to '%s' (%zu bytes)", path, buf_size);
+    free(buf);
     return SS_OK;
 }
 
@@ -799,118 +932,10 @@ SaveStateResult savestate_load(GBA* gba, const char* path) {
         return SS_ERR_FILE_READ;
     }
 
-    /* Parse header */
-    const uint8_t* hdr = buf;
-    uint32_t magic = (uint32_t)hdr[0]
-                   | ((uint32_t)hdr[1] << 8)
-                   | ((uint32_t)hdr[2] << 16)
-                   | ((uint32_t)hdr[3] << 24);
-    if (magic != SAVESTATE_MAGIC) {
-        LOG_ERROR("Save state: bad magic 0x%08X (expected 0x%08X)", magic, SAVESTATE_MAGIC);
-        free(buf);
-        return SS_ERR_BAD_MAGIC;
-    }
-
-    uint32_t version = (uint32_t)hdr[4]
-                     | ((uint32_t)hdr[5] << 8)
-                     | ((uint32_t)hdr[6] << 16)
-                     | ((uint32_t)hdr[7] << 24);
-    if (version != SAVESTATE_VERSION) {
-        LOG_ERROR("Save state: version %u not supported (expected %u)", version, SAVESTATE_VERSION);
-        free(buf);
-        return SS_ERR_BAD_VERSION;
-    }
-
-    uint32_t total_size = (uint32_t)hdr[8]
-                        | ((uint32_t)hdr[9] << 8)
-                        | ((uint32_t)hdr[10] << 16)
-                        | ((uint32_t)hdr[11] << 24);
-    if (total_size != (uint32_t)file_len) {
-        LOG_ERROR("Save state: size mismatch (header=%u, file=%ld)", total_size, file_len);
-        free(buf);
-        return SS_ERR_CORRUPT;
-    }
-
-    uint32_t stored_crc = (uint32_t)hdr[12]
-                        | ((uint32_t)hdr[13] << 8)
-                        | ((uint32_t)hdr[14] << 16)
-                        | ((uint32_t)hdr[15] << 24);
-
-    uint32_t stored_rom_crc = (uint32_t)hdr[16]
-                            | ((uint32_t)hdr[17] << 8)
-                            | ((uint32_t)hdr[18] << 16)
-                            | ((uint32_t)hdr[19] << 24);
-
-    uint32_t rom_crc = get_rom_crc(&gba->cart);
-    if (rom_crc != stored_rom_crc) {
-        LOG_ERROR("Save state: ROM mismatch (state=0x%08X, loaded=0x%08X)",
-                  stored_rom_crc, rom_crc);
-        free(buf);
-        return SS_ERR_ROM_MISMATCH;
-    }
-
-    /* Validate data CRC */
-    uint32_t computed_crc = crc32(buf + HEADER_SIZE, (size_t)(file_len - HEADER_SIZE));
-    if (computed_crc != stored_crc) {
-        LOG_ERROR("Save state: CRC mismatch (stored=0x%08X, computed=0x%08X)",
-                  stored_crc, computed_crc);
-        free(buf);
-        return SS_ERR_CORRUPT;
-    }
-
-    /* Parse chunks */
-    const uint8_t* cur = buf + HEADER_SIZE;
-    const uint8_t* end = buf + file_len;
-
-    while (cur + 8 <= end) {
-        uint32_t chunk_id = (uint32_t)cur[0]
-                          | ((uint32_t)cur[1] << 8)
-                          | ((uint32_t)cur[2] << 16)
-                          | ((uint32_t)cur[3] << 24);
-        uint32_t chunk_size = (uint32_t)cur[4]
-                            | ((uint32_t)cur[5] << 8)
-                            | ((uint32_t)cur[6] << 16)
-                            | ((uint32_t)cur[7] << 24);
-        cur += 8;
-
-        if (cur + chunk_size > end) {
-            LOG_ERROR("Save state: chunk 0x%08X truncated (need %u, have %td)",
-                      chunk_id, chunk_size, end - cur);
-            free(buf);
-            return SS_ERR_TRUNCATED;
-        }
-
-        const uint8_t* chunk_data = cur;
-
-        switch (chunk_id) {
-        case CHUNK_GBA:  load_gba_chunk(&chunk_data, gba);              break;
-        case CHUNK_CPU:  load_cpu_chunk(&chunk_data, &gba->cpu);        break;
-        case CHUNK_BRAM: load_bram_chunk(&chunk_data, &gba->bus);       break;
-        case CHUNK_DMA:  load_dma_chunk(&chunk_data, &gba->dma);        break;
-        case CHUNK_PPU:  load_ppu_chunk(&chunk_data, &gba->ppu);        break;
-        case CHUNK_APU:  load_apu_chunk(&chunk_data, &gba->apu);        break;
-        case CHUNK_TMR:  load_tmr_chunk(&chunk_data, gba->timers);      break;
-        case CHUNK_IRQ:  load_irq_chunk(&chunk_data, &gba->interrupts); break;
-        case CHUNK_CART: load_cart_chunk(&chunk_data, &gba->cart);       break;
-        case CHUNK_INPT: load_inpt_chunk(&chunk_data, &gba->input);     break;
-        default:
-            LOG_WARN("Save state: skipping unknown chunk 0x%08X (%u bytes)",
-                     chunk_id, chunk_size);
-            break;
-        }
-
-        /* Advance past chunk data regardless of how much the loader consumed */
-        cur += chunk_size;
-    }
-
-    /* Reset APU ring buffer positions to avoid stale audio data */
-    gba->apu.write_pos = 0;
-    gba->apu.read_pos = 0;
-    memset(gba->apu.sample_buffer, 0, sizeof(gba->apu.sample_buffer));
-
+    SaveStateResult r = savestate_load_from_buffer(gba, buf, (size_t)file_len);
     free(buf);
-    LOG_INFO("Save state loaded from '%s'", path);
-    return SS_OK;
+    if (r == SS_OK) LOG_INFO("Save state loaded from '%s'", path);
+    return r;
 }
 
 void savestate_slot_path(const char* rom_path, int32_t slot, char* out, size_t out_size) {
