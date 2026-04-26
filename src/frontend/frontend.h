@@ -30,7 +30,9 @@ typedef struct {
     uint32_t ff_frame_count; // rolling counter for frame skip
 
     // Rewind
+#ifdef ENABLE_REWIND
     bool rewind_hold;        // true while Backspace is held
+#endif
 
     bool fullscreen;
     uint16_t controller_keys;  // bitmask of keys held by gamepad (avoids clobbering keyboard)

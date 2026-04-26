@@ -1,4 +1,7 @@
 #include "test_harness.h"
+
+#ifdef ENABLE_REWIND
+
 #include "rewind/rewind_lz4.h"
 #include <string.h>
 
@@ -190,3 +193,11 @@ void run_rewind_tests(void) {
     RUN_TEST(rewind_recovers_from_corrupt_slot);
     RUN_TEST(rewind_clear_resets_buffer);
 }
+
+#else /* !ENABLE_REWIND */
+
+void run_rewind_tests(void) {
+    /* Rewind feature disabled — no tests to run. */
+}
+
+#endif /* ENABLE_REWIND */

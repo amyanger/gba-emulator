@@ -21,6 +21,9 @@ find_package(SDL2 REQUIRED)
 # X-Ray hardware visualization mode (default ON)
 option(ENABLE_XRAY "Enable Hardware X-Ray Mode (F2 hotkey)" ON)
 
+# Rewind playback (default ON)
+option(ENABLE_REWIND "Enable hold-Backspace-to-rewind playback" ON)
+
 set(SOURCES
     src/main.c
     src/gba.c
@@ -50,8 +53,6 @@ set(SOURCES
     src/input/input.c
     src/cheat/cheat.c
     src/cheat/cheat_file.c
-    src/rewind/rewind_lz4.c
-    src/rewind/rewind.c
     src/savestate/savestate.c
     src/frontend/frontend.c
 )
@@ -65,11 +66,18 @@ set(XRAY_SOURCES
     src/frontend/xray/xray_ppu.c
     src/frontend/xray/xray_tiles.c
     src/frontend/xray/xray_audio.c
-    src/frontend/xray/xray_rewind.c
 )
+
+if(ENABLE_XRAY AND ENABLE_REWIND)
+    list(APPEND XRAY_SOURCES src/frontend/xray/xray_rewind.c)
+endif()
 
 if(ENABLE_XRAY)
     list(APPEND SOURCES ${XRAY_SOURCES})
+endif()
+
+if(ENABLE_REWIND)
+    list(APPEND SOURCES src/rewind/rewind.c src/rewind/rewind_lz4.c)
 endif()
 
 add_executable(gba_emulator ${SOURCES})
@@ -84,6 +92,10 @@ target_link_libraries(gba_emulator PRIVATE ${SDL2_LIBRARIES} m)
 
 if(ENABLE_XRAY)
     target_compile_definitions(gba_emulator PRIVATE ENABLE_XRAY)
+endif()
+
+if(ENABLE_REWIND)
+    target_compile_definitions(gba_emulator PRIVATE ENABLE_REWIND)
 endif()
 
 # ── Test suite ──────────────────────────────────────────────────────
@@ -117,9 +129,11 @@ set(LIB_SOURCES
     src/input/input.c
     src/cheat/cheat.c
     src/cheat/cheat_file.c
-    src/rewind/rewind_lz4.c
-    src/rewind/rewind.c
 )
+
+if(ENABLE_REWIND)
+    list(APPEND LIB_SOURCES src/rewind/rewind.c src/rewind/rewind_lz4.c)
+endif()
 
 add_executable(gba_tests
     tests/test_runner.c
@@ -138,5 +152,9 @@ target_include_directories(gba_tests PRIVATE
 )
 
 target_link_libraries(gba_tests PRIVATE m)
+
+if(ENABLE_REWIND)
+    target_compile_definitions(gba_tests PRIVATE ENABLE_REWIND)
+endif()
 
 add_test(NAME gba_tests COMMAND gba_tests)

@@ -42,9 +42,11 @@ void gba_init(GBA* gba) {
     gba->running = true;
     gba->frame_complete = false;
 
+#ifdef ENABLE_REWIND
     /* 60-second window at 30 snapshots/sec = 1800 slots. Failure is non-fatal —
      * rewind_init logs a warning and the rewind APIs become safe no-ops. */
     rewind_init(&gba->rewind, 1800);
+#endif
 
     LOG_INFO("GBA system initialized");
 }
@@ -123,13 +125,17 @@ void gba_run_frame(GBA* gba) {
         gba->total_cycles += SCANLINE_CYCLES;
     }
 
+#ifdef ENABLE_REWIND
     /* Record snapshot at end-of-frame, after all scanlines (including VBlank)
      * have completed and the GBA struct represents a consistent state. */
     rewind_record_frame(&gba->rewind, gba);
+#endif
 }
 
 void gba_destroy(GBA* gba) {
     cartridge_destroy(&gba->cart);
+#ifdef ENABLE_REWIND
     rewind_shutdown(&gba->rewind);
+#endif
     LOG_INFO("GBA system destroyed");
 }

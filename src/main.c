@@ -2,7 +2,9 @@
 #include "cpu/arm7tdmi.h"
 #include "cheat/cheat_file.h"
 #include "frontend/frontend.h"
+#ifdef ENABLE_REWIND
 #include "rewind/rewind.h"
+#endif
 #include "savestate/savestate.h"
 #include <stdio.h>
 
@@ -116,13 +118,16 @@ int main(int argc, char* argv[]) {
                 if (res == SS_OK) {
                     LOG_INFO("State loaded from slot %d", fe.savestate_slot);
                     SDL_ClearQueuedAudio(fe.audio_device);
+#ifdef ENABLE_REWIND
                     rewind_clear(&gba.rewind);   // past is no longer valid
+#endif
                 } else {
                     LOG_ERROR("Failed to load state (error %d)", res);
                 }
             }
         }
 
+#ifdef ENABLE_REWIND
         bool rewind_active_now = fe.rewind_hold && rewind_depth(&gba.rewind) > 0;
 
         // Detect transitions OUT of rewind (cleanup audio + APU state)
@@ -156,6 +161,7 @@ int main(int argc, char* argv[]) {
             frontend_frame_sync(&fe);
             continue;
         }
+#endif /* ENABLE_REWIND */
 
         gba_run_frame(&gba);
 

@@ -12,7 +12,10 @@
 #include "cartridge/cartridge.h"
 #include "input/input.h"
 #include "cheat/cheat.h"
+
+#ifdef ENABLE_REWIND
 #include "rewind/rewind.h"
+#endif
 
 #ifdef ENABLE_XRAY
 typedef struct XRayState XRayState;
@@ -29,7 +32,9 @@ struct GBA {
     Cartridge cart;
     InputState input;
     CheatEngine cheats;
+#ifdef ENABLE_REWIND
     RewindBuffer rewind;
+#endif
 
     uint64_t total_cycles;
     bool frame_complete;

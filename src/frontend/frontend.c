@@ -46,7 +46,9 @@ bool frontend_init(Frontend* fe, int scale) {
     fe->ff_frame_skip = 4;
     fe->ff_frame_count = 0;
 
+#ifdef ENABLE_REWIND
     fe->rewind_hold = false;
+#endif
 
     fe->fullscreen = false;
     fe->controller_keys = 0;
@@ -177,9 +179,11 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             if (event.key.keysym.scancode == SDL_SCANCODE_TAB) {
                 fe->ff_hold = true;
             }
+#ifdef ENABLE_REWIND
             if (event.key.keysym.scancode == SDL_SCANCODE_BACKSPACE) {
                 fe->rewind_hold = true;
             }
+#endif
             if (event.key.keysym.scancode == SDL_SCANCODE_F11 &&
                 !event.key.repeat) {
                 fe->fullscreen = !fe->fullscreen;
@@ -196,9 +200,11 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             if (event.key.keysym.scancode == SDL_SCANCODE_TAB) {
                 fe->ff_hold = false;
             }
+#ifdef ENABLE_REWIND
             if (event.key.keysym.scancode == SDL_SCANCODE_BACKSPACE) {
                 fe->rewind_hold = false;
             }
+#endif
             break;
         }
 
