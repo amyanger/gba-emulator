@@ -17,6 +17,7 @@ TEST(lz4_roundtrip_smoke) {
 }
 
 #include "rewind/rewind.h"
+#include "gba.h"
 
 TEST(rewind_init_shutdown_clean) {
     RewindBuffer rb;
@@ -28,8 +29,43 @@ TEST(rewind_init_shutdown_clean) {
     rewind_shutdown(&rb);
 }
 
+TEST(rewind_record_increments_count) {
+    RewindBuffer rb;
+    rewind_init(&rb, 8);
+    GBA gba;
+    gba_init(&gba);
+
+    /* Even frames are recorded; odd frames are skipped per spec. */
+    rewind_record_frame(&rb, &gba);  /* frame_counter 0 (even) -> recorded */
+    rewind_record_frame(&rb, &gba);  /* 1 odd -> skipped */
+    rewind_record_frame(&rb, &gba);  /* 2 even -> recorded */
+    ASSERT_EQ(rewind_depth(&rb), 2);
+
+    gba_destroy(&gba);
+    rewind_shutdown(&rb);
+}
+
+TEST(rewind_ring_wraps_at_capacity) {
+    RewindBuffer rb;
+    rewind_init(&rb, 4);
+    GBA gba;
+    gba_init(&gba);
+
+    /* Need 4 *recorded* frames to fill, plus more to overflow. Even frames
+     * only, so 8 calls = 4 recorded; 16 calls = 8 recorded -> wraps. */
+    for (int i = 0; i < 16; i++) {
+        rewind_record_frame(&rb, &gba);
+    }
+    ASSERT_EQ(rewind_depth(&rb), 4);   /* saturated at capacity */
+
+    gba_destroy(&gba);
+    rewind_shutdown(&rb);
+}
+
 void run_rewind_tests(void) {
     TEST_SUITE("rewind");
     RUN_TEST(lz4_roundtrip_smoke);
     RUN_TEST(rewind_init_shutdown_clean);
+    RUN_TEST(rewind_record_increments_count);
+    RUN_TEST(rewind_ring_wraps_at_capacity);
 }
