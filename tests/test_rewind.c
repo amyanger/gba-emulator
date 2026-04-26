@@ -132,6 +132,27 @@ TEST(rewind_handles_incompressible_payload) {
     rewind_shutdown(&rb);
 }
 
+TEST(rewind_recovers_from_corrupt_slot) {
+    RewindBuffer rb;
+    rewind_init(&rb, 4);
+    GBA gba;
+    gba_init(&gba);
+
+    rewind_record_frame(&rb, &gba);
+    ASSERT_EQ(rewind_depth(&rb), 1);
+
+    /* Corrupt the first slot's payload — flip a byte well inside the data. */
+    rb.slots[0].data[16] ^= 0xFFu;
+
+    ASSERT_TRUE(rewind_begin(&rb));
+    bool ok = rewind_step(&rb, &gba);
+    ASSERT_TRUE(!ok);                 /* must report failure cleanly */
+    ASSERT_TRUE(!rewind_active(&rb)); /* must auto-end on error */
+
+    gba_destroy(&gba);
+    rewind_shutdown(&rb);
+}
+
 void run_rewind_tests(void) {
     TEST_SUITE("rewind");
     RUN_TEST(lz4_roundtrip_smoke);
@@ -140,4 +161,5 @@ void run_rewind_tests(void) {
     RUN_TEST(rewind_ring_wraps_at_capacity);
     RUN_TEST(rewind_step_restores_prior_state);
     RUN_TEST(rewind_handles_incompressible_payload);
+    RUN_TEST(rewind_recovers_from_corrupt_slot);
 }
