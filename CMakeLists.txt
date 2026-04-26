@@ -51,6 +51,7 @@ set(SOURCES
     src/cheat/cheat.c
     src/cheat/cheat_file.c
     src/rewind/rewind_lz4.c
+    src/rewind/rewind.c
     src/savestate/savestate.c
     src/frontend/frontend.c
 )
@@ -116,6 +117,7 @@ set(LIB_SOURCES
     src/cheat/cheat.c
     src/cheat/cheat_file.c
     src/rewind/rewind_lz4.c
+    src/rewind/rewind.c
 )
 
 add_executable(gba_tests

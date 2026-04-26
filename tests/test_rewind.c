@@ -16,7 +16,20 @@ TEST(lz4_roundtrip_smoke) {
     ASSERT_MEM_EQ(decompressed, src, (size_t)src_len);
 }
 
+#include "rewind/rewind.h"
+
+TEST(rewind_init_shutdown_clean) {
+    RewindBuffer rb;
+    bool ok = rewind_init(&rb, 1800);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(rewind_depth(&rb), 0);
+    rewind_shutdown(&rb);
+    /* Double shutdown must be safe */
+    rewind_shutdown(&rb);
+}
+
 void run_rewind_tests(void) {
     TEST_SUITE("rewind");
     RUN_TEST(lz4_roundtrip_smoke);
+    RUN_TEST(rewind_init_shutdown_clean);
 }
