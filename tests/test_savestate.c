@@ -59,6 +59,41 @@ TEST(slot_path_small_buffer) {
     ASSERT_EQ(buf[9], '\0');
 }
 
+// --- Buffer API tests (rewind feature) ---
+
+#include "gba.h"
+
+TEST(savestate_buffer_roundtrip) {
+    GBA gba;
+    gba_init(&gba);
+
+    /* Plant a fingerprint in EWRAM */
+    gba.bus.ewram[0]      = 0xDE;
+    gba.bus.ewram[1]      = 0xAD;
+    gba.bus.ewram[1024]   = 0xBE;
+    gba.bus.ewram[1025]   = 0xEF;
+
+    uint8_t* buf = NULL;
+    size_t   buf_size = 0;
+    SaveStateResult r = savestate_save_to_buffer(&gba, &buf, &buf_size);
+    ASSERT_EQ(r, SS_OK);
+    ASSERT_TRUE(buf != NULL);
+    ASSERT_TRUE(buf_size > 0);
+
+    /* Trash EWRAM */
+    memset(gba.bus.ewram, 0, sizeof(gba.bus.ewram));
+
+    r = savestate_load_from_buffer(&gba, buf, buf_size);
+    ASSERT_EQ(r, SS_OK);
+    ASSERT_EQ(gba.bus.ewram[0],    0xDE);
+    ASSERT_EQ(gba.bus.ewram[1],    0xAD);
+    ASSERT_EQ(gba.bus.ewram[1024], 0xBE);
+    ASSERT_EQ(gba.bus.ewram[1025], 0xEF);
+
+    free(buf);
+    gba_destroy(&gba);
+}
+
 void run_savestate_tests(void) {
     TEST_SUITE("savestate");
     RUN_TEST(crc32_empty);
@@ -69,4 +104,5 @@ void run_savestate_tests(void) {
     RUN_TEST(slot_path_no_extension);
     RUN_TEST(slot_path_slot_9);
     RUN_TEST(slot_path_small_buffer);
+    RUN_TEST(savestate_buffer_roundtrip);
 }
