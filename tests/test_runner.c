@@ -10,6 +10,7 @@ void run_savestate_tests(void);
 void run_bus_tests(void);
 void run_cpu_tests(void);
 void run_rtc_tests(void);
+void run_rewind_tests(void);
 
 int main(void) {
     printf("=== GBA Emulator Test Suite ===\n\n");
@@ -17,6 +18,7 @@ int main(void) {
     run_bus_tests();
     run_cpu_tests();
     run_rtc_tests();
+    run_rewind_tests();
     printf("\n=== Results: %d passed, %d failed, %d total ===\n",
            tests_passed, tests_failed, tests_run);
     return tests_failed > 0 ? 1 : 0;

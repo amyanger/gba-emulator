@@ -50,6 +50,7 @@ set(SOURCES
     src/input/input.c
     src/cheat/cheat.c
     src/cheat/cheat_file.c
+    src/rewind/rewind_lz4.c
     src/savestate/savestate.c
     src/frontend/frontend.c
 )
@@ -114,6 +115,7 @@ set(LIB_SOURCES
     src/input/input.c
     src/cheat/cheat.c
     src/cheat/cheat_file.c
+    src/rewind/rewind_lz4.c
 )
 
 add_executable(gba_tests
@@ -122,6 +124,7 @@ add_executable(gba_tests
     tests/test_bus.c
     tests/test_cpu.c
     tests/test_rtc.c
+    tests/test_rewind.c
     ${LIB_SOURCES}
 )
 
