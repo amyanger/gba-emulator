@@ -105,6 +105,33 @@ TEST(rewind_step_restores_prior_state) {
     rewind_shutdown(&rb);
 }
 
+TEST(rewind_handles_incompressible_payload) {
+    RewindBuffer rb;
+    rewind_init(&rb, 4);
+    GBA gba;
+    gba_init(&gba);
+
+    /* Fill EWRAM with pseudo-random bytes (high entropy) — LZ4 ratio ~1.0. */
+    uint32_t s = 0x12345678u;
+    for (size_t i = 0; i < sizeof(gba.bus.ewram); i++) {
+        s = s * 1103515245u + 12345u;
+        gba.bus.ewram[i] = (uint8_t)(s >> 16);
+    }
+    rewind_record_frame(&rb, &gba);
+    ASSERT_EQ(rewind_depth(&rb), 1);
+
+    /* Trash and replay. */
+    uint8_t expected = gba.bus.ewram[0];
+    memset(gba.bus.ewram, 0, sizeof(gba.bus.ewram));
+    ASSERT_TRUE(rewind_begin(&rb));
+    ASSERT_TRUE(rewind_step(&rb, &gba));
+    ASSERT_EQ(gba.bus.ewram[0], expected);
+    rewind_end(&rb);
+
+    gba_destroy(&gba);
+    rewind_shutdown(&rb);
+}
+
 void run_rewind_tests(void) {
     TEST_SUITE("rewind");
     RUN_TEST(lz4_roundtrip_smoke);
@@ -112,4 +139,5 @@ void run_rewind_tests(void) {
     RUN_TEST(rewind_record_increments_count);
     RUN_TEST(rewind_ring_wraps_at_capacity);
     RUN_TEST(rewind_step_restores_prior_state);
+    RUN_TEST(rewind_handles_incompressible_payload);
 }
