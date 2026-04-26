@@ -29,6 +29,9 @@ typedef struct {
     uint32_t ff_frame_skip;  // render every N frames during FF (default 4)
     uint32_t ff_frame_count; // rolling counter for frame skip
 
+    // Rewind
+    bool rewind_hold;        // true while Backspace is held
+
     bool fullscreen;
     uint16_t controller_keys;  // bitmask of keys held by gamepad (avoids clobbering keyboard)
 } Frontend;

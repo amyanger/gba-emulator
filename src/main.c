@@ -2,6 +2,7 @@
 #include "cpu/arm7tdmi.h"
 #include "cheat/cheat_file.h"
 #include "frontend/frontend.h"
+#include "rewind/rewind.h"
 #include "savestate/savestate.h"
 #include <stdio.h>
 
@@ -115,10 +116,45 @@ int main(int argc, char* argv[]) {
                 if (res == SS_OK) {
                     LOG_INFO("State loaded from slot %d", fe.savestate_slot);
                     SDL_ClearQueuedAudio(fe.audio_device);
+                    rewind_clear(&gba.rewind);   // past is no longer valid
                 } else {
                     LOG_ERROR("Failed to load state (error %d)", res);
                 }
             }
+        }
+
+        bool rewind_active_now = fe.rewind_hold && rewind_depth(&gba.rewind) > 0;
+
+        // Detect transitions OUT of rewind (cleanup audio + APU state)
+        {
+            static bool prev_rewind = false;
+            if (prev_rewind && !rewind_active_now) {
+                rewind_end(&gba.rewind);
+                SDL_ClearQueuedAudio(fe.audio_device);
+                gba.apu.read_pos = gba.apu.write_pos;
+            }
+            // Detect transitions INTO rewind
+            if (!prev_rewind && rewind_active_now) {
+                rewind_begin(&gba.rewind);
+                SDL_ClearQueuedAudio(fe.audio_device);
+                gba.apu.read_pos = gba.apu.write_pos;
+            }
+            prev_rewind = rewind_active_now;
+        }
+
+        if (rewind_active_now) {
+            // Reverse playback: pop one frame back, render, no audio.
+            if (!rewind_step(&gba.rewind, &gba)) {
+                // Hit oldest frame — freeze on screen until release.
+            }
+            frontend_present_frame(&fe, gba.ppu.framebuffer);
+#ifdef ENABLE_XRAY
+            xray_render(&s_xray_state, &gba);
+#endif
+            // Drain APU ring buffer (state was restored from snapshot)
+            gba.apu.read_pos = gba.apu.write_pos;
+            frontend_frame_sync(&fe);
+            continue;
         }
 
         gba_run_frame(&gba);
