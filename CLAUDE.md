@@ -20,6 +20,9 @@ mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make
 # Build without Hardware X-Ray Mode
 mkdir -p build && cd build && cmake .. -DENABLE_XRAY=OFF && make
 
+# Build without rewind support
+mkdir -p build && cd build && cmake .. -DENABLE_REWIND=OFF && make
+
 # Clean rebuild
 rm -rf build && mkdir build && cd build && cmake .. && make
 ```
@@ -42,6 +45,7 @@ rm -rf build && mkdir build && cd build && cmake .. && make
 - **F5 / F8**: Save / load state (current slot)
 - **0–9**: Select save state slot (written next to ROM as `<rom>.ss<N>`)
 - **Tab** (hold) / **`** (toggle): Fast-forward — skips audio, renders every Nth frame
+- **Backspace** (hold): Rewind — replays recent state in reverse (60-second window, audio muted)
 - **F11**: Toggle fullscreen
 - **Escape**: Quit
 

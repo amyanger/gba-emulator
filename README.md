@@ -51,6 +51,7 @@ cmake .. -DENABLE_XRAY=OFF
 - **Save States** — 10 numbered slots (0–9), versioned and ROM-hash guarded, written next to the ROM as `<rom>.ss<N>`
 - **Cheats** — GameShark / Action Replay v1–v3 + CodeBreaker, loaded from a `.cht` file
 - **Fast-Forward** — Hold Tab or toggle with `` ` `` (skips audio, renders every Nth frame)
+- **Rewind** — Hold Backspace to step back through the last 60 seconds (LZ4-compressed snapshots in RAM, audio muted while rewinding)
 - **Input** — Active-low KEYINPUT register with SDL2 keyboard mapping
 - **SDL2 Frontend** — Windowed or fullscreen rendering, configurable scale, audio-driven frame sync
 
@@ -84,6 +85,16 @@ make
 
 ```bash
 rm -rf build && mkdir build && cd build && cmake .. && make
+```
+
+### Optional build flags
+
+```bash
+# Strip Hardware X-Ray Mode (no F2 overlay)
+cmake .. -DENABLE_XRAY=OFF
+
+# Strip rewind support (no Backspace, no LZ4)
+cmake .. -DENABLE_REWIND=OFF
 ```
 
 ## Usage
@@ -127,6 +138,7 @@ rm -rf build && mkdir build && cd build && cmake .. && make
 | 0–9 | Select save state slot |
 | Tab (hold) | Fast-forward |
 | `` ` `` | Toggle fast-forward |
+| Backspace (hold) | Rewind (60s window, audio muted) |
 | F11 | Toggle fullscreen |
 | Escape | Quit |
 
