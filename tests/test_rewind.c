@@ -153,6 +153,32 @@ TEST(rewind_recovers_from_corrupt_slot) {
     rewind_shutdown(&rb);
 }
 
+TEST(rewind_clear_resets_buffer) {
+    RewindBuffer rb;
+    rewind_init(&rb, 4);
+    GBA gba;
+    gba_init(&gba);
+
+    rewind_record_frame(&rb, &gba);
+    rewind_record_frame(&rb, &gba);
+    rewind_record_frame(&rb, &gba);
+    ASSERT_TRUE(rewind_depth(&rb) > 0);
+    ASSERT_TRUE(rewind_bytes_used(&rb) > 0);
+
+    rewind_clear(&rb);
+    ASSERT_EQ(rewind_depth(&rb), 0);
+    ASSERT_EQ(rewind_bytes_used(&rb), 0);
+    ASSERT_TRUE(!rewind_active(&rb));
+
+    /* Buffer should be reusable after clear. */
+    rewind_record_frame(&rb, &gba);
+    rewind_record_frame(&rb, &gba);
+    ASSERT_TRUE(rewind_depth(&rb) > 0);
+
+    gba_destroy(&gba);
+    rewind_shutdown(&rb);
+}
+
 void run_rewind_tests(void) {
     TEST_SUITE("rewind");
     RUN_TEST(lz4_roundtrip_smoke);
@@ -162,4 +188,5 @@ void run_rewind_tests(void) {
     RUN_TEST(rewind_step_restores_prior_state);
     RUN_TEST(rewind_handles_incompressible_payload);
     RUN_TEST(rewind_recovers_from_corrupt_slot);
+    RUN_TEST(rewind_clear_resets_buffer);
 }
