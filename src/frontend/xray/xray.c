@@ -210,6 +210,10 @@ void xray_render(XRayState* state, GBA* gba) {
                       &gba->ppu);
     xray_render_cpu(fb, XRAY_WIDTH, XRAY_HEIGHT, P3_X, P3_Y, P3_W, P3_H,
                     &gba->cpu, state);
+    /* Rewind status overlay (drawn over bottom slack of CPU panel) */
+    xray_render_rewind(fb, XRAY_WIDTH, XRAY_HEIGHT,
+                       P3_X, P3_Y + P3_H - 24, P3_W, 24,
+                       &gba->rewind);
     xray_render_audio(fb, XRAY_WIDTH, XRAY_HEIGHT, P4_X, P4_Y, P4_W, P4_H,
                       &gba->apu, state);
     xray_render_activity(fb, XRAY_WIDTH, XRAY_HEIGHT, P5_X, P5_Y, P5_W, P5_H,

@@ -2,6 +2,7 @@
 #define XRAY_H
 
 #include "common.h"
+#include "rewind/rewind.h"
 #include <SDL2/SDL.h>
 
 /* Forward declarations */
@@ -140,5 +141,9 @@ void xray_render_audio(uint32_t* buf, int buf_w, int buf_h, int px, int py,
                        int pw, int ph, APU* apu, XRayState* state);
 
 void xray_capture_audio(APU* apu, XRayState* state);
+
+/* Rewind status overlay (one line, drawn over bottom of CPU panel) */
+void xray_render_rewind(uint32_t* buf, int buf_w, int buf_h, int px, int py,
+                        int pw, int ph, const RewindBuffer* rb);
 
 #endif /* XRAY_H */

@@ -65,6 +65,7 @@ set(XRAY_SOURCES
     src/frontend/xray/xray_ppu.c
     src/frontend/xray/xray_tiles.c
     src/frontend/xray/xray_audio.c
+    src/frontend/xray/xray_rewind.c
 )
 
 if(ENABLE_XRAY)
