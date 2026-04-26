@@ -62,10 +62,54 @@ TEST(rewind_ring_wraps_at_capacity) {
     rewind_shutdown(&rb);
 }
 
+TEST(rewind_step_restores_prior_state) {
+    RewindBuffer rb;
+    rewind_init(&rb, 16);
+    GBA gba;
+    gba_init(&gba);
+
+    /* Frame A: stamp EWRAM with 0xA1 */
+    gba.bus.ewram[0] = 0xA1;
+    rewind_record_frame(&rb, &gba);  /* even -> recorded */
+    rewind_record_frame(&rb, &gba);  /* odd -> skipped */
+
+    /* Frame B: stamp EWRAM with 0xB2 */
+    gba.bus.ewram[0] = 0xB2;
+    rewind_record_frame(&rb, &gba);  /* even -> recorded */
+
+    ASSERT_EQ(rewind_depth(&rb), 2);
+
+    /* Begin rewind, step once -> should restore to frame B's state (the
+     * most recent recorded snapshot, since head was advanced past it). */
+    bool ok = rewind_begin(&rb);
+    ASSERT_TRUE(ok);
+
+    gba.bus.ewram[0] = 0xCC;  /* trash current */
+    ok = rewind_step(&rb, &gba);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(gba.bus.ewram[0], 0xB2);
+
+    /* Step again -> restores frame A. */
+    ok = rewind_step(&rb, &gba);
+    ASSERT_TRUE(ok);
+    ASSERT_EQ(gba.bus.ewram[0], 0xA1);
+
+    /* No more frames; next step returns false. */
+    ok = rewind_step(&rb, &gba);
+    ASSERT_TRUE(!ok);
+
+    rewind_end(&rb);
+    ASSERT_TRUE(!rewind_active(&rb));
+
+    gba_destroy(&gba);
+    rewind_shutdown(&rb);
+}
+
 void run_rewind_tests(void) {
     TEST_SUITE("rewind");
     RUN_TEST(lz4_roundtrip_smoke);
     RUN_TEST(rewind_init_shutdown_clean);
     RUN_TEST(rewind_record_increments_count);
     RUN_TEST(rewind_ring_wraps_at_capacity);
+    RUN_TEST(rewind_step_restores_prior_state);
 }

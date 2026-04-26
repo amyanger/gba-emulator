@@ -133,8 +133,73 @@ void rewind_record_frame(RewindBuffer* rb, GBA* gba) {
     free(raw);
 }
 
-/* begin/step/end/clear: implemented in later tasks. Stubs to satisfy linker. */
-bool rewind_begin(RewindBuffer* rb)  { (void)rb; return false; }
-bool rewind_step(RewindBuffer* rb, GBA* gba) { (void)rb; (void)gba; return false; }
-void rewind_end(RewindBuffer* rb)    { (void)rb; }
-void rewind_clear(RewindBuffer* rb)  { (void)rb; }
+bool rewind_begin(RewindBuffer* rb) {
+    if (!rb || !rb->slots) return false;
+    if (rb->count == 0) return false;
+    rb->active = true;
+    return true;
+}
+
+bool rewind_step(RewindBuffer* rb, GBA* gba) {
+    if (!rb || !rb->slots || !gba) return false;
+    if (rb->count == 0) return false;
+
+    /* Walk head backwards by 1, popping the most-recent slot. */
+    rb->head = (rb->head + rb->capacity - 1u) % rb->capacity;
+    rb->count--;
+    RewindFrame* slot = &rb->slots[rb->head];
+    rb->bytes_used -= slot->size;
+
+    /* Decompress (or copy) into scratch. */
+    if (slot->raw_size > rb->scratch_cap) {
+        LOG_ERROR("Rewind: slot raw_size %u exceeds scratch %u",
+                  slot->raw_size, rb->scratch_cap);
+        rewind_clear(rb);
+        rb->active = false;
+        return false;
+    }
+    if (slot->uncompressed) {
+        memcpy(rb->scratch, slot->data, slot->raw_size);
+    } else {
+        int d_len = LZ4_decompress_safe((const char*)slot->data,
+                                        (char*)rb->scratch,
+                                        (int)slot->size,
+                                        (int)rb->scratch_cap);
+        if (d_len <= 0 || (uint32_t)d_len != slot->raw_size) {
+            LOG_ERROR("Rewind: LZ4 decompress failed (got %d, expected %u)",
+                      d_len, slot->raw_size);
+            rewind_clear(rb);
+            rb->active = false;
+            return false;
+        }
+    }
+
+    SaveStateResult r = savestate_load_from_buffer(gba, rb->scratch, slot->raw_size);
+    if (r != SS_OK) {
+        LOG_ERROR("Rewind: savestate_load_from_buffer failed (%d)", (int)r);
+        rewind_clear(rb);
+        rb->active = false;
+        return false;
+    }
+    return true;
+}
+
+void rewind_end(RewindBuffer* rb) {
+    if (!rb) return;
+    rb->active = false;
+}
+
+void rewind_clear(RewindBuffer* rb) {
+    if (!rb || !rb->slots) return;
+    rb->head = 0;
+    rb->count = 0;
+    rb->bytes_used = 0;
+    rb->active = false;
+    /* Keep slot allocations for reuse — only reset metadata. */
+    for (uint32_t i = 0; i < rb->capacity; i++) {
+        rb->slots[i].size = 0;
+        rb->slots[i].raw_size = 0;
+        rb->slots[i].frame = 0;
+        rb->slots[i].uncompressed = false;
+    }
+}
