@@ -1,10 +1,12 @@
 # GBA Emulator
 
+[![CI](https://github.com/amyanger/gba-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/amyanger/gba-emulator/actions/workflows/ci.yml)
+
 A Game Boy Advance emulator written from scratch in C, featuring **Hardware X-Ray Mode** — a real-time visualization of what the GBA hardware is actually doing while a game runs.
 
 No other GBA emulator offers this. Every emulator is a black box. This one lets you see inside.
 
-Built around an ARM7TDMI CPU interpreter, scanline-based PPU, and an SDL2 frontend. No external libraries beyond SDL2.
+Built around an ARM7TDMI CPU interpreter, scanline-based PPU, and an SDL2 frontend. No external libraries beyond SDL2. Pokemon Emerald is fully playable end-to-end.
 
 ## Hardware X-Ray Mode
 
@@ -43,10 +45,14 @@ cmake .. -DENABLE_XRAY=OFF
 - **DMA Controller** — 4-channel with immediate, VBlank, HBlank, and FIFO timing modes
 - **Timers** — 4 cascadable 16-bit timers with prescaler and IRQ generation
 - **Interrupts** — IE/IF/IME with write-1-to-clear semantics
-- **Flash 128K Save** — Macronix MX29L010 protocol (Pokemon Emerald, Ruby, Sapphire, FireRed, LeafGreen)
-- **Cartridge** — ROM loading (up to 32MB), auto save detection, file persistence
+- **Flash 64K / 128K Save** — Macronix and SST/Atmel/Panasonic chip IDs (Pokemon Emerald, Ruby, Sapphire, FireRed, LeafGreen)
+- **Real-Time Clock** — S-3511A serial RTC over GPIO (0x080000C4/C6/C8) with persistent offset stored in the `.sav` trailer
+- **Cartridge** — ROM loading (up to 32MB), auto save detection, file persistence next to the ROM
+- **Save States** — 10 numbered slots (0–9), versioned and ROM-hash guarded, written next to the ROM as `<rom>.ss<N>`
+- **Cheats** — GameShark / Action Replay v1–v3 + CodeBreaker, loaded from a `.cht` file
+- **Fast-Forward** — Hold Tab or toggle with `` ` `` (skips audio, renders every Nth frame)
 - **Input** — Active-low KEYINPUT register with SDL2 keyboard mapping
-- **SDL2 Frontend** — Windowed rendering, configurable scale, audio-driven frame sync
+- **SDL2 Frontend** — Windowed or fullscreen rendering, configurable scale, audio-driven frame sync
 
 ## Building
 
@@ -92,6 +98,7 @@ rm -rf build && mkdir build && cd build && cmake .. && make
 |------|-------------|
 | `--bios <file>` | Path to GBA BIOS dump (optional, HLE fallback available) |
 | `--scale <n>` | Window scale multiplier (default: 3) |
+| `--cheats <file>` | Path to a `.cht` file with GameShark / CodeBreaker codes |
 
 ### Example
 
@@ -115,7 +122,32 @@ rm -rf build && mkdir build && cd build && cmake .. && make
 |-----|-------------------|
 | F1 | Dump CPU registers to stderr (debug builds) |
 | F2 | Toggle Hardware X-Ray Mode |
+| F5 | Save state to current slot |
+| F8 | Load state from current slot |
+| 0–9 | Select save state slot |
+| Tab (hold) | Fast-forward |
+| `` ` `` | Toggle fast-forward |
+| F11 | Toggle fullscreen |
 | Escape | Quit |
+
+Save files (`<rom>.sav`) and save states (`<rom>.ss<N>`) are written next to the ROM.
+
+## Cheats
+
+Pass `--cheats path/to/codes.cht` on the command line. The `.cht` format is plain text:
+
+```ini
+# Lines starting with # are comments
+[GameShark]
+Cheat Name
+XXXXXXXX YYYYYYYY
+
+[CodeBreaker]
+Another Cheat
+XXXXXXXX YYYY
+```
+
+Each block starts with `[GameShark]` or `[CodeBreaker]`, followed by a name line and one or more code lines. All cheats are enabled by default.
 
 ## Architecture
 
@@ -184,10 +216,16 @@ src/
     interrupt.c/h          IRQ controller (IE/IF/IME)
   cartridge/
     cartridge.c/h          ROM loading, save type detection, file persistence
-    flash.c/h              Flash 128K save (Macronix protocol)
-    rtc.c/h                Real-time clock via GPIO
+    flash.c/h              Flash 64K/128K save (Macronix / SST / Atmel / Panasonic)
+    gpio.c/h               Cartridge GPIO at 0x080000C4/C6/C8 (data/dir/control)
+    rtc.c/h                S-3511A real-time clock state machine
     sram.c                 Battery-backed SRAM
     eeprom.c               EEPROM save (stub)
+  cheat/
+    cheat.c/h              Cheat engine (GameShark / Action Replay / CodeBreaker)
+    cheat_file.c/h         `.cht` file parser and writer
+  savestate/
+    savestate.c/h          Versioned save state serialization (ROM-hash guarded)
   input/
     input.c/h              Keypad registers
   frontend/
@@ -249,20 +287,28 @@ The ARM7TDMI uses a 3-stage pipeline (fetch-decode-execute). The PC is always 2 
 | 2 | PPU basics + SDL2 frontend | Done |
 | 3 | Full PPU + sprites + effects | Done |
 | 4 | Audio (timers + DMA + FIFO chain) | Done |
-| 5 | Flash 128K save + RTC | Done |
+| 5 | Flash 64K/128K save + S-3511A RTC | Done |
 | 6 | Hardware X-Ray Mode | Done |
-| 7 | Polish + accuracy (full playthrough) | In progress |
+| 7 | Polish + accuracy (full playthrough) | Done — Pokemon Emerald playable end-to-end |
 
-**Target milestone**: Full Pokemon Emerald playthrough from title screen to credits.
+**Target milestone**: Full Pokemon Emerald playthrough from title screen to credits — **achieved**.
 
 ### Game compatibility
 
 | Game | Status |
 |------|--------|
-| Pokemon Emerald (BPEE) | Playable |
+| Pokemon Emerald (BPEE) | Fully playable |
 | Pokemon FireRed (BPRE) | Boots, save type auto-detected (Flash 128K). Not yet verified end-to-end. |
 
 ## Testing
+
+### Unit tests
+
+A minimal C unit test suite lives in `tests/` and runs on every CI build (Linux + macOS via GitHub Actions):
+
+```bash
+cd build && cmake .. && make gba_tests && ctest --output-on-failure
+```
 
 ### Test ROMs
 
