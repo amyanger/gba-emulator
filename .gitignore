@@ -10,6 +10,12 @@ docs/superpowers/
 docs/plans/
 docs/specs/
 
+# Local-only AI tooling — never commit
+CLAUDE.md
+.claude.md
+.claude.local.md
+.claude/
+
 # ROMs and BIOS (copyrighted)
 roms/*.gba
 roms/*.bin
