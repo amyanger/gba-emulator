@@ -5,6 +5,12 @@
 #include "sio/sio.h"
 #include <math.h>
 
+// MSVC's <math.h> doesn't expose M_PI without _USE_MATH_DEFINES; defining it
+// here keeps the include clean and is portable across compilers.
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 /*
  * High-Level Emulation (HLE) of the GBA BIOS SWI functions.
  *
