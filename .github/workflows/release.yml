@@ -18,11 +18,27 @@ jobs:
           - os: ubuntu-latest
             asset_suffix: linux-x86_64
             install: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+            cmake_extra: ""
+            cpack_generator: TGZ
+            artifact_glob: build/gba_emulator-*.tar.gz
           - os: macos-latest
             asset_suffix: macos-arm64
             install: brew install sdl2
+            cmake_extra: ""
+            cpack_generator: TGZ
+            artifact_glob: build/gba_emulator-*.tar.gz
+          - os: windows-latest
+            asset_suffix: windows-x86_64
+            install: vcpkg install sdl2:x64-windows
+            cmake_extra: -DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -A x64
+            cpack_generator: ZIP
+            artifact_glob: build/gba_emulator-*.zip
 
     runs-on: ${{ matrix.os }}
+
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - uses: actions/checkout@v4
@@ -31,27 +47,27 @@ jobs:
         run: ${{ matrix.install }}
 
       - name: Configure (Release)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_extra }}
 
       - name: Build emulator
-        run: cmake --build build --target gba_emulator -j
+        run: cmake --build build --target gba_emulator --config Release -j
 
       - name: Build tests
-        run: cmake --build build --target gba_tests -j
+        run: cmake --build build --target gba_tests --config Release -j
 
       - name: Run tests
         working-directory: build
-        run: ctest --output-on-failure
+        run: ctest --output-on-failure -C Release
 
       - name: Package
         working-directory: build
-        run: cpack -G TGZ
+        run: cpack -G ${{ matrix.cpack_generator }} -C Release
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: gba_emulator-${{ matrix.asset_suffix }}
-          path: build/gba_emulator-*.tar.gz
+          path: ${{ matrix.artifact_glob }}
           if-no-files-found: error
 
   release:
@@ -67,7 +83,9 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.tar.gz
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

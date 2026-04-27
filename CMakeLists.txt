@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.21)
 project(gba_emulator
     VERSION 0.1.0
     DESCRIPTION "Game Boy Advance emulator (ARM7TDMI + scanline PPU + SDL2)"
@@ -187,6 +187,15 @@ install(TARGETS gba_emulator
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+# On Windows, ship SDL2.dll (and any other runtime deps) next to the .exe so
+# end users don't need a separate SDL2 install. TARGET_RUNTIME_DLLS resolves
+# to the imported SHARED targets the binary links against. Requires CMake 3.21+.
+if(WIN32)
+    install(FILES $<TARGET_RUNTIME_DLLS:gba_emulator>
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+endif()
+
 install(FILES
     ${CMAKE_SOURCE_DIR}/README.md
     ${CMAKE_SOURCE_DIR}/LICENSE
@@ -201,7 +210,11 @@ set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
 set(CPACK_RESOURCE_FILE_README  "${CMAKE_SOURCE_DIR}/README.md")
 set(CPACK_PACKAGE_FILE_NAME
     "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
-set(CPACK_GENERATOR "TGZ")
+if(WIN32)
+    set(CPACK_GENERATOR "ZIP")
+else()
+    set(CPACK_GENERATOR "TGZ")
+endif()
 set(CPACK_SOURCE_GENERATOR "TGZ")
 set(CPACK_SOURCE_IGNORE_FILES
     "/build/" "/\\\\.git/" "/\\\\.github/" "/roms/[^/]" "/saves/[^/]" "/bios/[^/]"
