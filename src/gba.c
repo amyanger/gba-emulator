@@ -70,6 +70,7 @@ void gba_run_frame(GBA* gba) {
         cpu_run(&gba->cpu, hdraw_cycles);
         timer_tick(gba->timers, hdraw_cycles, &gba->interrupts, &gba->apu);
         apu_tick(&gba->apu, hdraw_cycles);
+        sio_tick(&gba->sio, hdraw_cycles);
 
         // --- HBlank ---
         ppu_set_hblank(&gba->ppu, true);
@@ -89,6 +90,7 @@ void gba_run_frame(GBA* gba) {
         cpu_run(&gba->cpu, hblank_cycles);
         timer_tick(gba->timers, hblank_cycles, &gba->interrupts, &gba->apu);
         apu_tick(&gba->apu, hblank_cycles);
+        sio_tick(&gba->sio, hblank_cycles);
 
         // --- End of scanline ---
         ppu_set_hblank(&gba->ppu, false);
