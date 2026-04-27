@@ -101,7 +101,7 @@ target_include_directories(gba_emulator PRIVATE
     ${SDL2_INCLUDE_DIRS}
 )
 
-target_link_libraries(gba_emulator PRIVATE ${SDL2_LIBRARIES} m)
+target_link_libraries(gba_emulator PRIVATE ${SDL2_LIBRARIES} $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
 
 if(ENABLE_XRAY)
     target_compile_definitions(gba_emulator PRIVATE ENABLE_XRAY)
@@ -183,7 +183,7 @@ target_include_directories(gba_tests PRIVATE
     ${SDL2_INCLUDE_DIRS}
 )
 
-target_link_libraries(gba_tests PRIVATE ${SDL2_LIBRARIES} m)
+target_link_libraries(gba_tests PRIVATE ${SDL2_LIBRARIES} $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
 
 if(ENABLE_REWIND)
     target_compile_definitions(gba_tests PRIVATE ENABLE_REWIND)
