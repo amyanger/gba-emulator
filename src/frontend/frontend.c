@@ -77,6 +77,14 @@ void frontend_set_ff_indicator(Frontend* fe, bool active) {
     }
 }
 
+void frontend_set_pause_indicator(Frontend* fe, bool active) {
+    if (active) {
+        SDL_SetWindowTitle(fe->window, "GBA Emulator [PAUSED]");
+    } else {
+        SDL_SetWindowTitle(fe->window, "GBA Emulator");
+    }
+}
+
 void frontend_destroy(Frontend* fe) {
     if (fe->texture) SDL_DestroyTexture(fe->texture);
     if (fe->renderer) SDL_DestroyRenderer(fe->renderer);
@@ -196,6 +204,13 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 SDL_SetWindowFullscreen(fe->window,
                     fe->fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
                 LOG_INFO("Fullscreen %s", fe->fullscreen ? "ON" : "OFF");
+            }
+
+            // Pause toggle
+            if (event.key.keysym.scancode == SDL_SCANCODE_SPACE &&
+                !event.key.repeat) {
+                fe->paused = !fe->paused;
+                LOG_INFO("Paused %s", fe->paused ? "ON" : "OFF");
             }
             break;
         }

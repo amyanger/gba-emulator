@@ -51,6 +51,7 @@ rm -rf build && mkdir build && cd build && cmake .. && make
 - **F12**: Screenshot — PNG of native 240×160 framebuffer next to ROM as `<rom>.YYYYMMDD-HHMMSS.png` (UTC)
 - **Tab** (hold) / **`** (toggle): Fast-forward — skips audio, renders every Nth frame
 - **Backspace** (hold): Rewind — replays recent state in reverse (60-second window, audio muted)
+- **Space**: Pause / resume — freezes emulation, mutes audio, window stays responsive
 - **F11**: Toggle fullscreen
 - **Escape**: Quit
 

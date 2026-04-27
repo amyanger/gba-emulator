@@ -119,8 +119,28 @@ int main(int argc, char* argv[]) {
     LOG_INFO("Starting emulation...");
 
     // Main loop
+    bool prev_paused = false;
     while (fe.running && gba.running) {
         frontend_poll_input(&fe, &gba);
+
+        // Pause: skip emulation, keep window responsive, mute audio.
+        if (fe.paused != prev_paused) {
+            frontend_set_pause_indicator(&fe, fe.paused);
+            if (fe.paused) {
+                SDL_ClearQueuedAudio(fe.audio_device);
+                gba.apu.read_pos = gba.apu.write_pos;
+            }
+            prev_paused = fe.paused;
+        }
+        if (fe.paused) {
+            frontend_present_frame(&fe, gba.ppu.framebuffer);
+#ifdef ENABLE_XRAY
+            xray_render(&s_xray_state, &gba);
+#endif
+            gba.apu.read_pos = gba.apu.write_pos;
+            frontend_frame_sync(&fe);
+            continue;
+        }
 
         // Save state handling (at frame boundary)
         if (fe.save_requested || fe.load_requested) {
