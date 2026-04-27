@@ -158,20 +158,22 @@ set(TEST_SOURCES
     tests/test_savestate.c
     tests/test_bus.c
     tests/test_cpu.c
-    tests/test_rtc.c
     tests/test_rewind.c
     tests/test_screenshot.c
     tests/test_trace.c
     tests/test_cartridge_autosave.c
     tests/test_keymap.c
-    tests/test_sio.c
 )
 
-# test_sio_link uses socketpair() / AF_UNIX, which has no MSVC equivalent.
-# The Windows build of the emulator stubs out the link cable transport, so the
-# matching tests don't apply there.
+# Several tests rely on POSIX-only APIs (unistd.h, pthreads, AF_UNIX
+# socketpair) and are skipped on Windows. The full suite still runs on
+# Linux + macOS, which are the canonical CI surfaces for these subsystems.
 if(NOT WIN32)
-    list(APPEND TEST_SOURCES tests/test_sio_link.c)
+    list(APPEND TEST_SOURCES
+        tests/test_rtc.c
+        tests/test_sio.c
+        tests/test_sio_link.c
+    )
 endif()
 
 add_executable(gba_tests ${TEST_SOURCES} ${LIB_SOURCES})
