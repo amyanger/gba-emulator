@@ -53,6 +53,7 @@ cmake .. -DENABLE_XRAY=OFF
 - **Fast-Forward** — Hold Tab or toggle with `` ` `` (skips audio, renders every Nth frame)
 - **Rewind** — Hold Backspace to step back through the last 60 seconds (LZ4-compressed snapshots in RAM, audio muted while rewinding)
 - **Input** — Active-low KEYINPUT register with SDL2 keyboard mapping
+- **Link Cable (local)** — Two-instance Multiplayer mode SIO over an AF_UNIX socket (`--link-master`/`--link-client`)
 - **SDL2 Frontend** — Windowed or fullscreen rendering, configurable scale, audio-driven frame sync
 
 ## Building
@@ -110,6 +111,9 @@ cmake .. -DENABLE_REWIND=OFF
 | `--bios <file>` | Path to GBA BIOS dump (optional, HLE fallback available) |
 | `--scale <n>` | Window scale multiplier (default: 3) |
 | `--cheats <file>` | Path to a `.cht` file with GameShark / CodeBreaker codes |
+| `--keymap <file>` | Path to a keymap `.ini` for custom keyboard bindings |
+| `--link-master <path>` | Listen for a peer GBA at AF_UNIX socket path (host side) |
+| `--link-client <path>` | Connect to a peer GBA at AF_UNIX socket path (client side) |
 
 ### Example
 
@@ -143,6 +147,22 @@ cmake .. -DENABLE_REWIND=OFF
 | Escape | Quit |
 
 Save files (`<rom>.sav`) and save states (`<rom>.ss<N>`) are written next to the ROM.
+
+## Link Cable
+
+Two emulator instances on the same machine can connect over a UNIX domain socket and exchange GBA SIO multiplayer-mode packets — enough for Pokemon trade and battle between local windows.
+
+```bash
+# Terminal 1 (host) — opens the socket and waits for a peer.
+./build/gba_emulator roms/emerald.gba --link-master /tmp/gba.sock
+
+# Terminal 2 (client) — connects to the host's socket.
+./build/gba_emulator roms/emerald.gba --link-client /tmp/gba.sock
+```
+
+The host blocks at startup until the client connects. After both sides are up, in-game link interactions (Cable Club, trades, battles) cross between the two windows.
+
+**Limitations:** Multiplayer 16-bit mode only, 2 players. Normal 8/32-bit and UART SIO modes are not implemented. There is no internet-netplay support — the socket path must be local. The two emulators run lockstep at the SIO transfer point: one will briefly stall waiting for the other to reach the same `sio_tick` if they fall out of sync.
 
 ## Cheats
 
