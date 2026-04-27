@@ -13,10 +13,19 @@ jobs:
         include:
           - os: ubuntu-latest
             install: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+            cmake_extra: ""
           - os: macos-latest
             install: brew install sdl2
+            cmake_extra: ""
+          - os: windows-latest
+            install: vcpkg install sdl2:x64-windows
+            cmake_extra: -DCMAKE_TOOLCHAIN_FILE=$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -A x64
 
     runs-on: ${{ matrix.os }}
+
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - uses: actions/checkout@v4
@@ -25,14 +34,14 @@ jobs:
         run: ${{ matrix.install }}
 
       - name: Configure (Debug)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug ${{ matrix.cmake_extra }}
 
       - name: Build emulator
-        run: cmake --build build --target gba_emulator -j
+        run: cmake --build build --target gba_emulator --config Debug -j
 
       - name: Build tests
-        run: cmake --build build --target gba_tests -j
+        run: cmake --build build --target gba_tests --config Debug -j
 
       - name: Run tests
         working-directory: build
-        run: ctest --output-on-failure
+        run: ctest --output-on-failure -C Debug
