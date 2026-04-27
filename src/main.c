@@ -7,7 +7,9 @@
 #endif
 #include "savestate/savestate.h"
 #include "screenshot/screenshot.h"
+#include "trace/trace.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <time.h>
 
 #ifdef ENABLE_XRAY
@@ -18,9 +20,13 @@ static XRayState s_xray_state;
 static void print_usage(const char* prog) {
     printf("Usage: %s <rom.gba> [options]\n", prog);
     printf("Options:\n");
-    printf("  --bios <file>   Load GBA BIOS ROM\n");
-    printf("  --scale <n>     Window scale factor (default: 3)\n");
-    printf("  --cheats <file> Load cheat codes from file (.cht format)\n");
+    printf("  --bios <file>          Load GBA BIOS ROM\n");
+    printf("  --scale <n>            Window scale factor (default: 3)\n");
+    printf("  --cheats <file>        Load cheat codes from file (.cht format)\n");
+    printf("  --trace <file>         Write per-instruction trace to file\n");
+    printf("  --trace-from <hex>     Only trace instructions at PC >= hex\n");
+    printf("  --trace-to <hex>       Only trace instructions at PC <= hex\n");
+    printf("  --trace-frames <n>     Stop tracing after n frames\n");
 }
 
 int main(int argc, char* argv[]) {
@@ -32,6 +38,10 @@ int main(int argc, char* argv[]) {
     const char* rom_path = argv[1];
     const char* bios_path = NULL;
     const char* cheat_path = NULL;
+    const char* trace_path = NULL;
+    uint32_t trace_from = 0;
+    uint32_t trace_to = 0;
+    uint32_t trace_frames = 0;
     int scale = 3;
 
     // Parse arguments
@@ -42,6 +52,14 @@ int main(int argc, char* argv[]) {
             scale = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--cheats") == 0 && i + 1 < argc) {
             cheat_path = argv[++i];
+        } else if (strcmp(argv[i], "--trace") == 0 && i + 1 < argc) {
+            trace_path = argv[++i];
+        } else if (strcmp(argv[i], "--trace-from") == 0 && i + 1 < argc) {
+            trace_from = (uint32_t)strtoul(argv[++i], NULL, 16);
+        } else if (strcmp(argv[i], "--trace-to") == 0 && i + 1 < argc) {
+            trace_to = (uint32_t)strtoul(argv[++i], NULL, 16);
+        } else if (strcmp(argv[i], "--trace-frames") == 0 && i + 1 < argc) {
+            trace_frames = (uint32_t)strtoul(argv[++i], NULL, 10);
         }
     }
 
@@ -73,6 +91,10 @@ int main(int argc, char* argv[]) {
         } else {
             LOG_INFO("Loaded %d cheats from %s", loaded, cheat_path);
         }
+    }
+
+    if (trace_path) {
+        trace_init(trace_path, trace_from, trace_to, trace_frames);
     }
 
     // Initialize frontend (SDL2)
@@ -168,6 +190,7 @@ int main(int argc, char* argv[]) {
         gba_run_frame(&gba);
 
         if (gba.frame_complete) {
+            trace_frame_tick();
             bool ff_active = fe.ff_hold || fe.ff_toggle;
 
             // Update window title on FF state change
@@ -216,6 +239,7 @@ int main(int argc, char* argv[]) {
     }
 
     // Cleanup
+    trace_shutdown();
     cartridge_save_to_file(&gba.cart);
 #ifdef ENABLE_XRAY
     xray_destroy(&s_xray_state);

@@ -17,6 +17,10 @@ mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make
 # Run with cheat codes
 ./gba_emulator <rom.gba> --cheats path/to/cheats.cht
 
+# Trace every executed instruction to a file (for diffing against mGBA)
+./gba_emulator <rom.gba> --trace trace.log --trace-frames 60
+./gba_emulator <rom.gba> --trace trace.log --trace-from 08000000 --trace-to 08001000
+
 # Build without Hardware X-Ray Mode
 mkdir -p build && cd build && cmake .. -DENABLE_XRAY=OFF && make
 
@@ -101,6 +105,8 @@ src/
   screenshot/
     screenshot.h/c     PNG screenshot capture (F12 hotkey)
     stb_image_write.h  Vendored stb_image_write v1.16 (public domain)
+  trace/
+    trace.h/c          Per-instruction execution trace (--trace CLI flag)
   input/input.h/c      Keypad registers (active-low), KEYCNT for key IRQs
   frontend/
     frontend.h/c       SDL2 window, rendering, input polling, audio output
@@ -191,7 +197,7 @@ These are non-obvious behaviors that MUST be correct. Verify against GBATEK when
 ## Testing
 
 ### Unit tests
-A unit test suite lives in `tests/` (`test_runner.c`, `test_bus.c`, `test_cpu.c`, `test_savestate.c`, `test_rewind.c`, `test_rtc.c`, `test_screenshot.c`, shared `test_harness.h`). Wired into CMake as the `gba_tests` target and run on every push via GitHub Actions (`.github/workflows/ci.yml`, Linux + macOS).
+A unit test suite lives in `tests/` (`test_runner.c`, `test_bus.c`, `test_cpu.c`, `test_savestate.c`, `test_rewind.c`, `test_rtc.c`, `test_screenshot.c`, `test_trace.c`, shared `test_harness.h`). Wired into CMake as the `gba_tests` target and run on every push via GitHub Actions (`.github/workflows/ci.yml`, Linux + macOS).
 
 ```bash
 cd build && cmake .. && make gba_tests && ctest --output-on-failure
@@ -220,7 +226,7 @@ Test ROMs remain the primary validation path for full-system behavior.
 ### Debugging
 - **F1**: Register dump to stderr (DEBUG builds only)
 - **F2**: Toggle Hardware X-Ray Mode — real-time overlay showing CPU state, PPU activity, audio FIFOs, tile/sprite previews, and memory access heatmaps. Built with `ENABLE_XRAY=ON` (default).
-- **Instruction trace**: Enable in `debug.c`, compare against mGBA trace output to find divergence points. This is the most valuable debugging tool.
+- **Instruction trace**: Pass `--trace <file>` (optionally bounded by `--trace-from <hex>`, `--trace-to <hex>`, or `--trace-frames <n>`) to dump every executed instruction with full register state. Diff against mGBA's trace output to find the first divergent instruction. This is the most valuable debugging tool. Implementation in `src/trace/`.
 
 ## Monitor Tool — Streaming Error Detection
 

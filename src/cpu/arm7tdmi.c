@@ -4,6 +4,7 @@
 #include "bios_hle.h"
 #include "memory/bus.h"
 #include "interrupt/interrupt.h"
+#include "trace/trace.h"
 
 /* Return banked-register array offset for modes that bank only SP/LR.
  * FIQ is handled separately (banks R8-R14). USR/SYS have no private bank. */
@@ -359,6 +360,7 @@ int cpu_step(ARM7TDMI* cpu) {
     if (BIT(cpu->cpsr, CPSR_T)) {
         /* Thumb mode: execute first, then advance pipeline if no flush */
         uint16_t instr = (uint16_t)cpu->pipeline[0];
+        TRACE_LOG(cpu, cpu->regs[REG_PC] - 4, instr, true);
         int cycles = thumb_execute(cpu, instr);
         if (cpu->pipeline_valid) {
             cpu->pipeline[0] = cpu->pipeline[1];
@@ -369,6 +371,7 @@ int cpu_step(ARM7TDMI* cpu) {
     } else {
         /* ARM mode: execute first, then advance pipeline if no flush */
         uint32_t instr = cpu->pipeline[0];
+        TRACE_LOG(cpu, cpu->regs[REG_PC] - 8, instr, false);
         int cycles;
 
         uint32_t cond = (instr >> 28) & 0xF;
