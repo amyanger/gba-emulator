@@ -1,6 +1,8 @@
 # GBA Emulator
 
 [![CI](https://github.com/amyanger/gba-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/amyanger/gba-emulator/actions/workflows/ci.yml)
+[![Release](https://github.com/amyanger/gba-emulator/actions/workflows/release.yml/badge.svg)](https://github.com/amyanger/gba-emulator/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/amyanger/gba-emulator?label=release)](https://github.com/amyanger/gba-emulator/releases/latest)
 
 A Game Boy Advance emulator written from scratch in C, featuring **Hardware X-Ray Mode** — a real-time visualization of what the GBA hardware is actually doing while a game runs.
 
@@ -56,7 +58,38 @@ cmake .. -DENABLE_XRAY=OFF
 - **Link Cable (local)** — Two-instance Multiplayer mode SIO over an AF_UNIX socket (`--link-master`/`--link-client`)
 - **SDL2 Frontend** — Windowed or fullscreen rendering, configurable scale, audio-driven frame sync
 
-## Building
+## Download a pre-built binary
+
+Pre-built binaries for Linux (x86_64) and macOS (Apple Silicon) are attached to every tagged release on the [Releases page](https://github.com/amyanger/gba-emulator/releases/latest).
+
+The binaries are dynamically linked against SDL2, so you'll need SDL2 installed on your system before running them.
+
+### macOS (Apple Silicon — M1/M2/M3/M4/M5)
+
+```bash
+brew install sdl2
+curl -L -O https://github.com/amyanger/gba-emulator/releases/latest/download/gba_emulator-0.1.0-Darwin-arm64.tar.gz
+tar -xzf gba_emulator-0.1.0-Darwin-arm64.tar.gz
+xattr -d com.apple.quarantine gba_emulator-0.1.0-Darwin-arm64/bin/gba_emulator
+./gba_emulator-0.1.0-Darwin-arm64/bin/gba_emulator path/to/rom.gba --scale 3
+```
+
+The `xattr` line clears the Gatekeeper quarantine flag so macOS will run the unsigned binary. Skip it on your own risk and you'll see a "developer cannot be verified" prompt instead.
+
+### Linux (x86_64)
+
+```bash
+sudo apt install libsdl2-2.0-0   # or your distro's SDL2 runtime package
+curl -L -O https://github.com/amyanger/gba-emulator/releases/latest/download/gba_emulator-0.1.0-Linux-x86_64.tar.gz
+tar -xzf gba_emulator-0.1.0-Linux-x86_64.tar.gz
+./gba_emulator-0.1.0-Linux-x86_64/bin/gba_emulator path/to/rom.gba --scale 3
+```
+
+### Other platforms
+
+No pre-built binaries for Windows or Intel Macs yet. Build from source — see below.
+
+## Building from source
 
 ### Dependencies
 
