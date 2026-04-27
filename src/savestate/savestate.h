@@ -8,8 +8,9 @@
 typedef struct GBA GBA;
 
 /* v3: PPU chunk size fixed (was overcounted by 36 bytes; v2 files silently
- * dropped APU/timer/IRQ/cart/input chunks on load). v2 files are rejected. */
-#define SAVESTATE_VERSION 3
+ * dropped APU/timer/IRQ/cart/input chunks on load). v2 files are rejected.
+ * v4: SIO subsystem added; v3 files are rejected (they lack SIO state). */
+#define SAVESTATE_VERSION 4
 #define SAVESTATE_MAGIC   0x53414247  /* "GBAS" little-endian */
 typedef enum {
     SS_OK,

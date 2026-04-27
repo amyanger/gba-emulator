@@ -30,6 +30,7 @@
 #define CHUNK_IRQ  0x00515249  /* "IRQ\0" */
 #define CHUNK_CART 0x54524143  /* "CART"  */
 #define CHUNK_INPT 0x54504E49  /* "INPT"  */
+#define CHUNK_SIO  0x004F4953  /* "SIO\0" */
 
 /* -------------------------------------------------------------------------- */
 /*  CRC32 (standard polynomial 0xEDB88320)                                    */
@@ -431,6 +432,28 @@ static void save_inpt_chunk(WriteBuffer* wb, InputState* input) {
     write_u16(wb, input->keycnt);
 }
 
+static void save_sio_chunk(WriteBuffer* wb, SIO* sio) {
+    /* 4*u16 (siomulti) + u16 (siocnt) + u16 (siomlt_send) + u16 (rcnt)
+     * + u32 (siodata32) + u8 (mode) + u8 (serial_mode_enabled)
+     * + u8 (transfer_active) + u32 (transfer_cycles_remaining)
+     * = 8 + 2 + 2 + 2 + 4 + 1 + 1 + 1 + 4 = 25 bytes
+     * NOTE: the InterruptController* and LinkPeer* pointer fields are
+     * deliberately NOT serialized — they're meaningless across processes
+     * and are re-attached after load by savestate_load_from_buffer. */
+    uint32_t payload_size = 8 + 2 + 2 + 2 + 4 + 1 + 1 + 1 + 4;
+    write_chunk_header(wb, CHUNK_SIO, payload_size);
+
+    for (int i = 0; i < 4; i++) write_u16(wb, sio->siomulti[i]);
+    write_u16(wb, sio->siocnt);
+    write_u16(wb, sio->siomlt_send);
+    write_u16(wb, sio->rcnt);
+    write_u32(wb, sio->siodata32);
+    write_u8(wb, (uint8_t)sio->mode);
+    write_u8(wb, sio->serial_mode_enabled ? 1 : 0);
+    write_u8(wb, sio->transfer_active ? 1 : 0);
+    write_u32(wb, (uint32_t)sio->transfer_cycles_remaining);
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Chunk loaders — read payload from cursor into subsystem structs           */
 /* -------------------------------------------------------------------------- */
@@ -645,6 +668,20 @@ static void load_inpt_chunk(const uint8_t** cur, InputState* input) {
     input->keycnt = read_u16(cur);
 }
 
+static void load_sio_chunk(const uint8_t** cur, SIO* sio) {
+    /* Pointer fields (interrupts, peer) are NOT in the byte stream — they
+     * are re-attached by the caller after this function returns. */
+    for (int i = 0; i < 4; i++) sio->siomulti[i] = read_u16(cur);
+    sio->siocnt = read_u16(cur);
+    sio->siomlt_send = read_u16(cur);
+    sio->rcnt = read_u16(cur);
+    sio->siodata32 = read_u32(cur);
+    sio->mode = (SioMode)read_u8(cur);
+    sio->serial_mode_enabled = read_u8(cur) != 0;
+    sio->transfer_active = read_u8(cur) != 0;
+    sio->transfer_cycles_remaining = (int32_t)read_u32(cur);
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Cached ROM CRC32 (computed once, reused across save/load calls)           */
 /* -------------------------------------------------------------------------- */
@@ -693,6 +730,7 @@ SaveStateResult savestate_save_to_buffer(GBA* gba, uint8_t** out, size_t* out_si
     save_irq_chunk(&wb, &gba->interrupts);
     save_cart_chunk(&wb, &gba->cart);
     save_inpt_chunk(&wb, &gba->input);
+    save_sio_chunk(&wb, &gba->sio);
 
     /* Check for OOM during serialization */
     if (wb.oom) {
@@ -849,6 +887,7 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
         case CHUNK_IRQ:  load_irq_chunk(&chunk_data, &gba->interrupts); break;
         case CHUNK_CART: load_cart_chunk(&chunk_data, &gba->cart);       break;
         case CHUNK_INPT: load_inpt_chunk(&chunk_data, &gba->input);     break;
+        case CHUNK_SIO:  load_sio_chunk(&chunk_data, &gba->sio);        break;
         default:
             LOG_WARN("Save state: skipping unknown chunk 0x%08X (%u bytes)",
                      chunk_id, chunk_size);
@@ -863,6 +902,17 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
     gba->apu.write_pos = 0;
     gba->apu.read_pos = 0;
     memset(gba->apu.sample_buffer, 0, sizeof(gba->apu.sample_buffer));
+
+    /* Re-attach SIO cross-pointers. The deserialized SIO struct's pointer
+     * fields contain whatever was in memory before load_sio_chunk ran (or
+     * nothing if no SIO chunk was present); either way, restore them now.
+     * - interrupts: always points at the host GBA's IRQ controller.
+     * - peer: cleared. A live link transport that was attached pre-save is
+     *   not restored — savestate-while-link-active is a degenerate case,
+     *   and the user must re-issue gba_set_link_peer if they want to
+     *   reconnect after loading. */
+    gba->sio.interrupts = &gba->interrupts;
+    gba->sio.peer = NULL;
 
     return SS_OK;
 }

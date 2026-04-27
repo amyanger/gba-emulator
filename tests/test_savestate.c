@@ -94,6 +94,57 @@ TEST(savestate_buffer_roundtrip) {
     gba_destroy(&gba);
 }
 
+TEST(savestate_sio_roundtrip) {
+    GBA src;
+    gba_init(&src);
+
+    /* Plant non-default SIO state on the source GBA */
+    src.sio.siocnt        = 0x4082; /* multiplayer + IRQ + start */
+    src.sio.siomlt_send   = 0xCAFE;
+    src.sio.siomulti[0]   = 0x1111;
+    src.sio.siomulti[1]   = 0x2222;
+    src.sio.siomulti[2]   = 0x3333;
+    src.sio.siomulti[3]   = 0x4444;
+    src.sio.rcnt          = 0x0000;
+    src.sio.mode          = SIO_MODE_MULTIPLAYER;
+    src.sio.serial_mode_enabled = true;
+    src.sio.transfer_active = true;
+    src.sio.transfer_cycles_remaining = 768;
+
+    uint8_t* buf = NULL;
+    size_t   buf_size = 0;
+    SaveStateResult r = savestate_save_to_buffer(&src, &buf, &buf_size);
+    ASSERT_EQ(r, SS_OK);
+    ASSERT_TRUE(buf != NULL);
+
+    /* Load into a fresh GBA — its sio.interrupts pointer must end up
+     * pointing at &dst.interrupts, NOT at the source's IRQ controller. */
+    GBA dst;
+    gba_init(&dst);
+    r = savestate_load_from_buffer(&dst, buf, buf_size);
+    ASSERT_EQ(r, SS_OK);
+
+    /* Data fields restored exactly */
+    ASSERT_EQ_HEX(dst.sio.siocnt,      0x4082);
+    ASSERT_EQ_HEX(dst.sio.siomlt_send, 0xCAFE);
+    ASSERT_EQ_HEX(dst.sio.siomulti[0], 0x1111);
+    ASSERT_EQ_HEX(dst.sio.siomulti[1], 0x2222);
+    ASSERT_EQ_HEX(dst.sio.siomulti[2], 0x3333);
+    ASSERT_EQ_HEX(dst.sio.siomulti[3], 0x4444);
+    ASSERT_EQ((int)dst.sio.mode, (int)SIO_MODE_MULTIPLAYER);
+    ASSERT_TRUE(dst.sio.serial_mode_enabled);
+    ASSERT_TRUE(dst.sio.transfer_active);
+    ASSERT_EQ(dst.sio.transfer_cycles_remaining, 768);
+
+    /* Pointer fields correctly re-wired (no dangling pointer to src) */
+    ASSERT_TRUE(dst.sio.interrupts == &dst.interrupts);
+    ASSERT_TRUE(dst.sio.peer == NULL);
+
+    free(buf);
+    gba_destroy(&src);
+    gba_destroy(&dst);
+}
+
 void run_savestate_tests(void) {
     TEST_SUITE("savestate");
     RUN_TEST(crc32_empty);
@@ -105,4 +156,5 @@ void run_savestate_tests(void) {
     RUN_TEST(slot_path_slot_9);
     RUN_TEST(slot_path_small_buffer);
     RUN_TEST(savestate_buffer_roundtrip);
+    RUN_TEST(savestate_sio_roundtrip);
 }
