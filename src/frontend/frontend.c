@@ -2,6 +2,7 @@
 #include "gba.h"
 #include "apu/apu.h"
 #include "input/input.h"
+#include "input/keymap.h"
 
 #ifdef ENABLE_XRAY
 #include "frontend/xray/xray.h"
@@ -103,19 +104,7 @@ void frontend_present_frame(Frontend* fe, uint16_t* framebuffer) {
 
 // Map SDL scancodes to GBA buttons
 static uint16_t sdl_to_gba_key(SDL_Scancode sc) {
-    switch (sc) {
-    case SDL_SCANCODE_Z:      return KEY_A;
-    case SDL_SCANCODE_X:      return KEY_B;
-    case SDL_SCANCODE_RETURN: return KEY_START;
-    case SDL_SCANCODE_RSHIFT: return KEY_SELECT;
-    case SDL_SCANCODE_UP:     return KEY_UP;
-    case SDL_SCANCODE_DOWN:   return KEY_DOWN;
-    case SDL_SCANCODE_LEFT:   return KEY_LEFT;
-    case SDL_SCANCODE_RIGHT:  return KEY_RIGHT;
-    case SDL_SCANCODE_A:      return KEY_L;
-    case SDL_SCANCODE_S:      return KEY_R;
-    default:                  return 0;
-    }
+    return keymap_lookup(sc);
 }
 
 void frontend_poll_input(Frontend* fe, GBA* gba) {

@@ -51,6 +51,7 @@ set(SOURCES
     src/cartridge/rtc.c
     src/cartridge/gpio.c
     src/input/input.c
+    src/input/keymap.c
     src/cheat/cheat.c
     src/cheat/cheat_file.c
     src/savestate/savestate.c
@@ -129,6 +130,7 @@ set(LIB_SOURCES
     src/cartridge/rtc.c
     src/cartridge/gpio.c
     src/input/input.c
+    src/input/keymap.c
     src/cheat/cheat.c
     src/cheat/cheat_file.c
     src/screenshot/screenshot.c
@@ -149,6 +151,7 @@ add_executable(gba_tests
     tests/test_screenshot.c
     tests/test_trace.c
     tests/test_cartridge_autosave.c
+    tests/test_keymap.c
     ${LIB_SOURCES}
 )
 
@@ -156,9 +159,10 @@ target_include_directories(gba_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
     ${CMAKE_SOURCE_DIR}/include
     ${CMAKE_SOURCE_DIR}/tests
+    ${SDL2_INCLUDE_DIRS}
 )
 
-target_link_libraries(gba_tests PRIVATE m)
+target_link_libraries(gba_tests PRIVATE ${SDL2_LIBRARIES} m)
 
 if(ENABLE_REWIND)
     target_compile_definitions(gba_tests PRIVATE ENABLE_REWIND)

@@ -5,6 +5,7 @@
 #ifdef ENABLE_REWIND
 #include "rewind/rewind.h"
 #endif
+#include "input/keymap.h"
 #include "savestate/savestate.h"
 #include "screenshot/screenshot.h"
 #include "trace/trace.h"
@@ -23,6 +24,7 @@ static void print_usage(const char* prog) {
     printf("  --bios <file>          Load GBA BIOS ROM\n");
     printf("  --scale <n>            Window scale factor (default: 3)\n");
     printf("  --cheats <file>        Load cheat codes from file (.cht format)\n");
+    printf("  --keymap <file>        Load custom keyboard bindings\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
     printf("  --trace-from <hex>     Only trace instructions at PC >= hex\n");
     printf("  --trace-to <hex>       Only trace instructions at PC <= hex\n");
@@ -38,6 +40,7 @@ int main(int argc, char* argv[]) {
     const char* rom_path = argv[1];
     const char* bios_path = NULL;
     const char* cheat_path = NULL;
+    const char* keymap_path = NULL;
     const char* trace_path = NULL;
     uint32_t trace_from = 0;
     uint32_t trace_to = 0;
@@ -52,6 +55,8 @@ int main(int argc, char* argv[]) {
             scale = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--cheats") == 0 && i + 1 < argc) {
             cheat_path = argv[++i];
+        } else if (strcmp(argv[i], "--keymap") == 0 && i + 1 < argc) {
+            keymap_path = argv[++i];
         } else if (strcmp(argv[i], "--trace") == 0 && i + 1 < argc) {
             trace_path = argv[++i];
         } else if (strcmp(argv[i], "--trace-from") == 0 && i + 1 < argc) {
@@ -106,6 +111,12 @@ int main(int argc, char* argv[]) {
     }
 
     snprintf(fe.rom_path, sizeof(fe.rom_path), "%s", rom_path);
+
+    // Keyboard bindings (must come after frontend_init so SDL is up)
+    keymap_reset_defaults();
+    if (keymap_path) {
+        keymap_load(keymap_path);
+    }
 
     // Initialize audio
     frontend_audio_init(&fe);

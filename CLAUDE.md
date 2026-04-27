@@ -17,6 +17,9 @@ mkdir -p build && cd build && cmake .. -DCMAKE_BUILD_TYPE=Debug && make
 # Run with cheat codes
 ./gba_emulator <rom.gba> --cheats path/to/cheats.cht
 
+# Run with custom keyboard bindings
+./gba_emulator <rom.gba> --keymap path/to/keys.ini
+
 # Trace every executed instruction to a file (for diffing against mGBA)
 ./gba_emulator <rom.gba> --trace trace.log --trace-frames 60
 ./gba_emulator <rom.gba> --trace trace.log --trace-from 08000000 --trace-to 08001000
@@ -42,6 +45,27 @@ rm -rf build && mkdir build && cd build && cmake .. && make
 | D-Pad | Arrow Keys |
 | L | A |
 | R | S |
+
+Bindings can be customized with `--keymap <file>` (see `keymap.ini` format below).
+
+### Keymap file format (.ini)
+
+```ini
+# Lines starting with # are comments. Trailing # comments are also stripped.
+# Format: BUTTON=KeyName  (case-insensitive)
+# Buttons: A B START SELECT UP DOWN LEFT RIGHT L R
+# Key names: any SDL scancode name (e.g. Z, Return, Right Shift, Left, Up).
+A=Z
+B=X
+START=Return
+SELECT=Right Shift
+UP=Up
+DOWN=Down
+LEFT=Left
+RIGHT=Right
+L=A
+R=S
+```
 
 ### Emulator hotkeys
 - **F1**: Register dump to stderr (DEBUG builds)
@@ -108,7 +132,9 @@ src/
     stb_image_write.h  Vendored stb_image_write v1.16 (public domain)
   trace/
     trace.h/c          Per-instruction execution trace (--trace CLI flag)
-  input/input.h/c      Keypad registers (active-low), KEYCNT for key IRQs
+  input/
+    input.h/c          Keypad registers (active-low), KEYCNT for key IRQs
+    keymap.h/c         Customizable scancode -> GBA button table (--keymap CLI flag)
   frontend/
     frontend.h/c       SDL2 window, rendering, input polling, audio output
     debug.c            Register dump, instruction tracing (DEBUG builds only)
@@ -199,7 +225,7 @@ These are non-obvious behaviors that MUST be correct. Verify against GBATEK when
 ## Testing
 
 ### Unit tests
-A unit test suite lives in `tests/` (`test_runner.c`, `test_bus.c`, `test_cpu.c`, `test_savestate.c`, `test_rewind.c`, `test_rtc.c`, `test_screenshot.c`, `test_trace.c`, `test_cartridge_autosave.c`, shared `test_harness.h`). Wired into CMake as the `gba_tests` target and run on every push via GitHub Actions (`.github/workflows/ci.yml`, Linux + macOS).
+A unit test suite lives in `tests/` (`test_runner.c`, `test_bus.c`, `test_cpu.c`, `test_savestate.c`, `test_rewind.c`, `test_rtc.c`, `test_screenshot.c`, `test_trace.c`, `test_cartridge_autosave.c`, `test_keymap.c`, shared `test_harness.h`). Wired into CMake as the `gba_tests` target and run on every push via GitHub Actions (`.github/workflows/ci.yml`, Linux + macOS). The test binary now links SDL2 (needed by the keymap module's scancode lookup).
 
 ```bash
 cd build && cmake .. && make gba_tests && ctest --output-on-failure
