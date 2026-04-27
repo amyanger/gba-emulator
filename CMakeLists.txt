@@ -187,6 +187,14 @@ target_include_directories(gba_tests PRIVATE
 
 target_link_libraries(gba_tests PRIVATE ${SDL2_LIBRARIES} $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
 
+# Several savestate tests put GBA structs (~670 KB each) on the stack — up to
+# two at a time for SIO roundtrip — which exceeds Windows' 1 MB default thread
+# stack and crashes on entry to the test function. Match the 8 MB stack POSIX
+# platforms give us by default.
+if(MSVC)
+    target_link_options(gba_tests PRIVATE /STACK:8388608)
+endif()
+
 if(ENABLE_REWIND)
     target_compile_definitions(gba_tests PRIVATE ENABLE_REWIND)
 endif()
