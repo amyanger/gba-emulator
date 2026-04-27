@@ -12,6 +12,7 @@ typedef struct InterruptController InterruptController;
 typedef struct Cartridge Cartridge;
 typedef struct InputState InputState;
 typedef struct ARM7TDMI ARM7TDMI;
+typedef struct SIO SIO;
 
 // Memory region sizes
 #define BIOS_SIZE 0x4000    // 16KB
@@ -47,6 +48,7 @@ struct Bus {
     InterruptController* interrupts;
     Cartridge* cart;
     InputState* input;
+    SIO* sio;
 };
 typedef struct Bus Bus;
 

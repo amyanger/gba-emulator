@@ -1,5 +1,7 @@
 #include "test_harness.h"
 #include "gba.h"
+#include "sio/sio.h"
+#include "interrupt/interrupt.h"
 
 /* Helper: create a fully wired GBA on the heap and return it.
  * The caller owns the pointer (but these are short-lived tests,
@@ -76,6 +78,38 @@ TEST(vram_mirror) {
     ASSERT_EQ_HEX(val, 0xBEEF);
 }
 
+/* ---- SIO dispatch: bus routes 0x120-0x12B and 0x134-0x135 to SIO module --- */
+
+TEST(bus_dispatches_siocnt_writes_to_sio) {
+    Bus* bus = calloc(1, sizeof(Bus));
+    SIO sio;
+    InterruptController ic;
+    bus_init(bus);
+    interrupt_init(&ic);
+    sio_init(&sio, &ic, NULL);
+    bus->sio = &sio;
+
+    bus_write16(bus, 0x04000128, 0x4082);
+    ASSERT_EQ_HEX(sio.siocnt, 0x4082);
+    ASSERT_EQ_HEX(bus_read16(bus, 0x04000128), 0x4082);
+    free(bus);
+}
+
+TEST(bus_dispatches_rcnt_writes_to_sio) {
+    Bus* bus = calloc(1, sizeof(Bus));
+    SIO sio;
+    InterruptController ic;
+    bus_init(bus);
+    interrupt_init(&ic);
+    sio_init(&sio, &ic, NULL);
+    bus->sio = &sio;
+
+    bus_write16(bus, 0x04000134, 0x8000);
+    ASSERT_EQ_HEX(sio.rcnt, 0x8000);
+    ASSERT_EQ_HEX(bus_read16(bus, 0x04000134), 0x8000);
+    free(bus);
+}
+
 void run_bus_tests(void) {
     TEST_SUITE("bus");
     RUN_TEST(ewram_write_read);
@@ -85,4 +119,6 @@ void run_bus_tests(void) {
     RUN_TEST(vram_8bit_duplicate);
     RUN_TEST(oam_8bit_ignored);
     RUN_TEST(vram_mirror);
+    RUN_TEST(bus_dispatches_siocnt_writes_to_sio);
+    RUN_TEST(bus_dispatches_rcnt_writes_to_sio);
 }

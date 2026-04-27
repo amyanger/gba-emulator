@@ -2,6 +2,7 @@
 #include "arm7tdmi.h"
 #include "memory/bus.h"
 #include "apu/apu.h"
+#include "sio/sio.h"
 #include <math.h>
 
 /*
@@ -942,6 +943,12 @@ void bios_hle_execute(ARM7TDMI* cpu, uint32_t swi_num) {
             for (uint32_t off = 0x120; off < 0x130; off += 2) {
                 bus->io_regs[off] = 0;
                 bus->io_regs[off + 1] = 0;
+            }
+            /* Keep the SIO module's mirrored register state in sync. */
+            if (bus->sio) {
+                for (uint32_t off = 0x120; off <= 0x12B; off++) {
+                    sio_write8(bus->sio, off, 0);
+                }
             }
         }
 

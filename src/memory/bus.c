@@ -8,6 +8,7 @@
 #include "timer/timer.h"
 #include "input/input.h"
 #include "cpu/arm7tdmi.h"
+#include "sio/sio.h"
 
 /* ===== I/O Register Dispatch =====
  *
@@ -231,6 +232,14 @@ static uint8_t io_read8(Bus* bus, uint32_t addr) {
         return (uint8_t)(control);
     }
 
+    /* --- SIO Registers (0x120-0x12B) --- */
+    case 0x120: case 0x121: case 0x122: case 0x123:
+    case 0x124: case 0x125: case 0x126: case 0x127:
+    case 0x128: case 0x129:
+    case 0x12A: case 0x12B:
+        if (bus->sio) return sio_read8(bus->sio, offset);
+        return bus->io_regs[offset];
+
     /* --- Input (0x130-0x133) --- */
     case 0x130:  /* REG_KEYINPUT low byte */
         if (bus->input) {
@@ -251,6 +260,11 @@ static uint8_t io_read8(Bus* bus, uint32_t addr) {
         if (bus->input) {
             return (uint8_t)(bus->input->keycnt >> 8);
         }
+        return bus->io_regs[offset];
+
+    /* --- SIO Registers (0x134-0x135 RCNT) --- */
+    case 0x134: case 0x135:
+        if (bus->sio) return sio_read8(bus->sio, offset);
         return bus->io_regs[offset];
 
     /* --- All other I/O: raw backing array --- */
@@ -1008,6 +1022,18 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         bus->io_regs[offset] = val;
         return;
 
+    /* --- SIO Registers (0x120-0x12B) --- */
+    case 0x120: case 0x121: case 0x122: case 0x123:
+    case 0x124: case 0x125: case 0x126: case 0x127:
+    case 0x128: case 0x129:
+    case 0x12A: case 0x12B:
+        if (bus->sio) {
+            sio_write8(bus->sio, offset, val);
+        } else {
+            bus->io_regs[offset] = val;
+        }
+        return;
+
     /* --- Input (0x130-0x131) — read-only, writes ignored --- */
     case 0x130:
     case 0x131:
@@ -1024,6 +1050,15 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         if (bus->input) {
             bus->input->keycnt = (bus->input->keycnt & 0x00FF)
                                | ((uint16_t)val << 8);
+        }
+        return;
+
+    /* --- SIO Registers (0x134-0x135 RCNT) --- */
+    case 0x134: case 0x135:
+        if (bus->sio) {
+            sio_write8(bus->sio, offset, val);
+        } else {
+            bus->io_regs[offset] = val;
         }
         return;
 
