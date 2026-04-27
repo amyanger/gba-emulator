@@ -16,6 +16,7 @@ void run_trace_tests(void);
 void run_cartridge_autosave_tests(void);
 void run_keymap_tests(void);
 void run_sio_tests(void);
+void run_sio_link_tests(void);
 
 int main(void) {
     printf("=== GBA Emulator Test Suite ===\n\n");
@@ -29,6 +30,7 @@ int main(void) {
     run_cartridge_autosave_tests();
     run_keymap_tests();
     run_sio_tests();
+    run_sio_link_tests();
     printf("\n=== Results: %d passed, %d failed, %d total ===\n",
            tests_passed, tests_failed, tests_run);
     return tests_failed > 0 ? 1 : 0;
