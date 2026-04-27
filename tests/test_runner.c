@@ -22,20 +22,22 @@ void run_sio_tests(void);
 void run_sio_link_tests(void);
 #endif
 
+#define RUN_SUITE(fn) do { printf(">> " #fn "\n"); fflush(stdout); fn(); } while (0)
+
 int main(void) {
     printf("=== GBA Emulator Test Suite ===\n\n");
-    run_savestate_tests();
-    run_bus_tests();
-    run_cpu_tests();
-    run_rewind_tests();
-    run_screenshot_tests();
-    run_trace_tests();
-    run_cartridge_autosave_tests();
-    run_keymap_tests();
+    RUN_SUITE(run_savestate_tests);
+    RUN_SUITE(run_bus_tests);
+    RUN_SUITE(run_cpu_tests);
+    RUN_SUITE(run_rewind_tests);
+    RUN_SUITE(run_screenshot_tests);
+    RUN_SUITE(run_trace_tests);
+    RUN_SUITE(run_cartridge_autosave_tests);
+    RUN_SUITE(run_keymap_tests);
 #ifndef _WIN32
-    run_rtc_tests();
-    run_sio_tests();
-    run_sio_link_tests();
+    RUN_SUITE(run_rtc_tests);
+    RUN_SUITE(run_sio_tests);
+    RUN_SUITE(run_sio_link_tests);
 #endif
     printf("\n=== Results: %d passed, %d failed, %d total ===\n",
            tests_passed, tests_failed, tests_run);
