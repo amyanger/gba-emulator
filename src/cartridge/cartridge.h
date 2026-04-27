@@ -1,9 +1,16 @@
 #ifndef CARTRIDGE_H
 #define CARTRIDGE_H
 
+#include <time.h>
+
 #include "common.h"
 
 #define MAX_ROM_SIZE 0x2000000 // 32MB
+
+/* Autosave debounce: flush save data at most once every N seconds even
+ * when the game writes continuously. Pokemon Emerald's in-game save burst
+ * fits inside this window, so one disk write captures the whole save. */
+#define CARTRIDGE_AUTOSAVE_DEBOUNCE_SECONDS 5
 
 typedef enum {
     SAVE_NONE,
@@ -80,6 +87,10 @@ struct Cartridge {
 
     // Save file path
     char save_path[256];
+
+    // Autosave bookkeeping
+    bool   save_dirty;       // set by cartridge_write8 when save region changes
+    time_t last_save_flush;  // wall clock of most recent successful flush
 };
 typedef struct Cartridge Cartridge;
 
@@ -90,5 +101,10 @@ uint8_t cartridge_read8(Cartridge* cart, uint32_t addr);
 void cartridge_write8(Cartridge* cart, uint32_t addr, uint8_t val);
 void cartridge_save_to_file(Cartridge* cart);
 void cartridge_load_save_file(Cartridge* cart);
+
+/* Called once per frame from the main loop. Flushes save data to disk
+ * if it has changed since the last flush AND the debounce window has
+ * elapsed. No-op when nothing has changed or no save chip is present. */
+void cartridge_save_tick(Cartridge* cart, time_t now);
 
 #endif // CARTRIDGE_H

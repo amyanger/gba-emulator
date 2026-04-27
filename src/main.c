@@ -191,6 +191,7 @@ int main(int argc, char* argv[]) {
 
         if (gba.frame_complete) {
             trace_frame_tick();
+            cartridge_save_tick(&gba.cart, time(NULL));
             bool ff_active = fe.ff_hold || fe.ff_toggle;
 
             // Update window title on FF state change

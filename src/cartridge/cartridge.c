@@ -182,10 +182,14 @@ void cartridge_write8(Cartridge* cart, uint32_t addr, uint8_t val) {
         switch (cart->save_type) {
         case SAVE_SRAM:
             cart->sram[offset & 0x7FFF] = val;
+            cart->save_dirty = true;
             break;
         case SAVE_FLASH64:
         case SAVE_FLASH128:
+            /* Flash command bytes also pass through here; debounce
+             * coalesces them into a single disk write. */
             flash_write(&cart->flash, offset, val);
+            cart->save_dirty = true;
             break;
         default:
             break;
@@ -196,9 +200,14 @@ void cartridge_write8(Cartridge* cart, uint32_t addr, uint8_t val) {
 void cartridge_save_to_file(Cartridge* cart) {
     if (cart->save_type == SAVE_NONE) return;
 
-    FILE* f = fopen(cart->save_path, "wb");
+    /* Write to a temp file then rename. POSIX rename() is atomic, so a
+     * crash mid-write leaves the previous .sav intact rather than truncated. */
+    char tmp_path[sizeof(cart->save_path) + 4];
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", cart->save_path);
+
+    FILE* f = fopen(tmp_path, "wb");
     if (!f) {
-        LOG_ERROR("Cannot save to %s", cart->save_path);
+        LOG_ERROR("Cannot save to %s", tmp_path);
         return;
     }
 
@@ -226,9 +235,26 @@ void cartridge_save_to_file(Cartridge* cart) {
 
     if (expected > 0 && written != expected) {
         LOG_WARN("Save write incomplete: expected %zu, wrote %zu", expected, written);
-    } else {
-        LOG_INFO("Save written to %s", cart->save_path);
+        remove(tmp_path);
+        return;
     }
+
+    if (rename(tmp_path, cart->save_path) != 0) {
+        LOG_ERROR("Failed to commit save file %s", cart->save_path);
+        remove(tmp_path);
+        return;
+    }
+
+    cart->save_dirty = false;
+    cart->last_save_flush = time(NULL);
+    LOG_INFO("Save written to %s", cart->save_path);
+}
+
+void cartridge_save_tick(Cartridge* cart, time_t now) {
+    if (!cart || !cart->save_dirty) return;
+    if (cart->save_type == SAVE_NONE) return;
+    if (now - cart->last_save_flush < CARTRIDGE_AUTOSAVE_DEBOUNCE_SECONDS) return;
+    cartridge_save_to_file(cart);
 }
 
 void cartridge_load_save_file(Cartridge* cart) {

@@ -148,6 +148,7 @@ add_executable(gba_tests
     tests/test_rewind.c
     tests/test_screenshot.c
     tests/test_trace.c
+    tests/test_cartridge_autosave.c
     ${LIB_SOURCES}
 )
 

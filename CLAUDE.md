@@ -193,11 +193,12 @@ These are non-obvious behaviors that MUST be correct. Verify against GBATEK when
 - **Timer cascade**: when timer N overflows and timer N+1 has cascade enabled, N+1 increments by 1 regardless of its prescaler.
 - **DMA halts the CPU** during transfer. DMA channel 0 has highest priority.
 - **FIFO audio chain**: Timer overflow -> pop FIFO sample -> if FIFO low, trigger DMA refill. This must work for Pokemon Emerald music.
+- **Save data autosaves on a 5-second debounce**: writes to SRAM/Flash set `cart->save_dirty`, the main loop calls `cartridge_save_tick()` per frame, and the file is rewritten at most once every `CARTRIDGE_AUTOSAVE_DEBOUNCE_SECONDS`. The on-disk write is atomic (`<path>.sav.tmp` + `rename()`), so a crash mid-write leaves the previous .sav intact.
 
 ## Testing
 
 ### Unit tests
-A unit test suite lives in `tests/` (`test_runner.c`, `test_bus.c`, `test_cpu.c`, `test_savestate.c`, `test_rewind.c`, `test_rtc.c`, `test_screenshot.c`, `test_trace.c`, shared `test_harness.h`). Wired into CMake as the `gba_tests` target and run on every push via GitHub Actions (`.github/workflows/ci.yml`, Linux + macOS).
+A unit test suite lives in `tests/` (`test_runner.c`, `test_bus.c`, `test_cpu.c`, `test_savestate.c`, `test_rewind.c`, `test_rtc.c`, `test_screenshot.c`, `test_trace.c`, `test_cartridge_autosave.c`, shared `test_harness.h`). Wired into CMake as the `gba_tests` target and run on every push via GitHub Actions (`.github/workflows/ci.yml`, Linux + macOS).
 
 ```bash
 cd build && cmake .. && make gba_tests && ctest --output-on-failure
