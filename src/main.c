@@ -8,6 +8,7 @@
 #include "input/keymap.h"
 #include "savestate/savestate.h"
 #include "screenshot/screenshot.h"
+#include "sio/sio_link.h"
 #include "trace/trace.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,6 +26,8 @@ static void print_usage(const char* prog) {
     printf("  --scale <n>            Window scale factor (default: 3)\n");
     printf("  --cheats <file>        Load cheat codes from file (.cht format)\n");
     printf("  --keymap <file>        Load custom keyboard bindings\n");
+    printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
+    printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
     printf("  --trace-from <hex>     Only trace instructions at PC >= hex\n");
     printf("  --trace-to <hex>       Only trace instructions at PC <= hex\n");
@@ -41,6 +44,8 @@ int main(int argc, char* argv[]) {
     const char* bios_path = NULL;
     const char* cheat_path = NULL;
     const char* keymap_path = NULL;
+    const char* link_master_path = NULL;
+    const char* link_client_path = NULL;
     const char* trace_path = NULL;
     uint32_t trace_from = 0;
     uint32_t trace_to = 0;
@@ -57,6 +62,10 @@ int main(int argc, char* argv[]) {
             cheat_path = argv[++i];
         } else if (strcmp(argv[i], "--keymap") == 0 && i + 1 < argc) {
             keymap_path = argv[++i];
+        } else if (strcmp(argv[i], "--link-master") == 0 && i + 1 < argc) {
+            link_master_path = argv[++i];
+        } else if (strcmp(argv[i], "--link-client") == 0 && i + 1 < argc) {
+            link_client_path = argv[++i];
         } else if (strcmp(argv[i], "--trace") == 0 && i + 1 < argc) {
             trace_path = argv[++i];
         } else if (strcmp(argv[i], "--trace-from") == 0 && i + 1 < argc) {
@@ -71,6 +80,33 @@ int main(int argc, char* argv[]) {
     // Initialize GBA
     GBA gba;
     gba_init(&gba);
+
+    // Set up local link cable if requested. link_peer_listen blocks until a
+    // peer connects, so we do this before the main loop starts.
+    LinkPeer* link_peer = NULL;
+    if (link_master_path) {
+        link_peer = link_peer_create();
+        LOG_INFO("Listening for SIO peer at %s ...", link_master_path);
+        if (!link_peer_listen(link_peer, link_master_path)) {
+            LOG_ERROR("Failed to listen on %s", link_master_path);
+            link_peer_shutdown(link_peer);
+            link_peer = NULL;
+        } else {
+            LOG_INFO("SIO peer connected");
+            gba_set_link_peer(&gba, link_peer);
+        }
+    } else if (link_client_path) {
+        link_peer = link_peer_create();
+        LOG_INFO("Connecting to SIO peer at %s ...", link_client_path);
+        if (!link_peer_connect(link_peer, link_client_path)) {
+            LOG_ERROR("Failed to connect to %s", link_client_path);
+            link_peer_shutdown(link_peer);
+            link_peer = NULL;
+        } else {
+            LOG_INFO("SIO peer connected");
+            gba_set_link_peer(&gba, link_peer);
+        }
+    }
 
     if (bios_path) {
         if (!gba_load_bios(&gba, bios_path)) {
@@ -278,6 +314,7 @@ int main(int argc, char* argv[]) {
     g_xray = NULL;
 #endif
     frontend_destroy(&fe);
+    if (link_peer) link_peer_shutdown(link_peer);
     gba_destroy(&gba);
 
     return 0;

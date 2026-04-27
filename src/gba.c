@@ -136,6 +136,10 @@ void gba_run_frame(GBA* gba) {
 #endif
 }
 
+void gba_set_link_peer(GBA* gba, LinkPeer* peer) {
+    gba->sio.peer = peer;
+}
+
 void gba_destroy(GBA* gba) {
     cartridge_destroy(&gba->cart);
 #ifdef ENABLE_REWIND

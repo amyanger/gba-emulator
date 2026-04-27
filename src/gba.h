@@ -22,6 +22,8 @@
 typedef struct XRayState XRayState;
 #endif
 
+typedef struct LinkPeer LinkPeer;
+
 struct GBA {
     ARM7TDMI cpu;
     Bus bus;
@@ -59,6 +61,10 @@ bool gba_load_bios(GBA* gba, const char* path);
 
 // Run one full frame (280,896 cycles)
 void gba_run_frame(GBA* gba);
+
+// Attach (or detach with NULL) a LinkPeer transport for SIO multiplayer.
+// Used by the CLI to wire up --link-master / --link-client at startup.
+void gba_set_link_peer(GBA* gba, LinkPeer* peer);
 
 // Clean up resources
 void gba_destroy(GBA* gba);
