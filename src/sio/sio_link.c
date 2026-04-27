@@ -1,6 +1,7 @@
 #include "sio_link.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -8,8 +9,8 @@
 #include <unistd.h>
 
 struct LinkPeer {
-    int32_t listen_fd;
-    int32_t conn_fd;
+    int listen_fd;
+    int conn_fd;
     bool connected;
 };
 
@@ -26,23 +27,121 @@ bool link_peer_is_connected(const LinkPeer* peer) {
     return peer && peer->connected;
 }
 
+void link_peer_test_inject_fd(LinkPeer* peer, int fd) {
+    if (!peer) return;
+    // Close any prior conn fd (e.g. from a previous listen/connect/inject)
+    // to avoid leaking descriptors when tests reuse a peer.
+    if (peer->conn_fd >= 0) close(peer->conn_fd);
+    peer->conn_fd = fd;
+    peer->connected = true;
+}
+
 bool link_peer_listen(LinkPeer* peer, const char* path) {
-    (void)peer;
-    (void)path;
-    return false; // Real implementation lands in Task 8
+    if (!peer || !path) return false;
+
+    // Best-effort cleanup of stale socket files from prior crashes. The
+    // listening process always owns its socket path, so an existing entry
+    // here is unrecoverable junk by definition.
+    unlink(path);
+
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return false;
+
+    struct sockaddr_un addr = {0};
+    addr.sun_family = AF_UNIX;
+    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path);
+
+    if (bind(fd, (struct sockaddr*)&addr, sizeof(addr)) != 0
+        || listen(fd, 1) != 0) {
+        close(fd);
+        return false;
+    }
+    peer->listen_fd = fd;
+
+    // Blocking accept: v1 link cable is a 2-player point-to-point setup.
+    int conn = accept(fd, NULL, NULL);
+    if (conn < 0) {
+        close(fd);
+        peer->listen_fd = -1;
+        return false;
+    }
+    peer->conn_fd = conn;
+    peer->connected = true;
+    return true;
 }
 
 bool link_peer_connect(LinkPeer* peer, const char* path) {
-    (void)peer;
-    (void)path;
-    return false; // Real implementation lands in Task 8
+    if (!peer || !path) return false;
+
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    if (fd < 0) return false;
+
+    struct sockaddr_un addr = {0};
+    addr.sun_family = AF_UNIX;
+    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", path);
+
+    if (connect(fd, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+        close(fd);
+        return false;
+    }
+    peer->conn_fd = fd;
+    peer->connected = true;
+    return true;
+}
+
+// Loop until the full payload is written, retrying on EINTR. Returns false
+// on any other error (caller will mark the peer disconnected).
+static bool write_full(int fd, const void* buf, size_t n) {
+    const uint8_t* p = (const uint8_t*)buf;
+    while (n > 0) {
+        ssize_t w = write(fd, p, n);
+        if (w < 0) {
+            if (errno == EINTR) continue;
+            return false;
+        }
+        p += (size_t)w;
+        n -= (size_t)w;
+    }
+    return true;
+}
+
+// Loop until the full payload is read, retrying on EINTR. A read of 0 means
+// the peer cleanly closed the connection — treat as failure so the caller
+// can mark the peer disconnected.
+static bool read_full(int fd, void* buf, size_t n) {
+    uint8_t* p = (uint8_t*)buf;
+    while (n > 0) {
+        ssize_t r = read(fd, p, n);
+        if (r < 0) {
+            if (errno == EINTR) continue;
+            return false;
+        }
+        if (r == 0) return false; // peer closed
+        p += (size_t)r;
+        n -= (size_t)r;
+    }
+    return true;
 }
 
 bool link_peer_exchange(LinkPeer* peer, uint16_t our_payload, uint16_t* peer_out) {
-    (void)peer;
-    (void)our_payload;
-    (void)peer_out;
-    return false; // Real implementation lands in Task 8
+    if (!peer || !peer->connected || !peer_out) return false;
+
+    // Serialize our 16-bit payload little-endian on the wire so both ends
+    // agree regardless of host byte order.
+    uint8_t out_buf[2] = { (uint8_t)our_payload, (uint8_t)(our_payload >> 8) };
+    if (!write_full(peer->conn_fd, out_buf, sizeof(out_buf))) {
+        peer->connected = false;
+        return false;
+    }
+
+    uint8_t in_buf[2];
+    if (!read_full(peer->conn_fd, in_buf, sizeof(in_buf))) {
+        peer->connected = false;
+        return false;
+    }
+
+    *peer_out = (uint16_t)in_buf[0] | ((uint16_t)in_buf[1] << 8);
+    return true;
 }
 
 void link_peer_shutdown(LinkPeer* peer) {

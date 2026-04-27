@@ -31,4 +31,10 @@ bool link_peer_exchange(LinkPeer* peer, uint16_t our_payload, uint16_t* peer_out
 // Close socket and free.
 void link_peer_shutdown(LinkPeer* peer);
 
+// ── Internal: test-only ─────────────────────────────────────────────
+// Inject a pre-connected fd as the active connection. Used by the test
+// suite with socketpair() to drive both ends without a filesystem socket.
+// Closes any existing conn_fd before overwriting.
+void link_peer_test_inject_fd(LinkPeer* peer, int fd);
+
 #endif // SIO_LINK_H
