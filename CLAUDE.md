@@ -44,6 +44,7 @@ rm -rf build && mkdir build && cd build && cmake .. && make
 - **F2**: Toggle Hardware X-Ray Mode
 - **F5 / F8**: Save / load state (current slot)
 - **0–9**: Select save state slot (written next to ROM as `<rom>.ss<N>`)
+- **F12**: Screenshot — PNG of native 240×160 framebuffer next to ROM as `<rom>.YYYYMMDD-HHMMSS.png` (UTC)
 - **Tab** (hold) / **`** (toggle): Fast-forward — skips audio, renders every Nth frame
 - **Backspace** (hold): Rewind — replays recent state in reverse (60-second window, audio muted)
 - **F11**: Toggle fullscreen
@@ -94,6 +95,12 @@ src/
     cheat_file.h/c     Cheat file (.cht) parser and writer
   savestate/
     savestate.h/c      Save state serialization (versioned, magic-tagged, ROM-hash guarded)
+  rewind/
+    rewind.h/c         60-second rewind ring buffer (Backspace hotkey)
+    rewind_lz4.h/c     Vendored LZ4 (BSD-2) for compressing per-frame snapshots
+  screenshot/
+    screenshot.h/c     PNG screenshot capture (F12 hotkey)
+    stb_image_write.h  Vendored stb_image_write v1.16 (public domain)
   input/input.h/c      Keypad registers (active-low), KEYCNT for key IRQs
   frontend/
     frontend.h/c       SDL2 window, rendering, input polling, audio output
@@ -184,7 +191,7 @@ These are non-obvious behaviors that MUST be correct. Verify against GBATEK when
 ## Testing
 
 ### Unit tests
-A minimal unit test suite lives in `tests/` (`test_runner.c`, `test_bus.c`, `test_cpu.c`, `test_savestate.c`, shared `test_harness.h`). Wired into CMake as the `gba_tests` target.
+A unit test suite lives in `tests/` (`test_runner.c`, `test_bus.c`, `test_cpu.c`, `test_savestate.c`, `test_rewind.c`, `test_rtc.c`, `test_screenshot.c`, shared `test_harness.h`). Wired into CMake as the `gba_tests` target and run on every push via GitHub Actions (`.github/workflows/ci.yml`, Linux + macOS).
 
 ```bash
 cd build && cmake .. && make gba_tests && ctest --output-on-failure
@@ -252,7 +259,7 @@ Current target: **Pokemon Emerald from boot to credits.**
 ### Known gaps (not yet implemented)
 - **EEPROM save protocol** — bit-serial protocol not implemented (not needed for Emerald)
 - **WAITCNT register** — stubbed, no cartridge wait-state timing
-- **CI pipeline** — no GitHub Actions / CI yet (local unit tests exist via `gba_tests`)
+- **Pokemon Emerald full playthrough validation** — Phase 6 acceptance not yet completed
 
 ## Key References
 

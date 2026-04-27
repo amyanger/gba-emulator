@@ -6,7 +6,9 @@
 #include "rewind/rewind.h"
 #endif
 #include "savestate/savestate.h"
+#include "screenshot/screenshot.h"
 #include <stdio.h>
+#include <time.h>
 
 #ifdef ENABLE_XRAY
 #include "frontend/xray/xray.h"
@@ -200,6 +202,15 @@ int main(int argc, char* argv[]) {
                 xray_render(&s_xray_state, &gba);
 #endif
                 frontend_frame_sync(&fe);
+            }
+
+            if (fe.screenshot_requested) {
+                fe.screenshot_requested = false;
+                char shot_path[512];
+                screenshot_path(fe.rom_path, time(NULL), shot_path, sizeof(shot_path));
+                if (screenshot_save(gba.ppu.framebuffer, shot_path)) {
+                    LOG_INFO("Screenshot saved: %s", shot_path);
+                }
             }
         }
     }

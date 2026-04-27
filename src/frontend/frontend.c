@@ -154,6 +154,12 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 fe->load_requested = true;
             }
 
+            // Screenshot hotkey
+            if (event.key.keysym.scancode == SDL_SCANCODE_F12 &&
+                !event.key.repeat) {
+                fe->screenshot_requested = true;
+            }
+
             // Slot selection (number keys 0-9)
             // SDL scancodes: 1-9 are 30-38, 0 is 39 (not contiguous)
             {

@@ -54,6 +54,7 @@ set(SOURCES
     src/cheat/cheat.c
     src/cheat/cheat_file.c
     src/savestate/savestate.c
+    src/screenshot/screenshot.c
     src/frontend/frontend.c
 )
 
@@ -129,6 +130,7 @@ set(LIB_SOURCES
     src/input/input.c
     src/cheat/cheat.c
     src/cheat/cheat_file.c
+    src/screenshot/screenshot.c
 )
 
 if(ENABLE_REWIND)
@@ -142,6 +144,7 @@ add_executable(gba_tests
     tests/test_cpu.c
     tests/test_rtc.c
     tests/test_rewind.c
+    tests/test_screenshot.c
     ${LIB_SOURCES}
 )
 

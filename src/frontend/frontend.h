@@ -21,6 +21,7 @@ typedef struct {
     int32_t savestate_slot;    // Current slot (0-9), default 0
     bool save_requested;
     bool load_requested;
+    bool screenshot_requested; // F12 — captured at next frame boundary
     char rom_path[256];        // Copy of ROM path for building slot filenames
 
     // Fast-forward
