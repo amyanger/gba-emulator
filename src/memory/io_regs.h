@@ -97,6 +97,17 @@
 #define REG_KEYINPUT  0x04000130
 #define REG_KEYCNT    0x04000132
 
+// Serial I/O registers
+#define REG_SIODATA32   0x04000120  // Normal mode 32-bit, low halfword
+#define REG_SIOMULTI0   0x04000120  // Multiplayer mode receive slot 0
+#define REG_SIOMULTI1   0x04000122
+#define REG_SIOMULTI2   0x04000124
+#define REG_SIOMULTI3   0x04000126
+#define REG_SIOCNT      0x04000128
+#define REG_SIOMLT_SEND 0x0400012A  // Multiplayer send (overlaps SIODATA8)
+#define REG_SIODATA8    0x0400012A
+#define REG_RCNT        0x04000134
+
 // Interrupt registers
 #define REG_IE        0x04000200
 #define REG_IF        0x04000202

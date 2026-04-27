@@ -56,6 +56,7 @@ set(SOURCES
     src/cheat/cheat_file.c
     src/savestate/savestate.c
     src/screenshot/screenshot.c
+    src/sio/sio.c
     src/trace/trace.c
     src/frontend/frontend.c
 )
@@ -134,6 +135,7 @@ set(LIB_SOURCES
     src/cheat/cheat.c
     src/cheat/cheat_file.c
     src/screenshot/screenshot.c
+    src/sio/sio.c
     src/trace/trace.c
 )
 
@@ -152,6 +154,7 @@ add_executable(gba_tests
     tests/test_trace.c
     tests/test_cartridge_autosave.c
     tests/test_keymap.c
+    tests/test_sio.c
     ${LIB_SOURCES}
 )
 
