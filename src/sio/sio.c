@@ -1,6 +1,7 @@
 #include "sio.h"
 #include "interrupt/interrupt.h"
 #include "memory/io_regs.h"
+#include "sio_link.h"
 #include <string.h>
 
 // Approximate Multiplayer transfer length in CPU cycles. Real hardware varies
@@ -99,14 +100,27 @@ void sio_tick(SIO* sio, int cycles) {
     sio->transfer_cycles_remaining -= cycles;
     if (sio->transfer_cycles_remaining > 0) return;
 
-    // Transfer complete. Slot 0 always reflects our own send. With no peer
-    // (link cable disconnected), slots 1-3 read 0xFFFF per GBATEK.
+    // Transfer complete. Slot 0 always reflects our own send. When a peer is
+    // attached, exchange the SIOMLT_SEND payload over the link transport and
+    // place the result in slot 1. v1 only handles 2-player, so slots 2-3 are
+    // always 0xFFFF (disconnected). With no peer at all, slot 1 also reads
+    // 0xFFFF per GBATEK.
     sio->siomulti[0] = sio->siomlt_send;
-    sio->siomulti[1] = 0xFFFF;
-    sio->siomulti[2] = 0xFFFF;
-    sio->siomulti[3] = 0xFFFF;
-    // Note: when a LinkPeer is present, link_peer_exchange will populate
-    // siomulti[1..3] — wired up in Task 9.
+
+    if (sio->peer && link_peer_is_connected(sio->peer)) {
+        uint16_t peer_value;
+        if (link_peer_exchange(sio->peer, sio->siomlt_send, &peer_value)) {
+            sio->siomulti[1] = peer_value;
+        } else {
+            sio->siomulti[1] = 0xFFFF;
+        }
+        sio->siomulti[2] = 0xFFFF;
+        sio->siomulti[3] = 0xFFFF;
+    } else {
+        sio->siomulti[1] = 0xFFFF;
+        sio->siomulti[2] = 0xFFFF;
+        sio->siomulti[3] = 0xFFFF;
+    }
 
     sio->siocnt &= ~SIOCNT_START;
     sio->transfer_active = false;
