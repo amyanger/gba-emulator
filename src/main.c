@@ -26,6 +26,7 @@ static void print_usage(const char* prog) {
     printf("  --scale <n>            Window scale factor (default: 3)\n");
     printf("  --cheats <file>        Load cheat codes from file (.cht format)\n");
     printf("  --keymap <file>        Load custom keyboard bindings\n");
+    printf("  --mute                 Start with audio muted (toggle in-game with M)\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
@@ -51,6 +52,7 @@ int main(int argc, char* argv[]) {
     uint32_t trace_to = 0;
     uint32_t trace_frames = 0;
     int scale = 3;
+    bool start_muted = false;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -74,6 +76,8 @@ int main(int argc, char* argv[]) {
             trace_to = (uint32_t)strtoul(argv[++i], NULL, 16);
         } else if (strcmp(argv[i], "--trace-frames") == 0 && i + 1 < argc) {
             trace_frames = (uint32_t)strtoul(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--mute") == 0) {
+            start_muted = true;
         }
     }
 
@@ -151,6 +155,8 @@ int main(int argc, char* argv[]) {
     }
 
     snprintf(fe.rom_path, sizeof(fe.rom_path), "%s", rom_path);
+    fe.muted = start_muted;
+    if (start_muted) frontend_set_mute_indicator(&fe, true);
 
     // Keyboard bindings (must come after frontend_init so SDL is up)
     keymap_reset_defaults();

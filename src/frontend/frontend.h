@@ -37,6 +37,7 @@ typedef struct {
 
     bool fullscreen;
     bool paused;             // Spacebar — freeze emulation, mute audio, keep window responsive
+    bool muted;              // M key / --mute flag — drop audio, keep emulation running
     uint16_t controller_keys;  // bitmask of keys held by gamepad (avoids clobbering keyboard)
 } Frontend;
 
@@ -52,5 +53,6 @@ void frontend_push_audio(Frontend* fe, APU* apu);
 void frontend_frame_sync(Frontend* fe);
 void frontend_set_ff_indicator(Frontend* fe, bool active);
 void frontend_set_pause_indicator(Frontend* fe, bool active);
+void frontend_set_mute_indicator(Frontend* fe, bool active);
 
 #endif // FRONTEND_H

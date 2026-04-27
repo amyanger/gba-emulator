@@ -52,6 +52,7 @@ bool frontend_init(Frontend* fe, int scale) {
 #endif
 
     fe->fullscreen = false;
+    fe->muted = false;
     fe->controller_keys = 0;
 
     fe->controller = NULL;
@@ -81,6 +82,14 @@ void frontend_set_ff_indicator(Frontend* fe, bool active) {
 void frontend_set_pause_indicator(Frontend* fe, bool active) {
     if (active) {
         SDL_SetWindowTitle(fe->window, "GBA Emulator [PAUSED]");
+    } else {
+        SDL_SetWindowTitle(fe->window, fe->muted ? "GBA Emulator [MUTE]" : "GBA Emulator");
+    }
+}
+
+void frontend_set_mute_indicator(Frontend* fe, bool active) {
+    if (active) {
+        SDL_SetWindowTitle(fe->window, "GBA Emulator [MUTE]");
     } else {
         SDL_SetWindowTitle(fe->window, "GBA Emulator");
     }
@@ -200,6 +209,15 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 !event.key.repeat) {
                 fe->paused = !fe->paused;
                 LOG_INFO("Paused %s", fe->paused ? "ON" : "OFF");
+            }
+
+            // Mute toggle
+            if (event.key.keysym.scancode == SDL_SCANCODE_M &&
+                !event.key.repeat) {
+                fe->muted = !fe->muted;
+                if (fe->audio_device) SDL_ClearQueuedAudio(fe->audio_device);
+                frontend_set_mute_indicator(fe, fe->muted);
+                LOG_INFO("Mute %s", fe->muted ? "ON" : "OFF");
             }
             break;
         }
@@ -336,6 +354,12 @@ void frontend_audio_init(Frontend* fe) {
 void frontend_push_audio(Frontend* fe, APU* apu) {
     if (fe->audio_device == 0) return;
 
+    if (fe->muted) {
+        /* Drain APU ring without queueing to SDL so emulation pacing still works */
+        apu->read_pos = apu->write_pos;
+        return;
+    }
+
     /* Calculate how many samples are available in the ring buffer */
     uint32_t write_pos = apu->write_pos;
     uint32_t read_pos = apu->read_pos;
@@ -372,7 +396,7 @@ void frontend_push_audio(Frontend* fe, APU* apu) {
 }
 
 void frontend_frame_sync(Frontend* fe) {
-    if (fe->audio_device != 0) {
+    if (fe->audio_device != 0 && !fe->muted) {
         /* Audio-driven sync: block until SDL's audio queue drains.
          * This ties emulation speed to the audio playback rate (~60fps).
          * Target: ~2 frames of audio buffered (low latency, no underrun).
