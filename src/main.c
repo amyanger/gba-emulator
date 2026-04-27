@@ -121,6 +121,9 @@ int main(int argc, char* argv[]) {
 
     if (!gba_load_rom(&gba, rom_path)) {
         LOG_ERROR("Failed to load ROM: %s", rom_path);
+        // Mirror the normal-cleanup path so a failed ROM load doesn't leak
+        // the link socket fd or leave a stray socket file behind.
+        if (link_peer) link_peer_shutdown(link_peer);
         return 1;
     }
 
@@ -142,6 +145,7 @@ int main(int argc, char* argv[]) {
     Frontend fe;
     if (!frontend_init(&fe, scale)) {
         LOG_ERROR("Failed to initialize frontend");
+        if (link_peer) link_peer_shutdown(link_peer);
         gba_destroy(&gba);
         return 1;
     }

@@ -949,6 +949,12 @@ void bios_hle_execute(ARM7TDMI* cpu, uint32_t swi_num) {
                 for (uint32_t off = 0x120; off <= 0x12B; off++) {
                     sio_write8(bus->sio, off, 0);
                 }
+                /* Zeroing the registers alone leaves any in-flight transfer
+                 * state machine running — sio_tick would later complete the
+                 * transfer and try to fire IRQ_SERIAL against zeroed SIOCNT.
+                 * Clear the transfer flags so a reset truly resets SIO. */
+                bus->sio->transfer_active = false;
+                bus->sio->transfer_cycles_remaining = 0;
             }
         }
 

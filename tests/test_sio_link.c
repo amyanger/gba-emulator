@@ -5,6 +5,7 @@
 #include <pthread.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 TEST(link_peer_create_returns_unconnected) {
     LinkPeer* peer = link_peer_create();
@@ -65,8 +66,32 @@ TEST(link_peer_exchange_round_trip) {
     link_peer_shutdown(b);
 }
 
+// Verifies the SO_RCVTIMEO/SO_SNDTIMEO safeguard added to sio_link.c. With a
+// silent peer holding the other end of the socketpair, link_peer_exchange
+// must report failure (rather than block forever) and mark the peer as
+// disconnected so sio_tick can fall back to the 0xFFFF "slot empty" payload.
+TEST(link_peer_exchange_timeout_when_peer_silent) {
+    int fds[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) {
+        printf("SKIP (socketpair unavailable)\n");
+        return;
+    }
+    LinkPeer* a = link_peer_create();
+    link_peer_test_inject_fd(a, fds[0]);
+    /* fds[1] never replies — held but unused. */
+
+    uint16_t recv = 0xDEAD;
+    bool ok = link_peer_exchange(a, 0xCAFE, &recv);
+    ASSERT_TRUE(!ok);                          // exchange reports failure
+    ASSERT_TRUE(!link_peer_is_connected(a));   // peer marked disconnected
+
+    close(fds[1]);
+    link_peer_shutdown(a);
+}
+
 void run_sio_link_tests(void) {
     printf("\nSIO Link tests:\n");
     RUN_TEST(link_peer_create_returns_unconnected);
     RUN_TEST(link_peer_exchange_round_trip);
+    RUN_TEST(link_peer_exchange_timeout_when_peer_silent);
 }
