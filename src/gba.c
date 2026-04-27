@@ -13,6 +13,7 @@ void gba_init(GBA* gba) {
     gba->bus.interrupts = &gba->interrupts;
     gba->bus.cart = &gba->cart;
     gba->bus.input = &gba->input;
+    gba->bus.sio = &gba->sio;
 
     // Initialize all subsystems (must happen before wiring pointers that
     // init functions would otherwise zero via memset)
@@ -25,6 +26,7 @@ void gba_init(GBA* gba) {
     interrupt_init(&gba->interrupts);
     input_init(&gba->input);
     cheat_init(&gba->cheats);
+    sio_init(&gba->sio, &gba->interrupts, NULL);
 
     // PPU gets pointers to VRAM/palette/OAM in bus — AFTER ppu_init()
     // so the memset inside ppu_init doesn't wipe them

@@ -11,6 +11,7 @@
 #include "interrupt/interrupt.h"
 #include "cartridge/cartridge.h"
 #include "input/input.h"
+#include "sio/sio.h"
 #include "cheat/cheat.h"
 
 #ifdef ENABLE_REWIND
@@ -31,6 +32,7 @@ struct GBA {
     InterruptController interrupts;
     Cartridge cart;
     InputState input;
+    SIO sio;
     CheatEngine cheats;
 #ifdef ENABLE_REWIND
     RewindBuffer rewind;
