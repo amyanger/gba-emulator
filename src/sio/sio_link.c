@@ -1,9 +1,42 @@
 #include "sio_link.h"
 
-#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+// Windows build: link cable transport relies on AF_UNIX SOCK_STREAM with
+// blocking semantics that don't have a clean Winsock equivalent for the
+// 2-instance local case we care about. Stub the entire transport so the
+// emulator builds cleanly; --link-master/--link-client print a diagnostic
+// and run as a single instance.
+struct LinkPeer {
+    int unused;
+};
+
+LinkPeer* link_peer_create(void) {
+    static int warned = 0;
+    if (!warned) {
+        fprintf(stderr,
+            "[WARN] Link cable transport is not available on Windows builds; "
+            "--link-master/--link-client will be ignored.\n");
+        warned = 1;
+    }
+    return NULL;
+}
+
+bool link_peer_listen(LinkPeer* peer, const char* path) { (void)peer; (void)path; return false; }
+bool link_peer_connect(LinkPeer* peer, const char* path) { (void)peer; (void)path; return false; }
+bool link_peer_is_connected(const LinkPeer* peer) { (void)peer; return false; }
+bool link_peer_exchange(LinkPeer* peer, uint16_t our_payload, uint16_t* peer_out) {
+    (void)peer; (void)our_payload; (void)peer_out; return false;
+}
+void link_peer_shutdown(LinkPeer* peer) { (void)peer; }
+void link_peer_test_inject_fd(LinkPeer* peer, int fd) { (void)peer; (void)fd; }
+
+#else // _WIN32
+
+#include <errno.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <sys/un.h>
@@ -195,3 +228,5 @@ void link_peer_shutdown(LinkPeer* peer) {
     }
     free(peer);
 }
+
+#endif // _WIN32

@@ -9,12 +9,16 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Compiler warnings
-add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
-
-# Debug vs Release
-set(CMAKE_C_FLAGS_DEBUG "-g -O0 -DDEBUG")
-set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG")
+# Compiler warnings + per-config flags. MSVC needs separate handling because
+# its driver doesn't understand GCC/Clang flags.
+if(MSVC)
+    add_compile_options(/W4 /wd4100 /wd4244 /wd4267 /wd4146 /wd4310)
+else()
+    add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
+    set(CMAKE_C_FLAGS_DEBUG "-g -O0")
+    set(CMAKE_C_FLAGS_RELEASE "-O2")
+endif()
+add_compile_definitions($<$<CONFIG:Debug>:DEBUG> $<$<NOT:$<CONFIG:Debug>>:NDEBUG>)
 
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
@@ -149,7 +153,7 @@ if(ENABLE_REWIND)
     list(APPEND LIB_SOURCES src/rewind/rewind.c src/rewind/rewind_lz4.c)
 endif()
 
-add_executable(gba_tests
+set(TEST_SOURCES
     tests/test_runner.c
     tests/test_savestate.c
     tests/test_bus.c
@@ -161,9 +165,16 @@ add_executable(gba_tests
     tests/test_cartridge_autosave.c
     tests/test_keymap.c
     tests/test_sio.c
-    tests/test_sio_link.c
-    ${LIB_SOURCES}
 )
+
+# test_sio_link uses socketpair() / AF_UNIX, which has no MSVC equivalent.
+# The Windows build of the emulator stubs out the link cable transport, so the
+# matching tests don't apply there.
+if(NOT WIN32)
+    list(APPEND TEST_SOURCES tests/test_sio_link.c)
+endif()
+
+add_executable(gba_tests ${TEST_SOURCES} ${LIB_SOURCES})
 
 target_include_directories(gba_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
