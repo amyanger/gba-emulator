@@ -87,6 +87,73 @@ TEST(sio_siomulti_reads_back) {
     ASSERT_EQ_HEX(sio_read8(&sio, 0x123), 0xAB);
 }
 
+TEST(sio_multiplayer_transfer_with_no_peer_returns_ffff) {
+    SIO sio;
+    InterruptController ic;
+    interrupt_init(&ic);
+    sio_init(&sio, &ic, NULL);
+
+    // Configure: RCNT in serial mode (high bits 0), SIOCNT in MP mode
+    // (bits 12-13 = 10), IRQ enable (bit 14 = 0x4000).
+    sio_write8(&sio, 0x134, 0x00);
+    sio_write8(&sio, 0x135, 0x00);                  // RCNT = 0x0000
+    sio.siomlt_send = 0xCAFE;
+    sio_write8(&sio, 0x128, 0x80);                  // SIOCNT low: START bit
+    sio_write8(&sio, 0x129, 0x60);                  // SIOCNT high: MP mode + IRQ enable
+
+    // Transfer should be marked active immediately
+    ASSERT_TRUE(sio.transfer_active);
+
+    // Tick enough cycles for transfer to complete (< 1 scanline is fine)
+    sio_tick(&sio, 2000);
+
+    // After transfer: SIOMULTI0 holds our send, SIOMULTI1..3 hold 0xFFFF
+    ASSERT_EQ_HEX(sio.siomulti[0], 0xCAFE);
+    ASSERT_EQ_HEX(sio.siomulti[1], 0xFFFF);
+    ASSERT_EQ_HEX(sio.siomulti[2], 0xFFFF);
+    ASSERT_EQ_HEX(sio.siomulti[3], 0xFFFF);
+
+    // Start/Busy bit clears, IRQ is requested
+    ASSERT_TRUE((sio.siocnt & SIOCNT_START) == 0);
+    ASSERT_TRUE(!sio.transfer_active);
+    ASSERT_TRUE((ic.irf & IRQ_SERIAL) != 0);
+}
+
+TEST(sio_multiplayer_no_irq_when_disabled) {
+    SIO sio;
+    InterruptController ic;
+    interrupt_init(&ic);
+    sio_init(&sio, &ic, NULL);
+
+    sio.siomlt_send = 0x1234;
+    sio_write8(&sio, 0x128, 0x80);                  // START
+    sio_write8(&sio, 0x129, 0x20);                  // MP mode, IRQ disabled
+
+    sio_tick(&sio, 2000);
+
+    ASSERT_EQ_HEX(sio.siomulti[0], 0x1234);
+    ASSERT_TRUE((ic.irf & IRQ_SERIAL) == 0);
+}
+
+TEST(sio_multiplayer_transfer_via_halfword_write) {
+    SIO sio;
+    InterruptController ic;
+    interrupt_init(&ic);
+    sio_init(&sio, &ic, NULL);
+
+    sio.siomlt_send = 0xDEAD;
+    /* Simulate bus_write16 with start+mode in a single halfword: low byte then high byte. */
+    sio_write8(&sio, 0x128, 0x80);
+    sio_write8(&sio, 0x129, 0x60);
+    ASSERT_TRUE(sio.transfer_active);
+
+    sio_tick(&sio, 2000);
+    ASSERT_EQ_HEX(sio.siomulti[0], 0xDEAD);
+    ASSERT_EQ_HEX(sio.siomulti[1], 0xFFFF);
+    ASSERT_TRUE((sio.siocnt & SIOCNT_START) == 0);
+    ASSERT_TRUE((ic.irf & IRQ_SERIAL) != 0);
+}
+
 void run_sio_tests(void) {
     printf("\nSIO tests:\n");
     RUN_TEST(sio_init_zeros_state);
@@ -95,4 +162,7 @@ void run_sio_tests(void) {
     RUN_TEST(sio_rcnt_writes_round_trip);
     RUN_TEST(sio_siomlt_send_round_trip);
     RUN_TEST(sio_siomulti_reads_back);
+    RUN_TEST(sio_multiplayer_transfer_with_no_peer_returns_ffff);
+    RUN_TEST(sio_multiplayer_no_irq_when_disabled);
+    RUN_TEST(sio_multiplayer_transfer_via_halfword_write);
 }
