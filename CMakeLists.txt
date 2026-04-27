@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
-project(gba_emulator C)
+project(gba_emulator
+    VERSION 0.1.0
+    DESCRIPTION "Game Boy Advance emulator (ARM7TDMI + scanline PPU + SDL2)"
+    LANGUAGES C
+)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -175,3 +179,32 @@ if(ENABLE_REWIND)
 endif()
 
 add_test(NAME gba_tests COMMAND gba_tests)
+
+# ── Install + packaging ─────────────────────────────────────────────
+include(GNUInstallDirs)
+
+install(TARGETS gba_emulator
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(FILES
+    ${CMAKE_SOURCE_DIR}/README.md
+    ${CMAKE_SOURCE_DIR}/LICENSE
+    DESTINATION ${CMAKE_INSTALL_DOCDIR}
+)
+
+set(CPACK_PACKAGE_NAME "gba_emulator")
+set(CPACK_PACKAGE_VENDOR "admyanger")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+set(CPACK_RESOURCE_FILE_README  "${CMAKE_SOURCE_DIR}/README.md")
+set(CPACK_PACKAGE_FILE_NAME
+    "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}")
+set(CPACK_GENERATOR "TGZ")
+set(CPACK_SOURCE_GENERATOR "TGZ")
+set(CPACK_SOURCE_IGNORE_FILES
+    "/build/" "/\\\\.git/" "/\\\\.github/" "/roms/[^/]" "/saves/[^/]" "/bios/[^/]"
+    "\\\\.gba$" "\\\\.sav$" "\\\\.ss[0-9]$" "\\\\.png$"
+)
+include(CPack)
