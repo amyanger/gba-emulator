@@ -11,6 +11,9 @@ typedef struct {
     SDL_Window* window;
     SDL_Renderer* renderer;
     SDL_Texture* texture;
+    SDL_Texture* overlay_texture;
+    uint32_t* overlay_buffer;     /* SCREEN_WIDTH * SCREEN_HEIGHT pixels, ARGB8888 */
+    bool overlay_dirty;           /* set by overlay producers each frame; cleared each present */
     SDL_AudioDeviceID audio_device;
     SDL_GameController* controller;
 
@@ -55,5 +58,10 @@ void frontend_frame_sync(Frontend* fe);
 void frontend_set_ff_indicator(Frontend* fe, bool active);
 void frontend_set_pause_indicator(Frontend* fe, bool active);
 void frontend_set_mute_indicator(Frontend* fe, bool active);
+
+/* Zero the overlay buffer and clear the dirty flag. Overlay producers
+ * should call this at the start of each frame before drawing into the
+ * buffer; if they then draw, they must set fe->overlay_dirty = true. */
+void frontend_overlay_clear(Frontend* fe);
 
 #endif // FRONTEND_H

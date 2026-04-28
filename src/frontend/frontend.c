@@ -38,6 +38,24 @@ bool frontend_init(Frontend* fe, int scale) {
         return false;
     }
 
+    fe->overlay_texture = SDL_CreateTexture(fe->renderer,
+        SDL_PIXELFORMAT_ARGB8888,
+        SDL_TEXTUREACCESS_STREAMING,
+        SCREEN_WIDTH, SCREEN_HEIGHT);
+    if (!fe->overlay_texture) {
+        LOG_ERROR("Failed to create overlay texture: %s", SDL_GetError());
+        return false;
+    }
+    SDL_SetTextureBlendMode(fe->overlay_texture, SDL_BLENDMODE_BLEND);
+
+    fe->overlay_buffer = (uint32_t*)calloc(SCREEN_WIDTH * SCREEN_HEIGHT,
+                                           sizeof(uint32_t));
+    if (!fe->overlay_buffer) {
+        LOG_ERROR("Failed to allocate overlay buffer");
+        return false;
+    }
+    fe->overlay_dirty = false;
+
     fe->running = true;
     fe->savestate_slot = 0;
     fe->save_requested = false;
@@ -98,7 +116,17 @@ void frontend_set_mute_indicator(Frontend* fe, bool active) {
     }
 }
 
+void frontend_overlay_clear(Frontend* fe) {
+    if (!fe || !fe->overlay_buffer) return;
+    memset(fe->overlay_buffer, 0,
+           SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
+    fe->overlay_dirty = false;
+}
+
 void frontend_destroy(Frontend* fe) {
+    if (fe->overlay_texture) SDL_DestroyTexture(fe->overlay_texture);
+    free(fe->overlay_buffer);
+    fe->overlay_buffer = NULL;
     if (fe->texture) SDL_DestroyTexture(fe->texture);
     if (fe->renderer) SDL_DestroyRenderer(fe->renderer);
     if (fe->window) SDL_DestroyWindow(fe->window);
@@ -108,9 +136,16 @@ void frontend_destroy(Frontend* fe) {
 }
 
 void frontend_present_frame(Frontend* fe, uint16_t* framebuffer) {
-    SDL_UpdateTexture(fe->texture, NULL, framebuffer, SCREEN_WIDTH * sizeof(uint16_t));
+    SDL_UpdateTexture(fe->texture, NULL, framebuffer,
+                      SCREEN_WIDTH * sizeof(uint16_t));
     SDL_RenderClear(fe->renderer);
     SDL_RenderCopy(fe->renderer, fe->texture, NULL, NULL);
+
+    if (fe->overlay_dirty) {
+        SDL_UpdateTexture(fe->overlay_texture, NULL, fe->overlay_buffer,
+                          SCREEN_WIDTH * sizeof(uint32_t));
+        SDL_RenderCopy(fe->renderer, fe->overlay_texture, NULL, NULL);
+    }
     SDL_RenderPresent(fe->renderer);
 }
 
