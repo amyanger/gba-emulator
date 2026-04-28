@@ -43,6 +43,8 @@ bool frontend_init(Frontend* fe, int scale) {
     fe->save_requested = false;
     fe->load_requested = false;
 
+    fe->paused = false;
+    fe->step_pending = false;
     fe->ff_hold = false;
     fe->ff_toggle = false;
     fe->ff_frame_skip = 4;
@@ -209,6 +211,7 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             if (event.key.keysym.scancode == SDL_SCANCODE_SPACE &&
                 !event.key.repeat) {
                 fe->paused = !fe->paused;
+                if (!fe->paused) fe->step_pending = false;  // discard any queued step
                 LOG_INFO("Paused %s", fe->paused ? "ON" : "OFF");
             }
 
