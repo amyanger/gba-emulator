@@ -2,6 +2,7 @@
 #include "cpu/arm7tdmi.h"
 #include "cheat/cheat_file.h"
 #include "frontend/frontend.h"
+#include "frontend/input_display.h"
 #ifdef ENABLE_REWIND
 #include "rewind/rewind.h"
 #endif
@@ -18,6 +19,13 @@
 #include "frontend/xray/xray.h"
 static XRayState s_xray_state;
 #endif
+
+/* Present one frame: clear overlay, render HUD layers, then blit to screen. */
+static void render_with_overlay(Frontend* fe, GBA* gba) {
+    frontend_overlay_clear(fe);
+    input_display_render(fe, gba);
+    frontend_present_frame(fe, gba->ppu.framebuffer);
+}
 
 static void print_usage(const char* prog) {
     printf("Usage: %s <rom.gba> [options]\n", prog);
@@ -198,7 +206,7 @@ int main(int argc, char* argv[]) {
                     cartridge_save_tick(&gba.cart, time(NULL));
                 }
             }
-            frontend_present_frame(&fe, gba.ppu.framebuffer);
+            render_with_overlay(&fe, &gba);
 #ifdef ENABLE_XRAY
             xray_render(&s_xray_state, &gba);
 #endif
@@ -261,7 +269,7 @@ int main(int argc, char* argv[]) {
             if (!rewind_step(&gba.rewind, &gba)) {
                 // Hit oldest frame — freeze on screen until release.
             }
-            frontend_present_frame(&fe, gba.ppu.framebuffer);
+            render_with_overlay(&fe, &gba);
 #ifdef ENABLE_XRAY
             xray_render(&s_xray_state, &gba);
 #endif
@@ -297,7 +305,7 @@ int main(int argc, char* argv[]) {
             if (ff_active) {
                 // Fast-forward: render every Nth frame, skip audio and sync
                 if (fe.ff_frame_count++ % fe.ff_frame_skip == 0) {
-                    frontend_present_frame(&fe, gba.ppu.framebuffer);
+                    render_with_overlay(&fe, &gba);
 #ifdef ENABLE_XRAY
                     xray_render(&s_xray_state, &gba);
 #endif
@@ -305,7 +313,7 @@ int main(int argc, char* argv[]) {
                 // Drain APU ring buffer to prevent stall
                 gba.apu.read_pos = gba.apu.write_pos;
             } else {
-                frontend_present_frame(&fe, gba.ppu.framebuffer);
+                render_with_overlay(&fe, &gba);
                 frontend_push_audio(&fe, &gba.apu);
 #ifdef ENABLE_XRAY
                 xray_render(&s_xray_state, &gba);

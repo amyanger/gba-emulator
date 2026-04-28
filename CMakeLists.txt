@@ -69,12 +69,13 @@ set(SOURCES
     src/trace/trace.c
     src/frontend/frontend.c
     src/frontend/frame_advance.c
+    src/frontend/input_display.c
+    src/frontend/xray/xray_draw.c
 )
 
 # X-Ray source files (only compiled when ENABLE_XRAY is ON)
 set(XRAY_SOURCES
     src/frontend/xray/xray.c
-    src/frontend/xray/xray_draw.c
     src/frontend/xray/xray_cpu.c
     src/frontend/xray/xray_activity.c
     src/frontend/xray/xray_ppu.c
@@ -149,6 +150,8 @@ set(LIB_SOURCES
     src/sio/sio_link.c
     src/trace/trace.c
     src/frontend/frame_advance.c
+    src/frontend/input_display.c
+    src/frontend/xray/xray_draw.c
 )
 
 if(ENABLE_REWIND)

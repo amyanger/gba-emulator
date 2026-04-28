@@ -1,5 +1,6 @@
 #include "frontend.h"
 #include "frame_advance.h"
+#include "input_display.h"
 #include "gba.h"
 #include "apu/apu.h"
 #include "input/input.h"
@@ -63,6 +64,7 @@ bool frontend_init(Frontend* fe, int scale) {
 
     fe->paused = false;
     fe->step_pending = false;
+    fe->input_display_enabled = false;
     fe->ff_hold = false;
     fe->ff_toggle = false;
     fe->ff_frame_skip = 4;
@@ -191,6 +193,17 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 xray_toggle(g_xray);
             }
 #endif
+
+            // F3 toggles input display HUD
+            if (event.key.keysym.scancode == SDL_SCANCODE_F3 &&
+                !event.key.repeat) {
+                fe->input_display_enabled = !fe->input_display_enabled;
+                if (!fe->input_display_enabled) {
+                    frontend_overlay_clear(fe);
+                }
+                LOG_INFO("Input display %s",
+                         fe->input_display_enabled ? "ON" : "OFF");
+            }
 
             // Save state hotkeys
             if (event.key.keysym.scancode == SDL_SCANCODE_F5) {
