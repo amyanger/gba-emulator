@@ -4,7 +4,7 @@
 #include "memory/io_regs.h"
 #include "memory/bus.h"
 #include "common.h"
-#include "frontend/xray/xray_draw.h"
+#include "frontend/overlay_draw.h"
 #include <string.h>
 
 /* GBA KEYINPUT bit layout (active-low; we invert for the held mask).
@@ -46,7 +46,7 @@ void input_display_anchor(int screen_w, int screen_h,
 
 static void draw_btn(uint32_t* buf, int bw, int bh, int x, int y,
                      int w, int h, bool held) {
-    xray_draw_rect(buf, bw, bh, x, y, w, h,
+    overlay_draw_rect(buf, bw, bh, x, y, w, h,
                    held ? COL_LIT : COL_DIM);
 }
 
@@ -64,7 +64,7 @@ void input_display_render(Frontend* fe, GBA* gba) {
     int bw = SCREEN_WIDTH, bh = SCREEN_HEIGHT;
 
     /* Background. */
-    xray_draw_rect(b, bw, bh, ox, oy, PANEL_W, PANEL_H, COL_BG);
+    overlay_draw_rect(b, bw, bh, ox, oy, PANEL_W, PANEL_H, COL_BG);
 
     /* D-pad cross at (ox+4, oy+12), 4x4 px cells. */
     int dx = ox + 4, dy = oy + 12;

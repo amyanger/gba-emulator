@@ -70,7 +70,9 @@ set(SOURCES
     src/frontend/frontend.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
-    src/frontend/xray/xray_draw.c
+    # Shared overlay drawing primitives (used by input_display, slot_picker,
+    # and the X-Ray panels regardless of ENABLE_XRAY).
+    src/frontend/overlay_draw.c
 )
 
 # X-Ray source files (only compiled when ENABLE_XRAY is ON)
@@ -151,7 +153,9 @@ set(LIB_SOURCES
     src/trace/trace.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
-    src/frontend/xray/xray_draw.c
+    # Shared overlay drawing primitives (used by input_display, slot_picker,
+    # and the X-Ray panels regardless of ENABLE_XRAY).
+    src/frontend/overlay_draw.c
 )
 
 if(ENABLE_REWIND)

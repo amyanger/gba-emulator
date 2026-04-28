@@ -1,5 +1,5 @@
 #include "xray.h"
-#include "xray_draw.h"
+#include "frontend/overlay_draw.h"
 #include "gba.h"
 
 /* Global pointer — NULL when X-Ray is not wired up */
@@ -48,15 +48,15 @@ static void xray_draw_panel_frame(uint32_t* buf, int buf_w, int buf_h,
                                   int px, int py, int pw, int ph,
                                   const char* title) {
     /* Panel background */
-    xray_draw_rect(buf, buf_w, buf_h, px + 1, py + 1, pw - 2, ph - 2,
+    overlay_draw_rect(buf, buf_w, buf_h, px + 1, py + 1, pw - 2, ph - 2,
                    XRAY_COL_PANEL_BG);
     /* Border */
-    xray_draw_rect_outline(buf, buf_w, buf_h, px, py, pw, ph,
+    overlay_draw_rect_outline(buf, buf_w, buf_h, px, py, pw, ph,
                            XRAY_COL_BORDER);
     /* Title bar */
-    xray_draw_rect(buf, buf_w, buf_h, px + 1, py + 1, pw - 2, 12,
+    overlay_draw_rect(buf, buf_w, buf_h, px + 1, py + 1, pw - 2, 12,
                    0xFF182040);
-    xray_draw_text(buf, buf_w, buf_h, px + 4, py + 2, title,
+    overlay_draw_text(buf, buf_w, buf_h, px + 4, py + 2, title,
                    XRAY_COL_HEADER);
 }
 

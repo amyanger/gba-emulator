@@ -198,9 +198,6 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             if (event.key.keysym.scancode == SDL_SCANCODE_F3 &&
                 !event.key.repeat) {
                 fe->input_display_enabled = !fe->input_display_enabled;
-                if (!fe->input_display_enabled) {
-                    frontend_overlay_clear(fe);
-                }
                 LOG_INFO("Input display %s",
                          fe->input_display_enabled ? "ON" : "OFF");
             }

@@ -1,5 +1,5 @@
 #include "xray.h"
-#include "xray_draw.h"
+#include "frontend/overlay_draw.h"
 #include "ppu/ppu.h"
 
 /* Decode a 4bpp tile pixel. Returns GBA BGR555 color. */
@@ -84,12 +84,12 @@ static void render_palette_grid(uint32_t* buf, int buf_w, int buf_h,
         int sx = dst_x + cx * swatch_size;
         int sy = dst_y + cy * swatch_size;
 
-        xray_draw_rect(buf, buf_w, buf_h, sx, sy, swatch_size, swatch_size,
+        overlay_draw_rect(buf, buf_w, buf_h, sx, sy, swatch_size, swatch_size,
                        argb);
     }
 
     /* Grid outline */
-    xray_draw_rect_outline(buf, buf_w, buf_h, dst_x, dst_y,
+    overlay_draw_rect_outline(buf, buf_w, buf_h, dst_x, dst_y,
                            16 * swatch_size, 16 * swatch_size,
                            XRAY_COL_BORDER);
 }
@@ -103,7 +103,7 @@ void xray_render_tiles(uint32_t* buf, int buf_w, int buf_h, int px, int py,
     int y0 = py + 18;
 
     /* === TILE VIEWER (charblocks 0-3 for BG, 4-5 for OBJ) === */
-    xray_draw_text(buf, buf_w, buf_h, x0, y0, "BG Tiles", XRAY_COL_HEADER);
+    overlay_draw_text(buf, buf_w, buf_h, x0, y0, "BG Tiles", XRAY_COL_HEADER);
     y0 += 12;
 
     /* Charblocks 0-3 (BG tiles) in a 2x2 grid of 128x128 each */
@@ -113,7 +113,7 @@ void xray_render_tiles(uint32_t* buf, int buf_w, int buf_h, int px, int py,
         int cx = x0 + col * 140;
         int cy = y0 + row * 140;
 
-        xray_draw_textf(buf, buf_w, buf_h, cx, cy, XRAY_COL_LABEL,
+        overlay_draw_textf(buf, buf_w, buf_h, cx, cy, XRAY_COL_LABEL,
                         "CB%d", cb);
         render_charblock_4bpp(buf, buf_w, buf_h, cx, cy + 10, ppu->vram,
                               ppu->palette_ram, cb, 0);
@@ -121,7 +121,7 @@ void xray_render_tiles(uint32_t* buf, int buf_w, int buf_h, int px, int py,
 
     /* OBJ charblocks (4-5) */
     int obj_y = y0 + 2 * 140 + 8;
-    xray_draw_text(buf, buf_w, buf_h, x0, obj_y, "OBJ Tiles",
+    overlay_draw_text(buf, buf_w, buf_h, x0, obj_y, "OBJ Tiles",
                    XRAY_COL_HEADER);
     obj_y += 12;
 
@@ -137,7 +137,7 @@ void xray_render_tiles(uint32_t* buf, int buf_w, int buf_h, int px, int py,
     int pal_x = x0 + 300;
     int pal_y = py + 18;
 
-    xray_draw_text(buf, buf_w, buf_h, pal_x, pal_y, "BG Palette",
+    overlay_draw_text(buf, buf_w, buf_h, pal_x, pal_y, "BG Palette",
                    XRAY_COL_HEADER);
     pal_y += 12;
 
@@ -147,7 +147,7 @@ void xray_render_tiles(uint32_t* buf, int buf_w, int buf_h, int px, int py,
                         ppu->palette_ram, 0);
 
     pal_y += 16 * swatch + 8;
-    xray_draw_text(buf, buf_w, buf_h, pal_x, pal_y, "OBJ Palette",
+    overlay_draw_text(buf, buf_w, buf_h, pal_x, pal_y, "OBJ Palette",
                    XRAY_COL_HEADER);
     pal_y += 12;
 
@@ -157,6 +157,6 @@ void xray_render_tiles(uint32_t* buf, int buf_w, int buf_h, int px, int py,
 
     /* Palette index labels */
     pal_y += 16 * swatch + 8;
-    xray_draw_textf(buf, buf_w, buf_h, pal_x, pal_y, XRAY_COL_DIM,
+    overlay_draw_textf(buf, buf_w, buf_h, pal_x, pal_y, XRAY_COL_DIM,
                     "Each swatch = %dpx. 256 colors (16x16)", swatch);
 }

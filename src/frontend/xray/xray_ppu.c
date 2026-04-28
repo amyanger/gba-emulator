@@ -1,5 +1,5 @@
 #include "xray.h"
-#include "xray_draw.h"
+#include "frontend/overlay_draw.h"
 #include "ppu/ppu.h"
 
 /* Layer overlay colors (indexed by layer ID: 0-3=BG, 4=OBJ, 5=backdrop) */
@@ -190,16 +190,16 @@ void xray_render_ppu(uint32_t* buf, int buf_w, int buf_h, int px, int py,
             uint32_t label_col = views[idx].active
                 ? layer_colors[views[idx].layer_id < 0 ? 5 : views[idx].layer_id]
                 : XRAY_COL_DIM;
-            xray_draw_text(buf, buf_w, buf_h, vx, vy, views[idx].label,
+            overlay_draw_text(buf, buf_w, buf_h, vx, vy, views[idx].label,
                            label_col);
             if (!views[idx].active) {
-                xray_draw_text(buf, buf_w, buf_h, vx + 32, vy, "(off)",
+                overlay_draw_text(buf, buf_w, buf_h, vx + 32, vy, "(off)",
                                XRAY_COL_DIM);
             }
             vy += 10;
 
             /* View border */
-            xray_draw_rect_outline(buf, buf_w, buf_h, vx - 1, vy - 1,
+            overlay_draw_rect_outline(buf, buf_w, buf_h, vx - 1, vy - 1,
                                    view_w + 2, view_h + 2, XRAY_COL_BORDER);
 
             if (idx == 5) {
@@ -235,7 +235,7 @@ void xray_render_ppu(uint32_t* buf, int buf_w, int buf_h, int px, int py,
                               SCREEN_WIDTH, SCREEN_HEIGHT);
             } else {
                 /* Inactive: fill with dark */
-                xray_draw_rect(buf, buf_w, buf_h, vx, vy, view_w, view_h,
+                overlay_draw_rect(buf, buf_w, buf_h, vx, vy, view_w, view_h,
                                0xFF050510);
             }
         }
@@ -243,19 +243,19 @@ void xray_render_ppu(uint32_t* buf, int buf_w, int buf_h, int px, int py,
 
     /* PPU info text below the views */
     int info_y = grid_y + 2 * (view_h + 14 + gap) + 4;
-    xray_draw_textf(buf, buf_w, buf_h, x0, info_y, XRAY_COL_LABEL,
+    overlay_draw_textf(buf, buf_w, buf_h, x0, info_y, XRAY_COL_LABEL,
                     "%s", ppu_mode_name(mode));
     info_y += 12;
 
     /* Active layers list */
     int lx = x0;
-    xray_draw_text(buf, buf_w, buf_h, lx, info_y, "Layers:", XRAY_COL_LABEL);
+    overlay_draw_text(buf, buf_w, buf_h, lx, info_y, "Layers:", XRAY_COL_LABEL);
     lx += 64;
     for (int i = 0; i < 5; i++) {
         bool active = BIT(ppu->dispcnt, 8 + i);
         const char* name = (i < 4) ? layer_names[i] : "OBJ";
         uint32_t col = active ? layer_colors[i] : XRAY_COL_DIM;
-        lx = xray_draw_text(buf, buf_w, buf_h, lx, info_y, name, col);
+        lx = overlay_draw_text(buf, buf_w, buf_h, lx, info_y, name, col);
         lx += 8;
     }
     info_y += 12;
@@ -264,7 +264,7 @@ void xray_render_ppu(uint32_t* buf, int buf_w, int buf_h, int px, int py,
     if (mode <= 1) {
         for (int bg = 0; bg < (mode == 0 ? 4 : 2); bg++) {
             if (!BIT(ppu->dispcnt, 8 + bg)) continue;
-            xray_draw_textf(buf, buf_w, buf_h, x0, info_y, layer_colors[bg],
+            overlay_draw_textf(buf, buf_w, buf_h, x0, info_y, layer_colors[bg],
                             "BG%d scroll: (%d, %d)  prio: %d", bg,
                             ppu->bg_hofs[bg], ppu->bg_vofs[bg],
                             ppu->bg_cnt[bg] & 3);
@@ -275,7 +275,7 @@ void xray_render_ppu(uint32_t* buf, int buf_w, int buf_h, int px, int py,
     /* Blend mode info */
     uint8_t blend_mode = (ppu->bldcnt >> 6) & 3;
     const char* blend_names[] = {"None", "Alpha", "Brighten", "Darken"};
-    xray_draw_textf(buf, buf_w, buf_h, x0, info_y, XRAY_COL_LABEL,
+    overlay_draw_textf(buf, buf_w, buf_h, x0, info_y, XRAY_COL_LABEL,
                     "Blend: %s  EVA=%d EVB=%d EVY=%d", blend_names[blend_mode],
                     ppu->bldalpha & 0x1F, (ppu->bldalpha >> 8) & 0x1F,
                     ppu->bldy & 0x1F);
