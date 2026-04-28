@@ -68,6 +68,7 @@ set(SOURCES
     src/sio/sio_link.c
     src/trace/trace.c
     src/frontend/frontend.c
+    src/frontend/frame_advance.c
 )
 
 # X-Ray source files (only compiled when ENABLE_XRAY is ON)
@@ -147,6 +148,7 @@ set(LIB_SOURCES
     src/sio/sio.c
     src/sio/sio_link.c
     src/trace/trace.c
+    src/frontend/frame_advance.c
 )
 
 if(ENABLE_REWIND)
@@ -164,6 +166,7 @@ set(TEST_SOURCES
     tests/test_cartridge_autosave.c
     tests/test_keymap.c
     tests/test_eeprom.c
+    tests/test_practice.c
 )
 
 # Several tests rely on POSIX-only APIs (unistd.h, pthreads, AF_UNIX

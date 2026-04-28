@@ -1,4 +1,5 @@
 #include "frontend.h"
+#include "frame_advance.h"
 #include "gba.h"
 #include "apu/apu.h"
 #include "input/input.h"
@@ -209,6 +210,13 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 !event.key.repeat) {
                 fe->paused = !fe->paused;
                 LOG_INFO("Paused %s", fe->paused ? "ON" : "OFF");
+            }
+
+            // Frame advance: backslash steps one frame. Allow key-repeat so hold-to-step works.
+            if (event.key.keysym.scancode == SDL_SCANCODE_BACKSLASH) {
+                if (frame_advance_request(fe) == FRAME_ADVANCE_STEPPED) {
+                    LOG_INFO("Frame advance");
+                }
             }
 
             // Mute toggle

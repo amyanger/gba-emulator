@@ -190,6 +190,12 @@ int main(int argc, char* argv[]) {
             prev_paused = fe.paused;
         }
         if (fe.paused) {
+            if (fe.step_pending) {
+                // Single-step: run exactly one frame then re-pause.
+                fe.step_pending = false;
+                gba_run_frame(&gba);
+                cartridge_save_tick(&gba.cart, time(NULL));
+            }
             frontend_present_frame(&fe, gba.ppu.framebuffer);
 #ifdef ENABLE_XRAY
             xray_render(&s_xray_state, &gba);

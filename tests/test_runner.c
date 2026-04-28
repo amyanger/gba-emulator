@@ -15,6 +15,7 @@ void run_trace_tests(void);
 void run_cartridge_autosave_tests(void);
 void run_keymap_tests(void);
 void run_eeprom_tests(void);
+void run_practice_tests(void);
 #ifndef _WIN32
 // These suites depend on POSIX APIs (unistd.h, pthreads, AF_UNIX socketpair)
 // and are not compiled into the Windows test binary.
@@ -36,6 +37,7 @@ int main(void) {
     RUN_SUITE(run_cartridge_autosave_tests);
     RUN_SUITE(run_keymap_tests);
     RUN_SUITE(run_eeprom_tests);
+    RUN_SUITE(run_practice_tests);
 #ifndef _WIN32
     RUN_SUITE(run_rtc_tests);
     RUN_SUITE(run_sio_tests);

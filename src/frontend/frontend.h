@@ -37,6 +37,7 @@ typedef struct {
 
     bool fullscreen;
     bool paused;             // Spacebar — freeze emulation, mute audio, keep window responsive
+    bool step_pending;       // true if frame advance just requested a single-step frame
     bool muted;              // M key / --mute flag — drop audio, keep emulation running
     uint16_t controller_keys;  // bitmask of keys held by gamepad (avoids clobbering keyboard)
 } Frontend;
