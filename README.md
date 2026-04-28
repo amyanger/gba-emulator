@@ -170,11 +170,15 @@ cmake .. -DENABLE_REWIND=OFF
 |-----|-------------------|
 | F1 | Dump CPU registers to stderr (debug builds) |
 | F2 | Toggle Hardware X-Ray Mode |
+| F3 | Toggle input display HUD (mini-GBA overlay showing held buttons) |
 | F5 | Save state to current slot |
+| F6 | Edit label of current save-state slot |
+| F7 | Open save-state slot picker |
 | F8 | Load state from current slot |
 | 0–9 | Select save state slot |
 | Tab (hold) | Fast-forward |
 | `` ` `` | Toggle fast-forward |
+| `\` | Frame advance — auto-pauses if running; ignored during fast-forward / rewind |
 | Backspace (hold) | Rewind (60s window, audio muted) |
 | F11 | Toggle fullscreen |
 | Escape | Quit |
