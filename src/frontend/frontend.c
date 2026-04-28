@@ -125,8 +125,10 @@ void frontend_overlay_clear(Frontend* fe) {
 
 void frontend_destroy(Frontend* fe) {
     if (fe->overlay_texture) SDL_DestroyTexture(fe->overlay_texture);
-    free(fe->overlay_buffer);
-    fe->overlay_buffer = NULL;
+    if (fe->overlay_buffer) {
+        free(fe->overlay_buffer);
+        fe->overlay_buffer = NULL;
+    }
     if (fe->texture) SDL_DestroyTexture(fe->texture);
     if (fe->renderer) SDL_DestroyRenderer(fe->renderer);
     if (fe->window) SDL_DestroyWindow(fe->window);

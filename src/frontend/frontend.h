@@ -13,7 +13,7 @@ typedef struct {
     SDL_Texture* texture;
     SDL_Texture* overlay_texture;
     uint32_t* overlay_buffer;     /* SCREEN_WIDTH * SCREEN_HEIGHT pixels, ARGB8888 */
-    bool overlay_dirty;           /* set by overlay producers each frame; cleared each present */
+    bool overlay_dirty;  /* set by overlay producers each frame; cleared by frontend_overlay_clear */
     SDL_AudioDeviceID audio_device;
     SDL_GameController* controller;
 
