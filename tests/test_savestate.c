@@ -292,6 +292,58 @@ TEST(savestate_peek_label_reads_without_full_load) {
     gba_destroy(&gba);
 }
 
+TEST(savestate_upgrade_v5_to_v6_preserves_body) {
+    GBA gba;
+    gba_init(&gba);
+
+    /* Save a v6 buffer. */
+    uint8_t* v6_orig = NULL;
+    size_t v6_size = 0;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &v6_orig, &v6_size));
+
+    /* Synthesize a v5 buffer by removing the 32-byte label region
+     * (offset 0x30..0x4F), then patching version=5 and fsize. */
+    size_t v5_size = v6_size - 32;
+    uint8_t* v5 = (uint8_t*)malloc(v5_size);
+    ASSERT_TRUE(v5 != NULL);
+    memcpy(v5, v6_orig, 0x30);
+    memcpy(v5 + 0x30, v6_orig + 0x50, v6_size - 0x50);
+
+    v5[4] = 5; v5[5] = 0; v5[6] = 0; v5[7] = 0;
+    uint32_t fsize = (uint32_t)v5_size;
+    v5[8]  = fsize & 0xFF;
+    v5[9]  = (fsize >> 8) & 0xFF;
+    v5[10] = (fsize >> 16) & 0xFF;
+    v5[11] = (fsize >> 24) & 0xFF;
+    /* Recompute body CRC for the synthesized v5 buffer so it passes load. */
+    uint32_t crc = test_savestate_crc32(v5 + 48, v5_size - 48);
+    v5[12] = crc & 0xFF;
+    v5[13] = (crc >> 8) & 0xFF;
+    v5[14] = (crc >> 16) & 0xFF;
+    v5[15] = (crc >> 24) & 0xFF;
+
+    /* Upgrade. */
+    uint8_t* upgraded = NULL;
+    size_t upgraded_size = 0;
+    ASSERT_EQ(SS_OK, savestate_buffer_upgrade_v5(v5, v5_size,
+                                                 &upgraded, &upgraded_size));
+    ASSERT_EQ(upgraded_size, v6_size);
+    ASSERT_EQ(upgraded[4], 6);
+
+    /* The upgraded body (chunks) must equal the original v6 body.
+     * v6_orig has an empty label (zeroed) so header bytes 0x50..end match. */
+    ASSERT_EQ(0, memcmp(upgraded + 0x50, v6_orig + 0x50, v6_size - 0x50));
+
+    /* Loading the upgraded buffer must succeed. */
+    gba_init(&gba);
+    ASSERT_EQ(SS_OK, savestate_load_from_buffer(&gba, upgraded, upgraded_size));
+
+    free(v5);
+    free(v6_orig);
+    free(upgraded);
+    gba_destroy(&gba);
+}
+
 void run_savestate_tests(void) {
     TEST_SUITE("savestate");
     RUN_TEST(crc32_empty);
@@ -309,4 +361,5 @@ void run_savestate_tests(void) {
     RUN_TEST(savestate_label_truncates_at_31_bytes);
     RUN_TEST(savestate_label_filters_control_chars);
     RUN_TEST(savestate_peek_label_reads_without_full_load);
+    RUN_TEST(savestate_upgrade_v5_to_v6_preserves_body);
 }

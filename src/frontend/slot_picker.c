@@ -12,14 +12,6 @@
 #include <sys/stat.h>
 #include <time.h>
 
-/* Clear the overlay buffer inline so slot_picker.c compiles in LIB_SOURCES
- * (test binary) without pulling in all of frontend.c. */
-static void clear_overlay(Frontend* fe) {
-    if (!fe || !fe->overlay_buffer) return;
-    memset(fe->overlay_buffer, 0,
-           SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
-    fe->overlay_dirty = false;
-}
 
 #define COL_DIM_OVERLAY  0x80000000u   /* full-screen dim */
 #define COL_PANEL_BG     0xFF001020u   /* opaque panel — see no-alpha-blend note in overlay_draw.c */
@@ -74,10 +66,11 @@ void slot_picker_open_label_edit(Frontend* fe) {
                         path, sizeof(path));
     struct stat st;
     if (stat(path, &st) != 0) {
-        snprintf(p->status, sizeof(p->status),
-                 "Slot %d empty - save with F5 first",
+        LOG_INFO("Slot %d empty - opening picker", fe->savestate_slot);
+        slot_picker_open_list(fe);
+        snprintf(fe->slot_picker.status, sizeof(fe->slot_picker.status),
+                 "Slot %d empty - save with F5 first to label it",
                  fe->savestate_slot);
-        LOG_INFO("%s", p->status);
         return;
     }
     p->mode = SLOT_PICKER_LABEL_EDIT;
@@ -105,16 +98,19 @@ void slot_picker_close(Frontend* fe) {
     }
     p->mode = SLOT_PICKER_CLOSED;
     fe->paused = p->was_paused;
-    clear_overlay(fe);
+    frontend_overlay_clear(fe);
 }
 
-/* Apply the edit buffer to the slot file: load -> set_label -> save.
- * Uses the buffer-based API to avoid double-deserializing. */
+/* Apply the edit buffer to the slot file without touching live GBA state.
+ * Pure buffer path: read file, upgrade v5->v6 if needed, set label, write
+ * back. The live GBA emulation state is never loaded or mutated. */
 static bool commit_label(Frontend* fe, GBA* gba) {
+    (void)gba; /* no longer needed */
     SlotPicker* p = &fe->slot_picker;
     char path[512];
     savestate_slot_path(fe->rom_path, p->edit_slot, path, sizeof(path));
 
+    /* Read the file. */
     FILE* f = fopen(path, "rb");
     if (!f) {
         snprintf(p->status, sizeof(p->status), "Open failed (slot %d)", p->edit_slot);
@@ -130,21 +126,27 @@ static bool commit_label(Frontend* fe, GBA* gba) {
     fclose(f);
     if (got != (size_t)size) { free(buf); return false; }
 
-    /* The file may still be v5 — savestate_buffer_set_label requires v6.
-     * Path: load (which accepts v5), then save_to_buffer (writes v6),
-     * then set_label, then write to disk. */
-    SaveStateResult r = savestate_load_from_buffer(gba, buf, (size_t)size);
-    free(buf);
-    if (r != SS_OK) {
-        snprintf(p->status, sizeof(p->status), "Load failed (err=%d)", r);
-        return false;
-    }
+    /* Determine version. The label API requires v6, so upgrade v5
+     * in place via a pure buffer transform — no live GBA touch. */
+    uint32_t version = (uint32_t)buf[4] | ((uint32_t)buf[5] << 8)
+                     | ((uint32_t)buf[6] << 16) | ((uint32_t)buf[7] << 24);
 
-    uint8_t* v6 = NULL; size_t v6_size = 0;
-    r = savestate_save_to_buffer(gba, &v6, &v6_size);
-    if (r != SS_OK) {
-        snprintf(p->status, sizeof(p->status), "Save failed (err=%d)", r);
-        return false;
+    uint8_t* v6 = NULL;
+    size_t v6_size = 0;
+    if (version == 6) {
+        /* Already v6 — the label can be set in place on the current buffer. */
+        v6 = buf;
+        v6_size = (size_t)size;
+        buf = NULL;
+    } else {
+        SaveStateResult r = savestate_buffer_upgrade_v5(
+            buf, (size_t)size, &v6, &v6_size);
+        free(buf);
+        if (r != SS_OK) {
+            snprintf(p->status, sizeof(p->status),
+                     "Upgrade failed (err=%d)", r);
+            return false;
+        }
     }
 
     if (!savestate_buffer_set_label(v6, v6_size, p->edit_buf)) {
@@ -153,6 +155,8 @@ static bool commit_label(Frontend* fe, GBA* gba) {
         return false;
     }
 
+    /* NOTE: not atomic; a torn write can leave the .ssN file zero-length,
+     * losing the saved state. Matches the existing savestate_save behavior. */
     f = fopen(path, "wb");
     if (!f) {
         free(v6);

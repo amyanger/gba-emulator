@@ -2,6 +2,7 @@
 #include "cpu/arm7tdmi.h"
 #include "cheat/cheat_file.h"
 #include "frontend/frontend.h"
+#include "frontend/overlay_draw.h"
 #include "frontend/input_display.h"
 #include "frontend/slot_picker.h"
 #ifdef ENABLE_REWIND

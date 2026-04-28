@@ -61,4 +61,14 @@ bool savestate_peek_label(const char* path, char* out, size_t out_size);
  * Returns false if the buffer is not v6 or arguments are invalid. */
 bool savestate_buffer_set_label(uint8_t* buf, size_t size, const char* label);
 
+/* Upgrade an in-memory v5 savestate buffer to v6 by inserting a
+ * 32-byte zero label region at offset 0x30. Allocates a new buffer
+ * (caller frees with free()) and transfers ownership via *out.
+ * Returns SS_OK on success, SS_ERR_BAD_VERSION if input is not v5,
+ * SS_ERR_FILE_WRITE if allocation fails. The body CRC is unchanged
+ * because the inserted bytes are inside the header (which is excluded
+ * from the CRC range), so no CRC recomputation is needed. */
+SaveStateResult savestate_buffer_upgrade_v5(const uint8_t* in, size_t in_size,
+                                            uint8_t** out, size_t* out_size);
+
 #endif // SAVESTATE_H

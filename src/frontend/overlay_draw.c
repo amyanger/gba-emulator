@@ -10,9 +10,17 @@
  * to a single z-order: opaque shapes only, or one semi-transparent
  * background with opaque shapes on top. */
 #include "frontend/overlay_draw.h"
+#include "frontend/frontend.h"
 #include "frontend/xray/xray_font.h"
 #include <stdio.h>
 #include <string.h>
+
+void frontend_overlay_clear(Frontend* fe) {
+    if (!fe || !fe->overlay_buffer) return;
+    memset(fe->overlay_buffer, 0,
+           SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
+    fe->overlay_dirty = false;
+}
 
 void overlay_draw_pixel(uint32_t* buf, int buf_w, int buf_h, int x, int y,
                         uint32_t color) {

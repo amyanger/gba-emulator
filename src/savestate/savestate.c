@@ -795,6 +795,54 @@ bool savestate_buffer_set_label(uint8_t* buf, size_t size, const char* label) {
     return true;
 }
 
+SaveStateResult savestate_buffer_upgrade_v5(const uint8_t* in, size_t in_size,
+                                            uint8_t** out, size_t* out_size) {
+    if (!in || !out || !out_size) return SS_ERR_FILE_READ;
+    *out = NULL; *out_size = 0;
+
+    if (in_size < HEADER_SIZE_V5) return SS_ERR_TRUNCATED;
+
+    /* Verify magic + version. */
+    uint32_t magic = (uint32_t)in[0] | ((uint32_t)in[1] << 8)
+                   | ((uint32_t)in[2] << 16) | ((uint32_t)in[3] << 24);
+    if (magic != SAVESTATE_MAGIC) return SS_ERR_BAD_MAGIC;
+
+    uint32_t version = (uint32_t)in[4] | ((uint32_t)in[5] << 8)
+                     | ((uint32_t)in[6] << 16) | ((uint32_t)in[7] << 24);
+    if (version != SAVESTATE_VERSION_LEGACY_V5) return SS_ERR_BAD_VERSION;
+
+    /* New size: insert 32 bytes (the label region) between the v5
+     * header (48 bytes) and the body. */
+    size_t new_size = in_size + SAVESTATE_LABEL_LEN;
+    uint8_t* buf = (uint8_t*)malloc(new_size);
+    if (!buf) return SS_ERR_FILE_WRITE;
+
+    /* Copy v5 header (48 bytes) verbatim. */
+    memcpy(buf, in, HEADER_SIZE_V5);
+    /* Zero the new 32-byte label region. */
+    memset(buf + HEADER_SIZE_V5, 0, SAVESTATE_LABEL_LEN);
+    /* Copy body bytes verbatim. */
+    memcpy(buf + HEADER_SIZE, in + HEADER_SIZE_V5, in_size - HEADER_SIZE_V5);
+
+    /* Patch version to 6. */
+    buf[4] = (uint8_t)SAVESTATE_VERSION;
+    buf[5] = 0; buf[6] = 0; buf[7] = 0;
+
+    /* Patch fsize to new size. */
+    buf[8]  = (uint8_t)(new_size & 0xFF);
+    buf[9]  = (uint8_t)((new_size >> 8) & 0xFF);
+    buf[10] = (uint8_t)((new_size >> 16) & 0xFF);
+    buf[11] = (uint8_t)((new_size >> 24) & 0xFF);
+
+    /* Body CRC stays the same — body bytes did not move within the
+     * CRC range (which is [HEADER_SIZE..size)). The bytes we inserted
+     * are NOT inside the CRC range. */
+
+    *out = buf;
+    *out_size = new_size;
+    return SS_OK;
+}
+
 /* Test-only accessor: exposes the internal crc32() to test_savestate.c which
  * includes savestate.c directly and needs to recompute body CRC when
  * synthesizing legacy v5 buffers. */

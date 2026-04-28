@@ -63,9 +63,4 @@ void frontend_set_ff_indicator(Frontend* fe, bool active);
 void frontend_set_pause_indicator(Frontend* fe, bool active);
 void frontend_set_mute_indicator(Frontend* fe, bool active);
 
-/* Zero the overlay buffer and clear the dirty flag. Overlay producers
- * should call this at the start of each frame before drawing into the
- * buffer; if they then draw, they must set fe->overlay_dirty = true. */
-void frontend_overlay_clear(Frontend* fe);
-
 #endif // FRONTEND_H

@@ -120,12 +120,6 @@ void frontend_set_mute_indicator(Frontend* fe, bool active) {
     }
 }
 
-void frontend_overlay_clear(Frontend* fe) {
-    if (!fe || !fe->overlay_buffer) return;
-    memset(fe->overlay_buffer, 0,
-           SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint32_t));
-    fe->overlay_dirty = false;
-}
 
 void frontend_destroy(Frontend* fe) {
     if (fe->overlay_texture) SDL_DestroyTexture(fe->overlay_texture);

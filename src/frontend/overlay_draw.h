@@ -6,6 +6,13 @@
 
 /* Drawing context: a uint32_t ARGB8888 pixel buffer with known dimensions. */
 
+/* Forward declaration — avoids pulling in all of frontend.h. */
+typedef struct Frontend Frontend;
+
+/* Zero the overlay buffer and clear the dirty flag. Call once per frame
+ * before drawing any overlay layer. */
+void frontend_overlay_clear(Frontend* fe);
+
 /* Draw a single pixel (bounds-checked). */
 void overlay_draw_pixel(uint32_t* buf, int buf_w, int buf_h, int x, int y,
                         uint32_t color);
