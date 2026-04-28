@@ -927,6 +927,12 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
     }
     uint32_t header_size = legacy_v5 ? HEADER_SIZE_V5 : HEADER_SIZE;
 
+    if (size < header_size) {
+        LOG_ERROR("Save state: buffer too small for v%u header (%zu bytes)",
+                  version, size);
+        return SS_ERR_TRUNCATED;
+    }
+
     uint32_t total_size = (uint32_t)hdr[8]
                         | ((uint32_t)hdr[9] << 8)
                         | ((uint32_t)hdr[10] << 16)

@@ -45,7 +45,9 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
 
 /* Read just the label out of an in-memory savestate buffer (or v5 buffer,
  * which always reports empty). Returns false if the buffer header is
- * malformed. */
+ * malformed. The output is always NUL-terminated. If
+ * out_size < SAVESTATE_LABEL_LEN, the label is truncated to out_size-1
+ * bytes. */
 bool savestate_buffer_peek_label(const uint8_t* buf, size_t size,
                                  char* out, size_t out_size);
 
@@ -53,8 +55,10 @@ bool savestate_buffer_peek_label(const uint8_t* buf, size_t size,
 bool savestate_peek_label(const char* path, char* out, size_t out_size);
 
 /* Set the label on an already-loaded buffer in place. The buffer MUST be
- * at v6. Filters control characters and truncates to 31 visible bytes.
- * Returns false if the buffer is not v6. */
+ * at v6. `label` must be non-NULL — pass "" to clear the existing label.
+ * Filters control characters (< 0x20 and 0x7F) and truncates to 31
+ * visible bytes (UTF-8 multi-byte continuation bytes are preserved).
+ * Returns false if the buffer is not v6 or arguments are invalid. */
 bool savestate_buffer_set_label(uint8_t* buf, size_t size, const char* label);
 
 #endif // SAVESTATE_H

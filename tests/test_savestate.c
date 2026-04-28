@@ -1,4 +1,5 @@
 #include "test_harness.h"
+#include <unistd.h>
 
 // Include the .c directly to access static functions (crc32)
 // This file must NOT be linked alongside savestate.o
@@ -258,6 +259,39 @@ TEST(savestate_label_filters_control_chars) {
     gba_destroy(&gba);
 }
 
+TEST(savestate_peek_label_reads_without_full_load) {
+    GBA gba;
+    gba_init(&gba);
+
+    /* Save with a label. */
+    uint8_t* buf = NULL;
+    size_t size = 0;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &buf, &size));
+    ASSERT_EQ(true, savestate_buffer_set_label(buf, size, "test-label"));
+
+    /* Write to a temp file. */
+    char path[] = "/tmp/gba_peek_label_XXXXXX";
+    int fd = mkstemp(path);
+    ASSERT_TRUE(fd >= 0);
+    ssize_t wrote = write(fd, buf, size);
+    close(fd);
+    ASSERT_EQ((ssize_t)size, wrote);
+
+    /* Mutate the in-memory GBA so we can detect any restoration. */
+    uint32_t marker = 0xDEADBEEF;
+    gba.cpu.regs[0] = marker;
+
+    /* Peek — should read the label without touching GBA state. */
+    char label[32];
+    ASSERT_EQ(true, savestate_peek_label(path, label, sizeof(label)));
+    ASSERT_STR_EQ("test-label", label);
+    ASSERT_EQ(marker, gba.cpu.regs[0]);  /* unchanged */
+
+    remove(path);
+    free(buf);
+    gba_destroy(&gba);
+}
+
 void run_savestate_tests(void) {
     TEST_SUITE("savestate");
     RUN_TEST(crc32_empty);
@@ -274,4 +308,5 @@ void run_savestate_tests(void) {
     RUN_TEST(savestate_save_writes_v6_with_label);
     RUN_TEST(savestate_label_truncates_at_31_bytes);
     RUN_TEST(savestate_label_filters_control_chars);
+    RUN_TEST(savestate_peek_label_reads_without_full_load);
 }
