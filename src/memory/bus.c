@@ -10,6 +10,10 @@
 #include "cpu/arm7tdmi.h"
 #include "sio/sio.h"
 
+/* Forward declarations for wait-state accounting helpers (defined below). */
+static void bus_update_waitcnt(Bus* bus, uint16_t val);
+static void bus_charge_access(Bus* bus, uint32_t addr, int size);
+
 /* ===== I/O Register Dispatch =====
  *
  * The GBA maps hardware subsystem registers into the 0x04000000-0x040003FF
@@ -889,10 +893,15 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
             interrupt_acknowledge(bus->interrupts, (uint16_t)val << 8);
         }
         return;
-    case 0x204:  /* REG_WAITCNT low byte (stub) */
-    case 0x205:  /* REG_WAITCNT high byte (stub) */
+    case 0x204:  /* REG_WAITCNT low byte */
+    case 0x205:  /* REG_WAITCNT high byte */
+    {
         bus->io_regs[offset] = val;
+        uint16_t raw = (uint16_t)bus->io_regs[0x204]
+                     | ((uint16_t)bus->io_regs[0x205] << 8);
+        bus_update_waitcnt(bus, raw);
         return;
+    }
     case 0x208:  /* REG_IME low byte */
         bus->io_regs[offset] = val & 1;
         if (bus->interrupts) {
@@ -1093,6 +1102,13 @@ void bus_init(Bus* bus) {
     bus->open_bus = 0;
     bus->bios_readable = true;
     bus->last_bios_read = 0;
+
+    /* Default WAITCNT=0 → all access modes select their slowest setting.
+     * Real GBA boots in this state; games typically rewrite WAITCNT early. */
+    bus->pending_cycles = 0;
+    bus->last_access_addr = 0;
+    bus->last_access_size = 0;
+    bus_update_waitcnt(bus, 0);
 }
 
 bool bus_load_bios(Bus* bus, const char* path) {
@@ -1125,7 +1141,95 @@ static uint32_t decode_region(uint32_t addr) {
     return (addr >> 24) & 0xFF;
 }
 
-uint8_t bus_read8(Bus* bus, uint32_t addr) {
+/* Memory access wait-state accounting.
+ * Each public bus_read/bus_write entry charges once via bus_charge_access.
+ * The internal byte-decomposition path uses _raw helpers to avoid double
+ * charging. Instruction handlers / pipeline fetches implicitly charge a
+ * 1-cycle baseline per access, so we accumulate (table_value - 1) into
+ * bus->pending_cycles. The CPU and DMA drain that after each unit of work,
+ * yielding totals that match the GBATEK cycle counts. */
+static const uint8_t WS_N_TABLE[4]  = {4, 3, 2, 8};
+static const uint8_t WS0_S_TABLE[2] = {2, 1};
+static const uint8_t WS1_S_TABLE[2] = {4, 1};
+static const uint8_t WS2_S_TABLE[2] = {8, 1};
+
+static void bus_update_waitcnt(Bus* bus, uint16_t val) {
+    bus->wait_state.raw    = val;
+    bus->wait_state.sram_n = WS_N_TABLE[val & 3];
+    bus->wait_state.ws0_n  = WS_N_TABLE[(val >> 2) & 3];
+    bus->wait_state.ws0_s  = WS0_S_TABLE[(val >> 4) & 1];
+    bus->wait_state.ws1_n  = WS_N_TABLE[(val >> 5) & 3];
+    bus->wait_state.ws1_s  = WS1_S_TABLE[(val >> 7) & 1];
+    bus->wait_state.ws2_n  = WS_N_TABLE[(val >> 8) & 3];
+    bus->wait_state.ws2_s  = WS2_S_TABLE[(val >> 10) & 1];
+}
+
+/* Total cycle cost for a single access of `size` bytes at `addr`, considering
+ * sequential vs non-sequential. ROM 32-bit access is split into two halfword
+ * bus cycles (N+S, or S+S if sequential). EWRAM and Palette/VRAM are 16-bit
+ * buses, so 32-bit access there doubles. SRAM is always N regardless of size
+ * (8-bit bus, single byte access). */
+static int bus_region_cycles(const Bus* bus, uint32_t addr, int size, bool sequential) {
+    uint32_t region = (addr >> 24) & 0xFF;
+    int n, s;
+    switch (region) {
+    case 0x00: /* BIOS */
+    case 0x03: /* IWRAM */
+    case 0x04: /* I/O */
+    case 0x07: /* OAM */
+        return 1;
+    case 0x02: /* EWRAM (16-bit bus, 3-cycle default) */
+        return (size == 4) ? 6 : 3;
+    case 0x05: /* Palette RAM (16-bit bus) */
+    case 0x06: /* VRAM (16-bit bus) */
+        return (size == 4) ? 2 : 1;
+    case 0x08: case 0x09: /* WS0 */
+        n = bus->wait_state.ws0_n; s = bus->wait_state.ws0_s; break;
+    case 0x0A: case 0x0B: /* WS1 */
+        n = bus->wait_state.ws1_n; s = bus->wait_state.ws1_s; break;
+    case 0x0C: case 0x0D: /* WS2 */
+        n = bus->wait_state.ws2_n; s = bus->wait_state.ws2_s; break;
+    case 0x0E: case 0x0F: /* Cart SRAM/Flash (8-bit bus, N only) */
+        return bus->wait_state.sram_n;
+    default:
+        return 1;
+    }
+    if (size == 4) {
+        return sequential ? (s + s) : (n + s);
+    }
+    return sequential ? s : n;
+}
+
+static void bus_charge_access(Bus* bus, uint32_t addr, int size) {
+    bool same_region = ((addr ^ bus->last_access_addr) >> 24) == 0;
+    bool sequential  = same_region &&
+                       (addr == bus->last_access_addr + bus->last_access_size);
+    int total = bus_region_cycles(bus, addr, size, sequential);
+    /* Subtract the 1-cycle baseline that the caller (CPU instruction handler
+     * or pipeline fetch) already accounts for. Never go negative. */
+    if (total > 1) {
+        bus->pending_cycles += (total - 1);
+    }
+    bus->last_access_addr = addr;
+    bus->last_access_size = (uint8_t)size;
+}
+
+int bus_drain_pending(Bus* bus) {
+    int c = bus->pending_cycles;
+    bus->pending_cycles = 0;
+    return c;
+}
+
+void bus_post_load(Bus* bus) {
+    uint16_t raw = (uint16_t)bus->io_regs[0x204]
+                 | ((uint16_t)bus->io_regs[0x205] << 8);
+    bus_update_waitcnt(bus, raw);
+    bus->pending_cycles = 0;
+    bus->last_access_addr = 0;
+    bus->last_access_size = 0;
+}
+
+static uint8_t bus_read8_raw(Bus* bus, uint32_t addr) {
     switch (decode_region(addr)) {
     case 0x00: /* BIOS */
         if (addr < BIOS_SIZE) {
@@ -1196,21 +1300,28 @@ uint8_t bus_read8(Bus* bus, uint32_t addr) {
     }
 }
 
+uint8_t bus_read8(Bus* bus, uint32_t addr) {
+    bus_charge_access(bus, addr, 1);
+    return bus_read8_raw(bus, addr);
+}
+
 uint16_t bus_read16(Bus* bus, uint32_t addr) {
     addr &= ~1u; /* Force halfword alignment */
-    return (uint16_t)bus_read8(bus, addr)
-         | ((uint16_t)bus_read8(bus, addr + 1) << 8);
+    bus_charge_access(bus, addr, 2);
+    return (uint16_t)bus_read8_raw(bus, addr)
+         | ((uint16_t)bus_read8_raw(bus, addr + 1) << 8);
 }
 
 uint32_t bus_read32(Bus* bus, uint32_t addr) {
     addr &= ~3u; /* Force word alignment */
-    return (uint32_t)bus_read8(bus, addr)
-         | ((uint32_t)bus_read8(bus, addr + 1) << 8)
-         | ((uint32_t)bus_read8(bus, addr + 2) << 16)
-         | ((uint32_t)bus_read8(bus, addr + 3) << 24);
+    bus_charge_access(bus, addr, 4);
+    return (uint32_t)bus_read8_raw(bus, addr)
+         | ((uint32_t)bus_read8_raw(bus, addr + 1) << 8)
+         | ((uint32_t)bus_read8_raw(bus, addr + 2) << 16)
+         | ((uint32_t)bus_read8_raw(bus, addr + 3) << 24);
 }
 
-void bus_write8(Bus* bus, uint32_t addr, uint8_t val) {
+static void bus_write8_raw(Bus* bus, uint32_t addr, uint8_t val) {
     switch (decode_region(addr)) {
     case 0x02:
         bus->ewram[addr & (EWRAM_SIZE - 1)] = val;
@@ -1265,11 +1376,17 @@ static uint32_t vram_offset(uint32_t addr) {
     return off;
 }
 
+void bus_write8(Bus* bus, uint32_t addr, uint8_t val) {
+    bus_charge_access(bus, addr, 1);
+    bus_write8_raw(bus, addr, val);
+}
+
 void bus_write16(Bus* bus, uint32_t addr, uint16_t val) {
     addr &= ~1u;
-    /* Palette, VRAM, and OAM need direct writes — bus_write8 has special
+    bus_charge_access(bus, addr, 2);
+    /* Palette, VRAM, and OAM need direct writes — the byte path has special
      * 8-bit behaviour (byte duplication / ignore) that would corrupt wider
-     * writes if we decomposed into two bus_write8 calls. */
+     * writes if we decomposed into two byte writes. */
     switch (decode_region(addr)) {
     case 0x05: { /* Palette RAM — normal 16-bit write */
         uint32_t off = addr & (PALETTE_SIZE - 1);
@@ -1290,14 +1407,15 @@ void bus_write16(Bus* bus, uint32_t addr, uint16_t val) {
         return;
     }
     default:
-        bus_write8(bus, addr, (uint8_t)(val & 0xFF));
-        bus_write8(bus, addr + 1, (uint8_t)(val >> 8));
+        bus_write8_raw(bus, addr, (uint8_t)(val & 0xFF));
+        bus_write8_raw(bus, addr + 1, (uint8_t)(val >> 8));
         return;
     }
 }
 
 void bus_write32(Bus* bus, uint32_t addr, uint32_t val) {
     addr &= ~3u;
+    bus_charge_access(bus, addr, 4);
     switch (decode_region(addr)) {
     case 0x04: { /* I/O — special case FIFO writes for DMA */
         uint32_t io_addr = addr & 0xFFFFFF;
@@ -1309,28 +1427,27 @@ void bus_write32(Bus* bus, uint32_t addr, uint32_t val) {
             apu_fifo_write(bus->apu, 1, val);
             return;
         }
-        /* All other I/O: decompose to byte writes */
-        bus_write8(bus, addr, (uint8_t)(val & 0xFF));
-        bus_write8(bus, addr + 1, (uint8_t)((val >> 8) & 0xFF));
-        bus_write8(bus, addr + 2, (uint8_t)((val >> 16) & 0xFF));
-        bus_write8(bus, addr + 3, (uint8_t)((val >> 24) & 0xFF));
+        bus_write8_raw(bus, addr, (uint8_t)(val & 0xFF));
+        bus_write8_raw(bus, addr + 1, (uint8_t)((val >> 8) & 0xFF));
+        bus_write8_raw(bus, addr + 2, (uint8_t)((val >> 16) & 0xFF));
+        bus_write8_raw(bus, addr + 3, (uint8_t)((val >> 24) & 0xFF));
         return;
     }
-    case 0x05: { /* Palette RAM -- mirror each byte independently to prevent OOB */
+    case 0x05: {
         for (int i = 0; i < 4; i++) {
             uint32_t off = (addr + i) & (PALETTE_SIZE - 1);
             bus->palette_ram[off] = (uint8_t)(val >> (i * 8));
         }
         return;
     }
-    case 0x06: { /* VRAM -- mirror each byte independently to prevent OOB */
+    case 0x06: {
         for (int i = 0; i < 4; i++) {
             uint32_t off = vram_offset(addr + i);
             bus->vram[off] = (uint8_t)(val >> (i * 8));
         }
         return;
     }
-    case 0x07: { /* OAM -- mirror each byte independently to prevent OOB */
+    case 0x07: {
         for (int i = 0; i < 4; i++) {
             uint32_t off = (addr + i) & (OAM_SIZE - 1);
             bus->oam[off] = (uint8_t)(val >> (i * 8));
@@ -1338,10 +1455,10 @@ void bus_write32(Bus* bus, uint32_t addr, uint32_t val) {
         return;
     }
     default:
-        bus_write8(bus, addr, (uint8_t)(val & 0xFF));
-        bus_write8(bus, addr + 1, (uint8_t)((val >> 8) & 0xFF));
-        bus_write8(bus, addr + 2, (uint8_t)((val >> 16) & 0xFF));
-        bus_write8(bus, addr + 3, (uint8_t)((val >> 24) & 0xFF));
+        bus_write8_raw(bus, addr, (uint8_t)(val & 0xFF));
+        bus_write8_raw(bus, addr + 1, (uint8_t)((val >> 8) & 0xFF));
+        bus_write8_raw(bus, addr + 2, (uint8_t)((val >> 16) & 0xFF));
+        bus_write8_raw(bus, addr + 3, (uint8_t)((val >> 24) & 0xFF));
         return;
     }
 }

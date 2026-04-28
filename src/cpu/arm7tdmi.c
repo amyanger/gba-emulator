@@ -340,6 +340,8 @@ void cpu_skip_bios(ARM7TDMI* cpu) {
  * When the pipeline is invalid (after flush), two fetches refill it before
  * any instruction executes. */
 int cpu_step(ARM7TDMI* cpu) {
+    int cycles;
+
     if (!cpu->pipeline_valid) {
         /* Refill the 2-entry pipeline */
         if (BIT(cpu->cpsr, CPSR_T)) {
@@ -354,25 +356,25 @@ int cpu_step(ARM7TDMI* cpu) {
             cpu->regs[REG_PC] += 8;
         }
         cpu->pipeline_valid = true;
-        return 2; /* pipeline refill cost */
+        cycles = 2; /* pipeline refill cost */
+        return cycles + bus_drain_pending(cpu->bus);
     }
 
     if (BIT(cpu->cpsr, CPSR_T)) {
         /* Thumb mode: execute first, then advance pipeline if no flush */
         uint16_t instr = (uint16_t)cpu->pipeline[0];
         TRACE_LOG(cpu, cpu->regs[REG_PC] - 4, instr, true);
-        int cycles = thumb_execute(cpu, instr);
+        cycles = thumb_execute(cpu, instr);
         if (cpu->pipeline_valid) {
             cpu->pipeline[0] = cpu->pipeline[1];
             cpu->pipeline[1] = bus_read16(cpu->bus, cpu->regs[REG_PC]);
             cpu->regs[REG_PC] += 2;
         }
-        return cycles;
+        return cycles + bus_drain_pending(cpu->bus);
     } else {
         /* ARM mode: execute first, then advance pipeline if no flush */
         uint32_t instr = cpu->pipeline[0];
         TRACE_LOG(cpu, cpu->regs[REG_PC] - 8, instr, false);
-        int cycles;
 
         uint32_t cond = (instr >> 28) & 0xF;
         if (cpu_condition_passed(cpu, cond)) {
@@ -386,7 +388,7 @@ int cpu_step(ARM7TDMI* cpu) {
             cpu->pipeline[1] = bus_read32(cpu->bus, cpu->regs[REG_PC]);
             cpu->regs[REG_PC] += 4;
         }
-        return cycles;
+        return cycles + bus_drain_pending(cpu->bus);
     }
 }
 

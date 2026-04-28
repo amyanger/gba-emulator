@@ -483,6 +483,7 @@ static void load_bram_chunk(const uint8_t** cur, Bus* bus) {
     bus->open_bus = read_u32(cur);
     bus->bios_readable = read_u8(cur) != 0;
     bus->last_bios_read = read_u32(cur);
+    bus_post_load(bus);
 }
 
 static void load_dma_chunk(const uint8_t** cur, DMAController* dma) {

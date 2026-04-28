@@ -159,6 +159,7 @@ int dma_execute(DMAController* dma, int ch) {
 
     dma->active_channel = -1;
 
-    // Return approximate cycle cost (2 cycles per unit is a simplification)
-    return (int)(count * 2);
+    // Base 2 cycles/unit + wait cycles accumulated by the bus accesses above.
+    // Draining here keeps DMA wait cycles from leaking into the next cpu_step.
+    return (int)(count * 2) + bus_drain_pending(bus);
 }

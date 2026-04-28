@@ -23,6 +23,23 @@ typedef struct SIO SIO;
 #define VRAM_SIZE 0x18000   // 96KB
 #define OAM_SIZE 0x400      // 1KB
 
+/* WAITCNT-derived per-region cycle counts (in CPU clocks).
+ * sram_n is the SRAM non-sequential count (SRAM has no S timing — it's an
+ * 8-bit bus, every access is N).  ws*_n / ws*_s are the ROM wait-state pair
+ * for each of the three Game Pak mirror regions (0x08-0x09, 0x0A-0x0B,
+ * 0x0C-0x0D). 32-bit ROM access is two halfword bus cycles, charged as N+S
+ * (or S+S if sequential). */
+typedef struct WaitState {
+    uint8_t sram_n;
+    uint8_t ws0_n;
+    uint8_t ws0_s;
+    uint8_t ws1_n;
+    uint8_t ws1_s;
+    uint8_t ws2_n;
+    uint8_t ws2_s;
+    uint16_t raw;
+} WaitState;
+
 struct Bus {
     uint8_t bios[BIOS_SIZE];
     uint8_t ewram[EWRAM_SIZE];
@@ -38,6 +55,14 @@ struct Bus {
     // BIOS protection
     bool bios_readable;
     uint32_t last_bios_read;
+
+    // WAITCNT-driven memory access timing.
+    // pending_cycles accumulates wait cycles incurred by bus accesses; the
+    // CPU (and DMA) drain it after each unit of work via bus_drain_pending().
+    WaitState wait_state;
+    int pending_cycles;
+    uint32_t last_access_addr;
+    uint8_t last_access_size;
 
     // Subsystem pointers (wired during gba_init)
     ARM7TDMI* cpu;
@@ -62,5 +87,13 @@ uint32_t bus_read32(Bus* bus, uint32_t addr);
 void bus_write8(Bus* bus, uint32_t addr, uint8_t val);
 void bus_write16(Bus* bus, uint32_t addr, uint16_t val);
 void bus_write32(Bus* bus, uint32_t addr, uint32_t val);
+
+/* Returns the wait cycles accumulated since the last call, then resets. */
+int bus_drain_pending(Bus* bus);
+
+/* Re-derive transient bus state (parsed WAITCNT, access tracking) from
+ * io_regs after a savestate load — io_regs is serialized but the cached
+ * decoded fields aren't, so they need rebuilding. */
+void bus_post_load(Bus* bus);
 
 #endif // BUS_H
