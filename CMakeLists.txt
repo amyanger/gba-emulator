@@ -70,6 +70,7 @@ set(SOURCES
     src/frontend/frontend.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
+    src/frontend/slot_picker.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
     src/frontend/overlay_draw.c
@@ -153,6 +154,7 @@ set(LIB_SOURCES
     src/trace/trace.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
+    src/frontend/slot_picker.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
     src/frontend/overlay_draw.c

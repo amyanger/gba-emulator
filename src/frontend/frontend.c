@@ -1,6 +1,7 @@
 #include "frontend.h"
 #include "frame_advance.h"
 #include "input_display.h"
+#include "slot_picker.h"
 #include "gba.h"
 #include "apu/apu.h"
 #include "input/input.h"
@@ -77,6 +78,7 @@ bool frontend_init(Frontend* fe, int scale) {
     fe->fullscreen = false;
     fe->muted = false;
     fe->controller_keys = 0;
+    fe->slot_picker.mode = SLOT_PICKER_CLOSED;
 
     fe->controller = NULL;
     for (int i = 0; i < SDL_NumJoysticks(); i++) {
@@ -161,12 +163,21 @@ static uint16_t sdl_to_gba_key(SDL_Scancode sc) {
 void frontend_poll_input(Frontend* fe, GBA* gba) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-        switch (event.type) {
-        case SDL_QUIT:
+        /* SDL_QUIT must always be honored, even when a modal is open. */
+        if (event.type == SDL_QUIT) {
             fe->running = false;
             gba->running = false;
-            break;
+            continue;
+        }
 
+        /* If a slot-picker modal is open, route events to it first. */
+        if (slot_picker_is_open(fe)) {
+            if (slot_picker_handle_event(fe, gba, &event)) {
+                continue;
+            }
+        }
+
+        switch (event.type) {
 #ifdef ENABLE_XRAY
         case SDL_WINDOWEVENT:
             /* Handle X-Ray window close button */
@@ -205,6 +216,14 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             // Save state hotkeys
             if (event.key.keysym.scancode == SDL_SCANCODE_F5) {
                 fe->save_requested = true;
+            }
+            if (event.key.keysym.scancode == SDL_SCANCODE_F6 &&
+                !event.key.repeat) {
+                slot_picker_open_label_edit(fe);
+            }
+            if (event.key.keysym.scancode == SDL_SCANCODE_F7 &&
+                !event.key.repeat) {
+                slot_picker_open_list(fe);
             }
             if (event.key.keysym.scancode == SDL_SCANCODE_F8) {
                 fe->load_requested = true;

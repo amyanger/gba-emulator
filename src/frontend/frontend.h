@@ -3,11 +3,12 @@
 
 #include "common.h"
 #include <SDL2/SDL.h>
+#include "frontend/slot_picker.h"
 
 // Forward declaration
 typedef struct GBA GBA;
 
-typedef struct {
+typedef struct Frontend {
     SDL_Window* window;
     SDL_Renderer* renderer;
     SDL_Texture* texture;
@@ -44,6 +45,8 @@ typedef struct {
     bool input_display_enabled; // F3 — mini-GBA HUD showing held buttons
     bool muted;              // M key / --mute flag — drop audio, keep emulation running
     uint16_t controller_keys;  // bitmask of keys held by gamepad (avoids clobbering keyboard)
+
+    SlotPicker slot_picker;  // F6/F7 modal slot picker and label editor
 } Frontend;
 
 // Forward declaration

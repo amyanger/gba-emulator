@@ -3,6 +3,7 @@
 #include "cheat/cheat_file.h"
 #include "frontend/frontend.h"
 #include "frontend/input_display.h"
+#include "frontend/slot_picker.h"
 #ifdef ENABLE_REWIND
 #include "rewind/rewind.h"
 #endif
@@ -24,6 +25,7 @@ static XRayState s_xray_state;
 static void render_with_overlay(Frontend* fe, GBA* gba) {
     frontend_overlay_clear(fe);
     input_display_render(fe, gba);
+    slot_picker_render(fe);
     frontend_present_frame(fe, gba->ppu.framebuffer);
 }
 
