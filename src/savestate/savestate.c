@@ -8,7 +8,8 @@
 /* -------------------------------------------------------------------------- */
 /*  Header layout constants                                                   */
 /* -------------------------------------------------------------------------- */
-#define HEADER_SIZE      48
+#define HEADER_SIZE_V5    48   /* v5 header (no label) */
+#define HEADER_SIZE       80   /* v6 header (adds 32-byte label at 0x30) */
 #define HEADER_OFF_MAGIC  0x00
 #define HEADER_OFF_VER    0x04
 #define HEADER_OFF_FSIZE  0x08
@@ -18,6 +19,7 @@
 #define HEADER_OFF_TITLE  0x18
 #define HEADER_OFF_TIME   0x24
 #define HEADER_OFF_RSVD   0x2C
+#define HEADER_OFF_LABEL  0x30
 
 /* Chunk IDs (4 bytes each, stored as uint32_t LE) */
 #define CHUNK_GBA  0x00414247  /* "GBA\0" */
@@ -727,7 +729,81 @@ static uint32_t get_rom_crc(const Cartridge* cart) {
 }
 
 /* -------------------------------------------------------------------------- */
-/*  Public API                                                                */
+/*  Label API                                                                 */
+/* -------------------------------------------------------------------------- */
+bool savestate_buffer_peek_label(const uint8_t* buf, size_t size,
+                                 char* out, size_t out_size) {
+    if (!buf || !out || out_size == 0) return false;
+    if (size < HEADER_SIZE_V5) return false;
+
+    uint32_t magic = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8)
+                   | ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24);
+    if (magic != SAVESTATE_MAGIC) return false;
+
+    uint32_t version = (uint32_t)buf[4] | ((uint32_t)buf[5] << 8)
+                     | ((uint32_t)buf[6] << 16) | ((uint32_t)buf[7] << 24);
+
+    if (version == SAVESTATE_VERSION_LEGACY_V5) {
+        out[0] = '\0';
+        return true;
+    }
+    if (version != SAVESTATE_VERSION) return false;
+    if (size < HEADER_SIZE) return false;
+
+    size_t copy = SAVESTATE_LABEL_LEN < out_size
+                  ? SAVESTATE_LABEL_LEN : out_size;
+    memcpy(out, buf + HEADER_OFF_LABEL, copy);
+    out[copy - 1] = '\0';
+    return true;
+}
+
+bool savestate_peek_label(const char* path, char* out, size_t out_size) {
+    if (!path || !out || out_size == 0) return false;
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    uint8_t hdr[HEADER_SIZE];
+    size_t got = fread(hdr, 1, HEADER_SIZE, f);
+    fclose(f);
+    if (got < HEADER_SIZE_V5) return false;
+    return savestate_buffer_peek_label(hdr, got, out, out_size);
+}
+
+bool savestate_buffer_set_label(uint8_t* buf, size_t size, const char* label) {
+    if (!buf || !label) return false;
+    if (size < HEADER_SIZE) return false;
+
+    uint32_t magic = (uint32_t)buf[0] | ((uint32_t)buf[1] << 8)
+                   | ((uint32_t)buf[2] << 16) | ((uint32_t)buf[3] << 24);
+    if (magic != SAVESTATE_MAGIC) return false;
+
+    uint32_t version = (uint32_t)buf[4] | ((uint32_t)buf[5] << 8)
+                     | ((uint32_t)buf[6] << 16) | ((uint32_t)buf[7] << 24);
+    if (version != SAVESTATE_VERSION) return false;
+
+    /* Copy label, filtering control characters (keep >= 0x20 and != 0x7F),
+     * truncating to SAVESTATE_LABEL_LEN - 1 visible bytes. */
+    uint8_t* dest = buf + HEADER_OFF_LABEL;
+    size_t out_pos = 0;
+    for (size_t i = 0; label[i] != '\0' && out_pos < SAVESTATE_LABEL_LEN - 1; i++) {
+        uint8_t c = (uint8_t)label[i];
+        if (c >= 0x20 && c != 0x7F) {
+            dest[out_pos++] = c;
+        }
+    }
+    /* NUL-terminate and zero remaining bytes */
+    memset(dest + out_pos, 0, SAVESTATE_LABEL_LEN - out_pos);
+    return true;
+}
+
+/* Test-only accessor: exposes the internal crc32() to test_savestate.c which
+ * includes savestate.c directly and needs to recompute body CRC when
+ * synthesizing legacy v5 buffers. */
+uint32_t test_savestate_crc32(const uint8_t* data, size_t len) {
+    return crc32(data, len);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Public API                                                                 */
 /* -------------------------------------------------------------------------- */
 SaveStateResult savestate_save_to_buffer(GBA* gba, uint8_t** out, size_t* out_size) {
     if (!gba || !out || !out_size) return SS_ERR_FILE_OPEN;
@@ -769,7 +845,7 @@ SaveStateResult savestate_save_to_buffer(GBA* gba, uint8_t** out, size_t* out_si
 
     uint32_t rom_crc = get_rom_crc(&gba->cart);
 
-    /* Fill in the 48-byte header */
+    /* Fill in the 80-byte v6 header */
     uint8_t* h = wb.data;
     h[0] = (uint8_t)(SAVESTATE_MAGIC & 0xFF);
     h[1] = (uint8_t)((SAVESTATE_MAGIC >> 8) & 0xFF);
@@ -809,6 +885,8 @@ SaveStateResult savestate_save_to_buffer(GBA* gba, uint8_t** out, size_t* out_si
     h[43] = (uint8_t)((ts >> 56) & 0xFF);
     /* Reserved */
     memset(h + HEADER_OFF_RSVD, 0, 4);
+    /* v6 label region — zeroed (empty label by default) */
+    memset(h + HEADER_OFF_LABEL, 0, SAVESTATE_LABEL_LEN);
 
     /* Hand ownership of the buffer to the caller — caller frees with free(). */
     *out = wb.data;
@@ -819,7 +897,7 @@ SaveStateResult savestate_save_to_buffer(GBA* gba, uint8_t** out, size_t* out_si
 SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t size) {
     if (!gba || !buf) return SS_ERR_FILE_READ;
 
-    if (size < HEADER_SIZE) {
+    if (size < HEADER_SIZE_V5) {
         LOG_ERROR("Save state: buffer too small (%zu bytes)", size);
         return SS_ERR_TRUNCATED;
     }
@@ -839,10 +917,15 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
                      | ((uint32_t)hdr[5] << 8)
                      | ((uint32_t)hdr[6] << 16)
                      | ((uint32_t)hdr[7] << 24);
-    if (version != SAVESTATE_VERSION) {
-        LOG_ERROR("Save state: version %u not supported (expected %u)", version, SAVESTATE_VERSION);
+    bool legacy_v5 = false;
+    if (version == SAVESTATE_VERSION_LEGACY_V5) {
+        legacy_v5 = true;
+    } else if (version != SAVESTATE_VERSION) {
+        LOG_ERROR("Save state: version %u not supported (expected %u, or legacy %u)",
+                  version, SAVESTATE_VERSION, SAVESTATE_VERSION_LEGACY_V5);
         return SS_ERR_BAD_VERSION;
     }
+    uint32_t header_size = legacy_v5 ? HEADER_SIZE_V5 : HEADER_SIZE;
 
     uint32_t total_size = (uint32_t)hdr[8]
                         | ((uint32_t)hdr[9] << 8)
@@ -871,7 +954,7 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
     }
 
     /* Validate data CRC */
-    uint32_t computed_crc = crc32(buf + HEADER_SIZE, size - HEADER_SIZE);
+    uint32_t computed_crc = crc32(buf + header_size, size - header_size);
     if (computed_crc != stored_crc) {
         LOG_ERROR("Save state: CRC mismatch (stored=0x%08X, computed=0x%08X)",
                   stored_crc, computed_crc);
@@ -879,7 +962,7 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
     }
 
     /* Parse chunks */
-    const uint8_t* cur = buf + HEADER_SIZE;
+    const uint8_t* cur = buf + header_size;
     const uint8_t* end = buf + size;
 
     while (cur + 8 <= end) {
@@ -984,7 +1067,7 @@ SaveStateResult savestate_load(GBA* gba, const char* path) {
     long file_len = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    if (file_len < HEADER_SIZE) {
+    if (file_len < HEADER_SIZE_V5) {
         LOG_ERROR("Save state: file too small (%ld bytes)", file_len);
         fclose(f);
         return SS_ERR_TRUNCATED;

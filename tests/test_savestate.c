@@ -145,6 +145,119 @@ TEST(savestate_sio_roundtrip) {
     gba_destroy(&dst);
 }
 
+extern uint32_t test_savestate_crc32(const uint8_t*, size_t);
+
+TEST(savestate_v5_loads_with_empty_label) {
+    GBA gba;
+    gba_init(&gba);
+
+    /* Save a v6 buffer */
+    uint8_t* buf = NULL;
+    size_t size = 0;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &buf, &size));
+
+    /* Synthesize a v5 buffer: remove the 32-byte label region at offset 0x30..0x4F,
+     * then patch version=5, fsize, and recompute body CRC. */
+    size_t v5_size = size - 32; /* HEADER_SIZE_V5 = 48; HEADER_SIZE = 80; diff = 32 */
+    uint8_t* v5_buf = (uint8_t*)malloc(v5_size);
+    ASSERT_TRUE(v5_buf != NULL);
+
+    /* Copy header bytes 0..0x2F (first 48 bytes of v6 = all of v5 header) */
+    memcpy(v5_buf, buf, 0x30);
+    /* Copy body (starts at offset 0x50 in v6, goes to offset 0x30 in v5) */
+    memcpy(v5_buf + 0x30, buf + 0x50, size - 0x50);
+
+    /* Patch version to 5 */
+    v5_buf[4] = 5;
+    v5_buf[5] = 0;
+    v5_buf[6] = 0;
+    v5_buf[7] = 0;
+
+    /* Patch fsize */
+    uint32_t v5_sz = (uint32_t)v5_size;
+    v5_buf[8]  = (uint8_t)(v5_sz & 0xFF);
+    v5_buf[9]  = (uint8_t)((v5_sz >> 8) & 0xFF);
+    v5_buf[10] = (uint8_t)((v5_sz >> 16) & 0xFF);
+    v5_buf[11] = (uint8_t)((v5_sz >> 24) & 0xFF);
+
+    /* Recompute body CRC over bytes [48..v5_size) */
+    uint32_t new_crc = test_savestate_crc32(v5_buf + 48, v5_size - 48);
+    v5_buf[12] = (uint8_t)(new_crc & 0xFF);
+    v5_buf[13] = (uint8_t)((new_crc >> 8) & 0xFF);
+    v5_buf[14] = (uint8_t)((new_crc >> 16) & 0xFF);
+    v5_buf[15] = (uint8_t)((new_crc >> 24) & 0xFF);
+
+    /* Load the synthesized v5 buffer — must succeed */
+    gba_init(&gba);
+    ASSERT_EQ(SS_OK, savestate_load_from_buffer(&gba, v5_buf, v5_size));
+
+    /* Label must be empty */
+    char label[32];
+    ASSERT_EQ(true, savestate_buffer_peek_label(v5_buf, v5_size, label, sizeof(label)));
+    ASSERT_STR_EQ("", label);
+
+    free(buf);
+    free(v5_buf);
+    gba_destroy(&gba);
+}
+
+TEST(savestate_save_writes_v6_with_label) {
+    GBA gba;
+    gba_init(&gba);
+    uint8_t* buf = NULL;
+    size_t size = 0;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &buf, &size));
+    ASSERT_EQ(true, savestate_buffer_set_label(buf, size, "before-rival"));
+
+    char label[32];
+    ASSERT_EQ(true, savestate_buffer_peek_label(buf, size, label, sizeof(label)));
+    ASSERT_STR_EQ("before-rival", label);
+
+    ASSERT_EQ(6, buf[4]);
+
+    gba_init(&gba);
+    ASSERT_EQ(SS_OK, savestate_load_from_buffer(&gba, buf, size));
+
+    free(buf);
+    gba_destroy(&gba);
+}
+
+TEST(savestate_label_truncates_at_31_bytes) {
+    GBA gba;
+    gba_init(&gba);
+    uint8_t* buf = NULL;
+    size_t size = 0;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &buf, &size));
+
+    char big[51];
+    memset(big, 'A', 50);
+    big[50] = '\0';
+    ASSERT_EQ(true, savestate_buffer_set_label(buf, size, big));
+
+    char out[32];
+    ASSERT_EQ(true, savestate_buffer_peek_label(buf, size, out, sizeof(out)));
+    ASSERT_EQ(31, (int)strlen(out));
+    free(buf);
+    gba_destroy(&gba);
+}
+
+TEST(savestate_label_filters_control_chars) {
+    GBA gba;
+    gba_init(&gba);
+    uint8_t* buf = NULL;
+    size_t size = 0;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &buf, &size));
+
+    ASSERT_EQ(true, savestate_buffer_set_label(buf, size,
+              "ab\x01""c\x1F""d\x7F""e"));
+
+    char out[32];
+    savestate_buffer_peek_label(buf, size, out, sizeof(out));
+    ASSERT_STR_EQ("abcde", out);
+    free(buf);
+    gba_destroy(&gba);
+}
+
 void run_savestate_tests(void) {
     TEST_SUITE("savestate");
     RUN_TEST(crc32_empty);
@@ -157,4 +270,8 @@ void run_savestate_tests(void) {
     RUN_TEST(slot_path_small_buffer);
     RUN_TEST(savestate_buffer_roundtrip);
     RUN_TEST(savestate_sio_roundtrip);
+    RUN_TEST(savestate_v5_loads_with_empty_label);
+    RUN_TEST(savestate_save_writes_v6_with_label);
+    RUN_TEST(savestate_label_truncates_at_31_bytes);
+    RUN_TEST(savestate_label_filters_control_chars);
 }
