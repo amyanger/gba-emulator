@@ -1,5 +1,7 @@
 #include "dma.h"
 #include "bus.h"
+#include "cartridge/cartridge.h"
+#include "cartridge/eeprom.h"
 #include "interrupt/interrupt.h"
 
 #ifdef ENABLE_XRAY
@@ -96,6 +98,17 @@ int dma_execute(DMAController* dma, int ch) {
     uint32_t dst_mask = (ch == 3) ? 0x0FFFFFFF : 0x07FFFFFF;
     dc->source &= src_mask;
     dc->dest &= dst_mask;
+
+    /* EEPROM bit-serial protocol uses the DMA count as a phase signal:
+     * 9/17/73/81 select 4Kbit vs 64Kbit and read vs write, 68 marks the
+     * read-data return phase, 1 is a ready poll. Notify the chip before
+     * the first halfword so it can lock its size and reset state. */
+    if (bus->cart && bus->cart->save_type == SAVE_EEPROM && !use_32) {
+        if (eeprom_addr_in_range(bus->cart, dc->dest) ||
+            eeprom_addr_in_range(bus->cart, dc->source)) {
+            eeprom_dma_begin(&bus->cart->eeprom, count);
+        }
+    }
 
     // Execute the transfer
     for (uint32_t i = 0; i < count; i++) {

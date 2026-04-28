@@ -393,8 +393,9 @@ static void save_irq_chunk(WriteBuffer* wb, InterruptController* ic) {
 }
 
 static void save_cart_chunk(WriteBuffer* wb, Cartridge* cart) {
-    /* save_type + flash + flash meta + sram + GPIO (6) + RTC (23) */
-    uint32_t payload_size = 1 + 0x20000 + 4 + 0x8000 + 6 + 23;
+    /* save_type + flash + flash meta + sram + GPIO (6) + RTC (23) + EEPROM (8211) */
+    uint32_t eeprom_size = (uint32_t)EEPROM_MAX_SIZE + 1 + 1 + 2 + 2 + 2 + 8 + 2 + 1;
+    uint32_t payload_size = 1 + 0x20000 + 4 + 0x8000 + 6 + 23 + eeprom_size;
     write_chunk_header(wb, CHUNK_CART, payload_size);
 
     write_u8(wb, (uint8_t)cart->save_type);
@@ -422,6 +423,18 @@ static void save_cart_chunk(WriteBuffer* wb, Cartridge* cart) {
     write_u8(wb, cart->rtc.payload_bit);
     write_u8(wb, cart->rtc.status_reg);
     write_u64(wb, (uint64_t)cart->rtc.offset_secs);
+
+    /* EEPROM data + protocol state. Detected size + protocol phase need to
+     * roundtrip so a state captured mid-transfer resumes coherently. */
+    write_bytes(wb, cart->eeprom.data, EEPROM_MAX_SIZE);
+    write_u8(wb, cart->eeprom.addr_bits);
+    write_u8(wb, (uint8_t)cart->eeprom.state);
+    write_u16(wb, cart->eeprom.addr);
+    write_u16(wb, cart->eeprom.rx_count);
+    write_u16(wb, cart->eeprom.expected_dma);
+    write_u64(wb, cart->eeprom.shift);
+    write_u16(wb, cart->eeprom.tx_count);
+    write_u8(wb, cart->eeprom.dirty ? 1 : 0);
 }
 
 static void save_inpt_chunk(WriteBuffer* wb, InputState* input) {
@@ -662,6 +675,17 @@ static void load_cart_chunk(const uint8_t** cur, Cartridge* cart) {
     cart->rtc.prev_cs = (cart->gpio.data >> 2) & 1;
     cart->rtc.prev_sck = cart->gpio.data & 1;
     cart->rtc.sio_out = 0;
+
+    /* EEPROM data + protocol state. */
+    read_bytes(cur, cart->eeprom.data, EEPROM_MAX_SIZE);
+    cart->eeprom.addr_bits = read_u8(cur);
+    cart->eeprom.state = (EEPROMState)read_u8(cur);
+    cart->eeprom.addr = read_u16(cur);
+    cart->eeprom.rx_count = read_u16(cur);
+    cart->eeprom.expected_dma = read_u16(cur);
+    cart->eeprom.shift = read_u64(cur);
+    cart->eeprom.tx_count = read_u16(cur);
+    cart->eeprom.dirty = read_u8(cur) != 0;
 }
 
 static void load_inpt_chunk(const uint8_t** cur, InputState* input) {

@@ -1,4 +1,5 @@
 #include "cartridge.h"
+#include "eeprom.h"
 #include "flash.h"
 #include "gpio.h"
 #include "rtc.h"
@@ -12,6 +13,7 @@ static size_t payload_size_for(const Cartridge* cart) {
     case SAVE_SRAM:     return sizeof(cart->sram);
     case SAVE_FLASH64:  return 0x10000;
     case SAVE_FLASH128: return 0x20000;
+    case SAVE_EEPROM:   return EEPROM_MAX_SIZE;
     default:            return 0;
     }
 }
@@ -89,6 +91,7 @@ bool cartridge_load(Cartridge* cart, const char* path) {
 
     gpio_init(cart);
     rtc_init(&cart->rtc);
+    eeprom_init(&cart->eeprom);
 
     // Try to load existing save
     cartridge_load_save_file(cart);
@@ -138,6 +141,12 @@ void cartridge_detect_save_type(Cartridge* cart) {
 
 uint8_t cartridge_read8(Cartridge* cart, uint32_t addr) {
     if (addr >= 0x08000000 && addr < 0x0E000000) {
+        if (eeprom_addr_in_range(cart, addr)) {
+            /* EEPROM data port lives in bit 0 of each halfword. The LSB
+             * sits in the low byte; the high byte returns 0. */
+            if (addr & 1) return 0;
+            return eeprom_read_bit(&cart->eeprom);
+        }
         uint32_t offset = addr & 0x01FFFFFF;
         if (offset >= 0xC4 && offset <= 0xC9 && (cart->gpio.control & 1)) {
             uint32_t reg = offset & ~1u;
@@ -166,6 +175,16 @@ uint8_t cartridge_read8(Cartridge* cart, uint32_t addr) {
 
 void cartridge_write8(Cartridge* cart, uint32_t addr, uint8_t val) {
     if (addr >= 0x08000000 && addr < 0x0E000000) {
+        if (eeprom_addr_in_range(cart, addr)) {
+            /* Only the low byte carries the protocol bit; high byte is a no-op. */
+            if (addr & 1) return;
+            eeprom_write_bit(&cart->eeprom, val & 1);
+            if (cart->eeprom.dirty) {
+                cart->save_dirty = true;
+                cart->eeprom.dirty = false;
+            }
+            return;
+        }
         uint32_t offset = addr & 0x01FFFFFF;
         if (offset >= 0xC4 && offset <= 0xC9) {
             uint32_t reg = offset & ~1u;
@@ -226,6 +245,10 @@ void cartridge_save_to_file(Cartridge* cart) {
         expected = 0x20000;
         written = fwrite(cart->flash.data, 1, expected, f);
         break;
+    case SAVE_EEPROM:
+        expected = EEPROM_MAX_SIZE;
+        written = fwrite(cart->eeprom.data, 1, expected, f);
+        break;
     default:
         break;
     }
@@ -278,6 +301,9 @@ void cartridge_load_save_file(Cartridge* cart) {
     case SAVE_FLASH64:
     case SAVE_FLASH128:
         fread(cart->flash.data, 1, to_read, f);
+        break;
+    case SAVE_EEPROM:
+        fread(cart->eeprom.data, 1, to_read, f);
         break;
     default:
         break;

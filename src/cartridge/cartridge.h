@@ -71,6 +71,39 @@ typedef struct {
     uint16_t control;     /* 0x080000C8: bit 0 = read_enable */
 } GPIOState;
 
+/* EEPROM bit-serial protocol (GBATEK).
+ *
+ * Two sizes exist: 4Kbit (512B, 6-bit address) and 64Kbit (8KB, 14-bit
+ * address). The size is determined dynamically from the first DMA transfer
+ * count: 9 or 73 → 4Kbit; 17 or 81 → 64Kbit. Each DMA halfword carries one
+ * protocol bit (LSB only). We always allocate the 8KB max so the same
+ * struct serves both, and so a savestate captured at one size loads at the
+ * other without truncation. */
+#define EEPROM_MAX_SIZE 0x2000  /* 8KB */
+
+typedef enum {
+    EEPROM_IDLE,        /* Awaiting DMA begin */
+    EEPROM_RX_CMD,      /* Receiving 2-bit command */
+    EEPROM_RX_ADDR_R,   /* Receiving address bits for read */
+    EEPROM_RX_ADDR_W,   /* Receiving address bits for write */
+    EEPROM_RX_DATA,     /* Receiving 64 data bits for write */
+    EEPROM_TX_DATA,     /* Transmitting 4 ignore + 64 data bits */
+    EEPROM_READY        /* Write complete; subsequent reads return 1 */
+} EEPROMState;
+
+typedef struct {
+    uint8_t  data[EEPROM_MAX_SIZE];
+    uint8_t  addr_bits;     /* 0=unknown, 6=4Kbit, 14=64Kbit */
+
+    EEPROMState state;
+    uint16_t  addr;         /* current command's target address */
+    uint16_t  rx_count;     /* bits received in current RX state */
+    uint16_t  expected_dma; /* DMA count for the in-flight transfer */
+    uint64_t  shift;        /* shift register for tx (data out) / rx (data in) */
+    uint16_t  tx_count;     /* bits sent so far in TX_DATA */
+    bool     dirty;         /* set when data is modified */
+} EEPROMChip;
+
 struct Cartridge {
     uint8_t* rom;
     uint32_t rom_size;
@@ -78,6 +111,7 @@ struct Cartridge {
     SaveType save_type;
     FlashChip flash;
     uint8_t sram[0x8000]; // 32KB
+    EEPROMChip eeprom;
     RTCState rtc;
     GPIOState gpio;
 

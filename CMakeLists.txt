@@ -163,6 +163,7 @@ set(TEST_SOURCES
     tests/test_trace.c
     tests/test_cartridge_autosave.c
     tests/test_keymap.c
+    tests/test_eeprom.c
 )
 
 # Several tests rely on POSIX-only APIs (unistd.h, pthreads, AF_UNIX
