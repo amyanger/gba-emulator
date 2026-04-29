@@ -15,6 +15,12 @@ if(MSVC)
     add_compile_options(/W4 /wd4100 /wd4244 /wd4267 /wd4146 /wd4310)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
+    # Suppress Clang's pedantic warning about `, ##__VA_ARGS__` in the LOG
+    # macros. The syntax is widely supported (GCC, Clang, MSVC) and is the
+    # canonical way to make variadic macros optional in C11.
+    if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+        add_compile_options(-Wno-gnu-zero-variadic-macro-arguments)
+    endif()
     set(CMAKE_C_FLAGS_DEBUG "-g -O0")
     set(CMAKE_C_FLAGS_RELEASE "-O2")
 endif()
