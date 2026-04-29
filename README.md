@@ -412,7 +412,7 @@ The ARM7TDMI uses a 3-stage pipeline (fetch-decode-execute). The PC is always 2 
 | Game | Status |
 |------|--------|
 | Pokemon Emerald (BPEE) | Fully playable |
-| Pokemon FireRed (BPRE) | Boots, save type auto-detected (Flash 128K). Not yet verified end-to-end. |
+| Pokemon FireRed (BPRE) | Boots through the Game Freak intro to the title screen. Save type auto-detected (Flash 128K). Full playthrough not yet verified. |
 
 ## Testing
 
