@@ -1024,8 +1024,13 @@ void bios_hle_execute(ARM7TDMI* cpu, uint32_t swi_num) {
         swi_halt(cpu);
         break;
 
-    case 0x03: /* Stop — deep sleep, treat as halt */
-        LOG_WARN("SWI 0x03 Stop: treating as Halt");
+    case 0x03: /* Stop — deep sleep, treat as halt
+         *
+         * Real Stop puts the CPU into deep sleep until a key/cart/serial
+         * IRQ wakes it. Halt wakes on any unmasked IRQ. The behavioural
+         * gap is mostly invisible to games — the wake-up path through
+         * IntrWait still takes the same ack route — so Halt is a fine
+         * approximation for our scanline-paced timing model. */
         swi_halt(cpu);
         break;
 
