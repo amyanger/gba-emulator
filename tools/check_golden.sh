@@ -12,7 +12,7 @@ fi
 EMU="$1"
 ROM="$2"
 GOLDEN="$3"
-FRAMES="${4:-$(wc -l < "$GOLDEN")}"
+FRAMES="${4:-$(wc -l < "$GOLDEN" | tr -d ' ')}"
 
 ACTUAL="$(mktemp)"
 trap 'rm -f "$ACTUAL"' EXIT
