@@ -349,11 +349,16 @@ int cpu_step(ARM7TDMI* cpu) {
             cpu->pipeline[0] = bus_read16(cpu->bus, cpu->regs[REG_PC]);
             cpu->pipeline[1] = bus_read16(cpu->bus, cpu->regs[REG_PC] + 2);
             cpu->regs[REG_PC] += 4;
+            /* Open-bus latch: in Thumb mode, the latched value is the last
+             * prefetched halfword duplicated into both halves. */
+            cpu->bus->open_bus =
+                (uint32_t)cpu->pipeline[1] | ((uint32_t)cpu->pipeline[1] << 16);
         } else {
             /* ARM: two 32-bit fetches */
             cpu->pipeline[0] = bus_read32(cpu->bus, cpu->regs[REG_PC]);
             cpu->pipeline[1] = bus_read32(cpu->bus, cpu->regs[REG_PC] + 4);
             cpu->regs[REG_PC] += 8;
+            cpu->bus->open_bus = cpu->pipeline[1];
         }
         cpu->pipeline_valid = true;
         cycles = 2; /* pipeline refill cost */
@@ -369,6 +374,8 @@ int cpu_step(ARM7TDMI* cpu) {
             cpu->pipeline[0] = cpu->pipeline[1];
             cpu->pipeline[1] = bus_read16(cpu->bus, cpu->regs[REG_PC]);
             cpu->regs[REG_PC] += 2;
+            cpu->bus->open_bus =
+                (uint32_t)cpu->pipeline[1] | ((uint32_t)cpu->pipeline[1] << 16);
         }
         return cycles + bus_drain_pending(cpu->bus);
     } else {
@@ -387,6 +394,7 @@ int cpu_step(ARM7TDMI* cpu) {
             cpu->pipeline[0] = cpu->pipeline[1];
             cpu->pipeline[1] = bus_read32(cpu->bus, cpu->regs[REG_PC]);
             cpu->regs[REG_PC] += 4;
+            cpu->bus->open_bus = cpu->pipeline[1];
         }
         return cycles + bus_drain_pending(cpu->bus);
     }

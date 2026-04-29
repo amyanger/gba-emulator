@@ -1304,7 +1304,10 @@ static uint8_t bus_read8_raw(Bus* bus, uint32_t addr) {
         return 0;
 
     default:
-        return (uint8_t)(bus->open_bus);
+        /* Open bus: return the corresponding byte of the most recently
+         * latched prefetched instruction, not just the low byte. Real
+         * hardware exposes the prefetch word directly. */
+        return (uint8_t)(bus->open_bus >> ((addr & 3) * 8));
     }
 }
 
