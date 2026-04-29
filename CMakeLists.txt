@@ -180,6 +180,7 @@ set(TEST_SOURCES
     tests/test_bus.c
     tests/test_cpu.c
     tests/test_dma.c
+    tests/test_interrupt.c
     tests/test_rewind.c
     tests/test_screenshot.c
     tests/test_trace.c
