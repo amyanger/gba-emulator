@@ -283,6 +283,22 @@ TEST(waitcnt_prefetch_off_keeps_s_timing) {
     free(bus);
 }
 
+TEST(open_bus_returns_latched_word_byte_at_offset) {
+    Bus* bus = calloc(1, sizeof(Bus));
+    bus_init(bus);
+    /* Simulate a pipeline fetch having latched a 32-bit instruction. */
+    bus->open_bus = 0x12345678;
+    /* Reads from unmapped region (>= 0x10000000) should split the latched
+     * word by byte offset, not return the low byte for every byte. */
+    ASSERT_EQ_HEX(bus_read8(bus, 0x10000000), 0x78);
+    ASSERT_EQ_HEX(bus_read8(bus, 0x10000001), 0x56);
+    ASSERT_EQ_HEX(bus_read8(bus, 0x10000002), 0x34);
+    ASSERT_EQ_HEX(bus_read8(bus, 0x10000003), 0x12);
+    /* And a 32-bit unmapped read returns the whole latched word. */
+    ASSERT_EQ_HEX(bus_read32(bus, 0x10000000), 0x12345678);
+    free(bus);
+}
+
 TEST(waitcnt_sram_is_n_only) {
     Bus* bus = calloc(1, sizeof(Bus));
     bus_init(bus);
@@ -319,4 +335,5 @@ void run_bus_tests(void) {
     RUN_TEST(waitcnt_prefetch_does_not_affect_non_sequential);
     RUN_TEST(waitcnt_prefetch_32bit_sequential_uses_two_s);
     RUN_TEST(waitcnt_prefetch_off_keeps_s_timing);
+    RUN_TEST(open_bus_returns_latched_word_byte_at_offset);
 }
