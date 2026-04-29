@@ -67,6 +67,7 @@ set(SOURCES
     src/sio/sio.c
     src/sio/sio_link.c
     src/trace/trace.c
+    src/headless/fb_hash.c
     src/frontend/frontend.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
@@ -152,6 +153,7 @@ set(LIB_SOURCES
     src/sio/sio.c
     src/sio/sio_link.c
     src/trace/trace.c
+    src/headless/fb_hash.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
     src/frontend/slot_picker.c
@@ -176,6 +178,7 @@ set(TEST_SOURCES
     tests/test_keymap.c
     tests/test_eeprom.c
     tests/test_practice.c
+    tests/test_fb_hash.c
 )
 
 # Several tests rely on POSIX-only APIs (unistd.h, pthreads, AF_UNIX
