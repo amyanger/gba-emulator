@@ -3,6 +3,7 @@
 #include "common.h"
 
 int headless_run(GBA* gba, int frames, FILE* hash_out) {
+    if (frames < 0) return 1;
     for (int i = 0; i < frames; i++) {
         gba_run_frame(gba);
         uint32_t h = fb_hash_fnv1a(gba->ppu.framebuffer,

@@ -8,7 +8,8 @@
    `hash_out` in the format "%d %08x\n": 0-based frame index, a space, and 8
    lowercase hex digits of the FNV-1a framebuffer hash.
 
-   Returns 0 on success, non-zero on I/O failure (e.g. fprintf returns negative).
+   Returns 0 on success, non-zero on I/O failure (e.g. fprintf returns negative)
+   or if `frames` is negative.
 
    The caller owns `hash_out` — it opens and closes the stream. This function
    does not flush; call fflush or close to force the writes to disk. */
