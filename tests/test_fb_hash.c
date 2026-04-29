@@ -11,7 +11,8 @@
 #define FB_PIXELS (FB_W * FB_H)
 
 TEST(fb_hash_empty_input_is_offset_basis) {
-    ASSERT_EQ_HEX(fb_hash_fnv1a(NULL, 0), 0x811c9dc5u);
+    uint16_t fb[1] = {0};
+    ASSERT_EQ_HEX(fb_hash_fnv1a(fb, 0), 0x811c9dc5u);
 }
 
 TEST(fb_hash_changes_on_single_pixel_change) {
@@ -29,8 +30,6 @@ TEST(fb_hash_changes_on_single_pixel_change) {
 TEST(fb_hash_is_byte_order_stable) {
     uint16_t pixels[2] = {0x1234, 0xABCD};
 
-    /* Manually fold the little-endian byte sequence 0x34, 0x12, 0xCD, 0xAB
-       through FNV-1a so the test pins the byte order, not just the result. */
     uint32_t expected = 0x811c9dc5u;
     const uint8_t bytes[4] = {0x34, 0x12, 0xCD, 0xAB};
     for (size_t i = 0; i < sizeof(bytes); i++) {
