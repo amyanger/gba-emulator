@@ -173,6 +173,10 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    if (trace_path) {
+        trace_init(trace_path, trace_from, trace_to, trace_frames);
+    }
+
     if (headless) {
         if (headless_frames <= 0) {
             LOG_ERROR("--headless requires --frames <n> with n > 0");
@@ -198,10 +202,6 @@ int main(int argc, char* argv[]) {
         }
         gba_destroy(&gba);
         return rc;
-    }
-
-    if (trace_path) {
-        trace_init(trace_path, trace_from, trace_to, trace_frames);
     }
 
     // Initialize frontend (SDL2)
