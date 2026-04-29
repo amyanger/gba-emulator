@@ -45,3 +45,24 @@ jobs:
       - name: Run tests
         working-directory: build
         run: ctest --output-on-failure -C Debug
+
+  golden-frame:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+
+      - name: Configure (Release)
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build emulator
+        run: cmake --build build --target gba_emulator -j
+
+      - name: Fetch test ROMs
+        run: tools/fetch_test_roms.sh /tmp/gba-test-roms
+
+      - name: Check golden frames (jsmolka arm)
+        run: tools/check_golden.sh build/gba_emulator /tmp/gba-test-roms/jsmolka_arm.gba tests/golden/jsmolka_arm.hash
