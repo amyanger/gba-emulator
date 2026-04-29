@@ -71,6 +71,7 @@ int main(int argc, char* argv[]) {
     bool headless = false;
     int headless_frames = 0;
     const char* hash_out_path = NULL;
+    const char* screenshot_out_path = NULL;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -102,6 +103,8 @@ int main(int argc, char* argv[]) {
             headless_frames = atoi(argv[++i]);
         } else if (strcmp(argv[i], "--hash-out") == 0 && i + 1 < argc) {
             hash_out_path = argv[++i];
+        } else if (strcmp(argv[i], "--screenshot-out") == 0 && i + 1 < argc) {
+            screenshot_out_path = argv[++i];
         }
     }
 
@@ -187,6 +190,12 @@ int main(int argc, char* argv[]) {
         }
         int rc = headless_run(&gba, headless_frames, hash_out);
         if (hash_out != stdout) fclose(hash_out);
+        if (rc == 0 && screenshot_out_path) {
+            if (!screenshot_save(gba.ppu.framebuffer, screenshot_out_path)) {
+                LOG_ERROR("Failed to write screenshot: %s", screenshot_out_path);
+                rc = 1;
+            }
+        }
         gba_destroy(&gba);
         return rc;
     }

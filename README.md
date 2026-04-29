@@ -199,6 +199,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--headless` | Skip SDL, audio, link cable, X-Ray, and rewind. |
 | `--frames <n>` | Run exactly `n` frames then exit. Required with `--headless`. |
 | `--hash-out <file>` | Write per-frame `<N> <FNV1a-hex>` lines. Defaults to stdout. |
+| `--screenshot-out <file>` | After the run, save the final framebuffer as PNG. |
 
 Headless mode is incompatible with `--link-master` / `--link-client`
 (they would block the dispatch waiting for a peer).
