@@ -5,6 +5,7 @@
 #include "frontend/overlay_draw.h"
 #include "frontend/input_display.h"
 #include "frontend/slot_picker.h"
+#include "headless/headless.h"
 #ifdef ENABLE_REWIND
 #include "rewind/rewind.h"
 #endif
@@ -38,6 +39,9 @@ static void print_usage(const char* prog) {
     printf("  --cheats <file>        Load cheat codes from file (.cht format)\n");
     printf("  --keymap <file>        Load custom keyboard bindings\n");
     printf("  --mute                 Start with audio muted (toggle in-game with M)\n");
+    printf("  --headless             Run without SDL window or audio\n");
+    printf("  --frames <n>           Headless: number of frames to run\n");
+    printf("  --hash-out <file>      Headless: write per-frame framebuffer hashes\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
@@ -64,6 +68,9 @@ int main(int argc, char* argv[]) {
     uint32_t trace_frames = 0;
     int scale = 3;
     bool start_muted = false;
+    bool headless = false;
+    int headless_frames = 0;
+    const char* hash_out_path = NULL;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -89,6 +96,12 @@ int main(int argc, char* argv[]) {
             trace_frames = (uint32_t)strtoul(argv[++i], NULL, 10);
         } else if (strcmp(argv[i], "--mute") == 0) {
             start_muted = true;
+        } else if (strcmp(argv[i], "--headless") == 0) {
+            headless = true;
+        } else if (strcmp(argv[i], "--frames") == 0 && i + 1 < argc) {
+            headless_frames = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--hash-out") == 0 && i + 1 < argc) {
+            hash_out_path = argv[++i];
         }
     }
 
@@ -150,6 +163,27 @@ int main(int argc, char* argv[]) {
         } else {
             LOG_INFO("Loaded %d cheats from %s", loaded, cheat_path);
         }
+    }
+
+    if (headless) {
+        if (headless_frames <= 0) {
+            LOG_ERROR("--headless requires --frames <n> with n > 0");
+            gba_destroy(&gba);
+            return 1;
+        }
+        FILE* hash_out = stdout;
+        if (hash_out_path) {
+            hash_out = fopen(hash_out_path, "w");
+            if (!hash_out) {
+                LOG_ERROR("Failed to open --hash-out file: %s", hash_out_path);
+                gba_destroy(&gba);
+                return 1;
+            }
+        }
+        int rc = headless_run(&gba, headless_frames, hash_out);
+        if (hash_out != stdout) fclose(hash_out);
+        gba_destroy(&gba);
+        return rc;
     }
 
     if (trace_path) {

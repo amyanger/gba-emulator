@@ -67,7 +67,6 @@ set(SOURCES
     src/sio/sio.c
     src/sio/sio_link.c
     src/trace/trace.c
-    src/headless/fb_hash.c
     src/frontend/frontend.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
@@ -75,6 +74,8 @@ set(SOURCES
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
     src/frontend/overlay_draw.c
+    src/headless/fb_hash.c
+    src/headless/headless.c
 )
 
 # X-Ray source files (only compiled when ENABLE_XRAY is ON)
