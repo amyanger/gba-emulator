@@ -37,6 +37,13 @@ typedef struct WaitState {
     uint8_t ws1_s;
     uint8_t ws2_n;
     uint8_t ws2_s;
+    /* Game Pak Prefetch Buffer enabled (WAITCNT bit 14). When set, sequential
+     * ROM accesses pull from a small FIFO that the cart fills during cycles
+     * the CPU isn't using the bus, costing 1 cycle instead of the S timing.
+     * Non-sequential ROM access flushes the FIFO and pays full N. We model
+     * the steady state — S becomes 1 — without simulating the FIFO depth or
+     * fill rate, which is sufficient for our scanline-based timing. */
+    bool prefetch_enabled;
     uint16_t raw;
 } WaitState;
 

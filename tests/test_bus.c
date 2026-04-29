@@ -179,6 +179,7 @@ TEST(waitcnt_write_updates_parsed_state) {
     ASSERT_EQ(bus->wait_state.ws1_s, 4);
     ASSERT_EQ(bus->wait_state.ws2_n, 4);
     ASSERT_EQ(bus->wait_state.ws2_s, 1);
+    ASSERT_EQ(bus->wait_state.prefetch_enabled, true);
     free(bus);
 }
 
@@ -217,6 +218,71 @@ TEST(waitcnt_ewram_charges_extras) {
     free(bus);
 }
 
+TEST(waitcnt_prefetch_makes_sequential_rom_one_cycle) {
+    Bus* bus = calloc(1, sizeof(Bus));
+    bus_init(bus);
+    /* Enable prefetch (bit 14) on top of default WAITCNT=0. */
+    bus_write16(bus, 0x04000204, 0x4000);
+    bus_drain_pending(bus); /* drop the I/O write's own charge */
+
+    /* First ROM access is non-sequential — pays full N=4. Extras=3. */
+    (void)bus_read16(bus, 0x08000000);
+    ASSERT_EQ(bus_drain_pending(bus), 3);
+
+    /* Sequential ROM access now hits the prefetch FIFO: 1 cycle, extras=0. */
+    (void)bus_read16(bus, 0x08000002);
+    ASSERT_EQ(bus_drain_pending(bus), 0);
+    (void)bus_read16(bus, 0x08000004);
+    ASSERT_EQ(bus_drain_pending(bus), 0);
+    free(bus);
+}
+
+TEST(waitcnt_prefetch_does_not_affect_non_sequential) {
+    Bus* bus = calloc(1, sizeof(Bus));
+    bus_init(bus);
+    bus_write16(bus, 0x04000204, 0x4000); /* prefetch on, default N/S */
+    bus_drain_pending(bus);
+
+    /* First non-seq access: full N=4, extras=3. */
+    (void)bus_read16(bus, 0x08000000);
+    ASSERT_EQ(bus_drain_pending(bus), 3);
+
+    /* Jump to a different ROM address — non-sequential, still full N. */
+    (void)bus_read16(bus, 0x08001000);
+    ASSERT_EQ(bus_drain_pending(bus), 3);
+    free(bus);
+}
+
+TEST(waitcnt_prefetch_32bit_sequential_uses_two_s) {
+    Bus* bus = calloc(1, sizeof(Bus));
+    bus_init(bus);
+    bus_write16(bus, 0x04000204, 0x4000);
+    bus_drain_pending(bus);
+
+    /* Prime with a non-seq access first so the next is sequential. */
+    (void)bus_read32(bus, 0x08000000);
+    bus_drain_pending(bus);
+
+    /* 32-bit sequential ROM with prefetch: S+S = 1+1 = 2 cycles, extras=1. */
+    (void)bus_read32(bus, 0x08000004);
+    ASSERT_EQ(bus_drain_pending(bus), 1);
+    free(bus);
+}
+
+TEST(waitcnt_prefetch_off_keeps_s_timing) {
+    Bus* bus = calloc(1, sizeof(Bus));
+    bus_init(bus);
+    /* Default WAITCNT=0 has prefetch off, S=2 for WS0. */
+    ASSERT_EQ(bus->wait_state.prefetch_enabled, false);
+
+    (void)bus_read16(bus, 0x08000000);
+    bus_drain_pending(bus);
+    /* Sequential ROM still pays S=2, extras=1. */
+    (void)bus_read16(bus, 0x08000002);
+    ASSERT_EQ(bus_drain_pending(bus), 1);
+    free(bus);
+}
+
 TEST(waitcnt_sram_is_n_only) {
     Bus* bus = calloc(1, sizeof(Bus));
     bus_init(bus);
@@ -249,4 +315,8 @@ void run_bus_tests(void) {
     RUN_TEST(waitcnt_iwram_is_one_cycle);
     RUN_TEST(waitcnt_ewram_charges_extras);
     RUN_TEST(waitcnt_sram_is_n_only);
+    RUN_TEST(waitcnt_prefetch_makes_sequential_rom_one_cycle);
+    RUN_TEST(waitcnt_prefetch_does_not_affect_non_sequential);
+    RUN_TEST(waitcnt_prefetch_32bit_sequential_uses_two_s);
+    RUN_TEST(waitcnt_prefetch_off_keeps_s_timing);
 }

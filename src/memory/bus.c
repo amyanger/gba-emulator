@@ -1154,14 +1154,15 @@ static const uint8_t WS1_S_TABLE[2] = {4, 1};
 static const uint8_t WS2_S_TABLE[2] = {8, 1};
 
 static void bus_update_waitcnt(Bus* bus, uint16_t val) {
-    bus->wait_state.raw    = val;
-    bus->wait_state.sram_n = WS_N_TABLE[val & 3];
-    bus->wait_state.ws0_n  = WS_N_TABLE[(val >> 2) & 3];
-    bus->wait_state.ws0_s  = WS0_S_TABLE[(val >> 4) & 1];
-    bus->wait_state.ws1_n  = WS_N_TABLE[(val >> 5) & 3];
-    bus->wait_state.ws1_s  = WS1_S_TABLE[(val >> 7) & 1];
-    bus->wait_state.ws2_n  = WS_N_TABLE[(val >> 8) & 3];
-    bus->wait_state.ws2_s  = WS2_S_TABLE[(val >> 10) & 1];
+    bus->wait_state.raw              = val;
+    bus->wait_state.sram_n           = WS_N_TABLE[val & 3];
+    bus->wait_state.ws0_n            = WS_N_TABLE[(val >> 2) & 3];
+    bus->wait_state.ws0_s            = WS0_S_TABLE[(val >> 4) & 1];
+    bus->wait_state.ws1_n            = WS_N_TABLE[(val >> 5) & 3];
+    bus->wait_state.ws1_s            = WS1_S_TABLE[(val >> 7) & 1];
+    bus->wait_state.ws2_n            = WS_N_TABLE[(val >> 8) & 3];
+    bus->wait_state.ws2_s            = WS2_S_TABLE[(val >> 10) & 1];
+    bus->wait_state.prefetch_enabled = (val & 0x4000) != 0;
 }
 
 /* Total cycle cost for a single access of `size` bytes at `addr`, considering
@@ -1193,6 +1194,13 @@ static int bus_region_cycles(const Bus* bus, uint32_t addr, int size, bool seque
         return bus->wait_state.sram_n;
     default:
         return 1;
+    }
+    /* Game Pak Prefetch Buffer (WAITCNT bit 14): only ROM regions reach here.
+     * When the FIFO is enabled, sequential ROM reads come from cache in 1
+     * cycle; non-sequential still pays full N. The first non-seq access
+     * resets the prefetch state implicitly (next access becomes sequential). */
+    if (bus->wait_state.prefetch_enabled && sequential) {
+        s = 1;
     }
     if (size == 4) {
         return sequential ? (s + s) : (n + s);
