@@ -183,6 +183,7 @@ set(TEST_SOURCES
     tests/test_interrupt.c
     tests/test_timer.c
     tests/test_flash.c
+    tests/test_cheat.c
     tests/test_rewind.c
     tests/test_screenshot.c
     tests/test_trace.c

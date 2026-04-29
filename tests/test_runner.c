@@ -13,6 +13,7 @@ void run_dma_tests(void);
 void run_interrupt_tests(void);
 void run_timer_tests(void);
 void run_flash_tests(void);
+void run_cheat_tests(void);
 void run_rewind_tests(void);
 void run_screenshot_tests(void);
 void run_trace_tests(void);
@@ -40,6 +41,7 @@ int main(void) {
     RUN_SUITE(run_interrupt_tests);
     RUN_SUITE(run_timer_tests);
     RUN_SUITE(run_flash_tests);
+    RUN_SUITE(run_cheat_tests);
     RUN_SUITE(run_rewind_tests);
     RUN_SUITE(run_screenshot_tests);
     RUN_SUITE(run_trace_tests);
