@@ -190,7 +190,7 @@ static uint8_t io_read8(Bus* bus, uint32_t addr) {
             return (uint8_t)(bus->interrupts->irf >> 8);
         }
         return bus->io_regs[offset];
-    case 0x204:  /* REG_WAITCNT low byte (stub — read from io_regs) */
+    case 0x204:  /* REG_WAITCNT low byte */
     case 0x205:  /* REG_WAITCNT high byte */
         return bus->io_regs[offset];
     case 0x208:  /* REG_IME low byte (only bit 0 matters) */
