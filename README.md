@@ -334,7 +334,7 @@ src/
     gpio.c/h               Cartridge GPIO at 0x080000C4/C6/C8 (data/dir/control)
     rtc.c/h                S-3511A real-time clock state machine
     sram.c                 Battery-backed SRAM
-    eeprom.c               EEPROM save (stub)
+    eeprom.c               EEPROM save (bit-serial, DMA-driven)
   cheat/
     cheat.c/h              Cheat engine (GameShark / Action Replay / CodeBreaker)
     cheat_file.c/h         `.cht` file parser and writer
