@@ -105,6 +105,11 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    if (headless && (link_master_path || link_client_path)) {
+        LOG_ERROR("--headless is incompatible with --link-master/--link-client");
+        return 1;
+    }
+
     // Initialize GBA
     GBA gba;
     gba_init(&gba);
