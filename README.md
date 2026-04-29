@@ -185,6 +185,50 @@ cmake .. -DENABLE_REWIND=OFF
 
 Save files (`<rom>.sav`) and save states (`<rom>.ss<N>`) are written next to the ROM.
 
+### Headless mode
+
+Run the emulator without an SDL window or audio output, writing one
+FNV-1a hash of the 240×160 framebuffer per frame:
+
+```bash
+./gba_emulator <rom.gba> --headless --frames 240 --hash-out hashes.txt
+```
+
+| Flag | Meaning |
+|------|---------|
+| `--headless` | Skip SDL, audio, link cable, X-Ray, and rewind. |
+| `--frames <n>` | Run exactly `n` frames then exit. Required with `--headless`. |
+| `--hash-out <file>` | Write per-frame `<N> <FNV1a-hex>` lines. Defaults to stdout. |
+
+Headless mode is incompatible with `--link-master` / `--link-client`
+(they would block the dispatch waiting for a peer).
+
+#### Golden-frame regression testing
+
+The CI job `golden-frame` (in `.github/workflows/ci.yml`) re-runs the
+emulator on the pinned [jsmolka/gba-tests](https://github.com/jsmolka/gba-tests)
+ROMs and diffs the per-frame hash output against
+`tests/golden/<rom>.hash`. Any change that alters rendering output
+fails the workflow.
+
+**To add a new golden ROM:**
+
+1. Place or fetch the ROM somewhere local (e.g. `tools/fetch_test_roms.sh /tmp/gba-test-roms`).
+2. Bake the golden hash from a clean Release build:
+   ```bash
+   cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+   cmake --build build --target gba_emulator
+   build/gba_emulator path/to/rom.gba \
+       --headless --frames 240 --hash-out tests/golden/<name>.hash
+   ```
+3. Manually verify the ROM actually renders correctly — interactive mode
+   is the simplest way (`./gba_emulator path/to/rom.gba`).
+4. Add a new step in `.github/workflows/ci.yml`'s `golden-frame` job
+   calling `tools/check_golden.sh build/gba_emulator
+   /tmp/gba-test-roms/<rom>.gba tests/golden/<name>.hash`.
+5. Commit the new `.hash` file and CI step together so they land in the
+   same change.
+
 ## Link Cable
 
 Two emulator instances on the same machine can connect over a UNIX domain socket and exchange GBA SIO multiplayer-mode packets — enough for Pokemon trade and battle between local windows.
