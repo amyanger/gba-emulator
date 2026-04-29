@@ -88,6 +88,42 @@ TEST(cmp_in_fiq_mode_updates_flags) {
     free(gba);
 }
 
+TEST(stmfd_ldmfd_round_trip_in_iwram) {
+    /* Pin the basic stack push/pop contract: STMFD a few registers,
+     * then LDMFD them back and verify they restore correctly with SP
+     * landing where it started. Regression-guard for any future
+     * change to block-data-transfer addressing. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+    cpu_switch_mode(cpu, CPU_MODE_SYS);
+
+    /* Use a known-good IWRAM stack location. */
+    cpu->regs[REG_SP] = 0x03007F00;
+    cpu->regs[0] = 0xDEADBEEF;
+    cpu->regs[1] = 0xCAFEBABE;
+    cpu->regs[2] = 0x12345678;
+    cpu->regs[3] = 0x00C0FFEE;
+
+    /* E92D000F = STMFD SP!, {R0, R1, R2, R3} (push 4 words) */
+    arm_execute(cpu, 0xE92D000F);
+    ASSERT_EQ_HEX(cpu->regs[REG_SP], 0x03007EF0); /* down by 16 */
+
+    /* Clobber the registers, then restore via LDMFD. */
+    cpu->regs[0] = 0;
+    cpu->regs[1] = 0;
+    cpu->regs[2] = 0;
+    cpu->regs[3] = 0;
+
+    /* E8BD000F = LDMFD SP!, {R0, R1, R2, R3} */
+    arm_execute(cpu, 0xE8BD000F);
+    ASSERT_EQ_HEX(cpu->regs[REG_SP], 0x03007F00); /* back to start */
+    ASSERT_EQ_HEX(cpu->regs[0], 0xDEADBEEF);
+    ASSERT_EQ_HEX(cpu->regs[1], 0xCAFEBABE);
+    ASSERT_EQ_HEX(cpu->regs[2], 0x12345678);
+    ASSERT_EQ_HEX(cpu->regs[3], 0x00C0FFEE);
+    free(gba);
+}
+
 TEST(soft_reset_default_jumps_to_rom) {
     GBA* gba = make_gba();
     ARM7TDMI* cpu = &gba->cpu;
@@ -143,6 +179,7 @@ void run_cpu_tests(void) {
     RUN_TEST(cpu_regs_zero_init);
     RUN_TEST(cmp_in_fiq_mode_updates_flags);
     RUN_TEST(cmp_in_user_mode_updates_flags);
+    RUN_TEST(stmfd_ldmfd_round_trip_in_iwram);
     RUN_TEST(soft_reset_default_jumps_to_rom);
     RUN_TEST(soft_reset_flag_set_jumps_to_ewram);
 }
