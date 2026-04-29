@@ -88,6 +88,32 @@ TEST(cmp_in_fiq_mode_updates_flags) {
     free(gba);
 }
 
+TEST(irq_entry_saves_cpsr_into_spsr_irq) {
+    /* When an IRQ fires, the CPU should: switch to IRQ mode, copy the
+     * outgoing CPSR into SPSR_irq, set LR_irq to the return PC, force
+     * ARM state, mask IRQs, and jump to vector 0x18. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    cpu_switch_mode(cpu, CPU_MODE_SYS);
+    cpu->cpsr = CPU_MODE_SYS; /* SYS, ARM state, IRQs+FIQs enabled */
+    cpu->regs[REG_PC] = 0x08001234;
+
+    cpu_handle_irq(cpu);
+
+    ASSERT_EQ_HEX(cpu_get_mode(cpu), CPU_MODE_IRQ);
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x00000018);
+    ASSERT_EQ(BIT(cpu->cpsr, CPSR_I), 1);     /* IRQs masked during handler */
+    ASSERT_EQ(BIT(cpu->cpsr, CPSR_T), 0);     /* Forced into ARM state */
+    ASSERT_EQ_HEX(cpu->regs[REG_LR], 0x08001234);
+
+    /* SPSR_irq should hold the pre-IRQ CPSR (SYS mode). */
+    uint32_t* spsr = cpu_get_spsr(cpu);
+    ASSERT_TRUE(spsr != NULL);
+    ASSERT_EQ_HEX(*spsr & 0x1F, CPU_MODE_SYS);
+    free(gba);
+}
+
 TEST(mode_switch_banks_sp_independently) {
     /* Each privileged mode has its own banked SP. Setting SP in one
      * mode and switching to another must NOT see the same SP.
@@ -244,6 +270,7 @@ void run_cpu_tests(void) {
     RUN_TEST(cpu_regs_zero_init);
     RUN_TEST(cmp_in_fiq_mode_updates_flags);
     RUN_TEST(cmp_in_user_mode_updates_flags);
+    RUN_TEST(irq_entry_saves_cpsr_into_spsr_irq);
     RUN_TEST(mode_switch_banks_sp_independently);
     RUN_TEST(fiq_mode_banks_r8_through_r12);
     RUN_TEST(stmfd_ldmfd_round_trip_in_iwram);
