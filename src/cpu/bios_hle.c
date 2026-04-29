@@ -909,11 +909,43 @@ static void swi_midi_key2freq(ARM7TDMI* cpu) {
  * ====================================================================== */
 void bios_hle_execute(ARM7TDMI* cpu, uint32_t swi_num) {
     switch (swi_num) {
-    case 0x00: /* SoftReset — not fully implemented, just reset PC */
-        LOG_WARN("SWI 0x00 SoftReset: minimal stub");
-        cpu->regs[REG_PC] = 0x08000000;
+    case 0x00: { /* SoftReset
+         *
+         * Per GBATEK: clears the last 0x200 bytes of IWRAM (the BIOS
+         * scratch area), reinitialises stack pointers for SYS/IRQ/SVC,
+         * reads the boot flag at 0x03007FFA, switches to SYS mode with
+         * IRQ enabled, and branches to 0x08000000 (flag=0, ROM start)
+         * or 0x02000000 (flag!=0, EWRAM start).
+         *
+         * Common path: a game responds to the A+B+Start+Select combo by
+         * issuing this SWI, expecting RAM and stacks to be in their
+         * post-BIOS state.
+         */
+        Bus* bus = cpu->bus;
+
+        /* Boot flag lives at 0x03007FFA (one byte). 0 → ROM, else EWRAM. */
+        uint32_t boot_target = (bus->iwram[0x7FFA] != 0)
+                                   ? 0x02000000
+                                   : 0x08000000;
+
+        /* Clear the BIOS scratch area at top of IWRAM. */
+        memset(&bus->iwram[0x7E00], 0, 0x200);
+
+        /* Reinitialise stack pointers for the privileged modes. */
+        cpu_switch_mode(cpu, CPU_MODE_IRQ);
+        cpu->regs[REG_SP] = 0x03007FA0;
+        cpu_switch_mode(cpu, CPU_MODE_SVC);
+        cpu->regs[REG_SP] = 0x03007FE0;
+        cpu_switch_mode(cpu, CPU_MODE_SYS);
+        cpu->regs[REG_SP] = 0x03007F00;
+
+        /* Run from SYS mode with IRQs enabled, FIQs left disabled. */
+        cpu->cpsr = CPU_MODE_SYS | (1u << CPSR_F);
+
+        cpu->regs[REG_PC] = boot_target;
         cpu_flush_pipeline(cpu);
         break;
+    }
 
     case 0x01: { /* RegisterRamReset */
         uint32_t flags = cpu->regs[0];

@@ -1,6 +1,7 @@
 #include "test_harness.h"
 #include "gba.h"
 #include "cpu/arm_instr.h"
+#include "cpu/bios_hle.h"
 
 /* Helper: create a fully wired GBA on the heap and return it. */
 static GBA* make_gba(void) {
@@ -87,6 +88,39 @@ TEST(cmp_in_fiq_mode_updates_flags) {
     free(gba);
 }
 
+TEST(soft_reset_default_jumps_to_rom) {
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+    /* Boot flag at 0x03007FFA defaults to 0 → ROM (0x08000000). */
+    gba->bus.iwram[0x7FFA] = 0;
+    /* Dirty IWRAM scratch and a stack pointer to ensure SoftReset clears
+     * them. */
+    gba->bus.iwram[0x7E00] = 0xAB;
+    gba->bus.iwram[0x7FFF] = 0xCD;
+
+    bios_hle_execute(cpu, 0x00);
+
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x08000000);
+    ASSERT_EQ_HEX(cpu_get_mode(cpu), CPU_MODE_SYS);
+    ASSERT_EQ(BIT(cpu->cpsr, CPSR_F), 1); /* FIQ disabled */
+    ASSERT_EQ(BIT(cpu->cpsr, CPSR_I), 0); /* IRQ enabled */
+    ASSERT_EQ(gba->bus.iwram[0x7E00], 0); /* scratch cleared */
+    ASSERT_EQ(gba->bus.iwram[0x7FFF], 0);
+    ASSERT_EQ_HEX(cpu->regs[REG_SP], 0x03007F00); /* SYS SP */
+    free(gba);
+}
+
+TEST(soft_reset_flag_set_jumps_to_ewram) {
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+    gba->bus.iwram[0x7FFA] = 1;
+
+    bios_hle_execute(cpu, 0x00);
+
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x02000000);
+    free(gba);
+}
+
 TEST(cmp_in_user_mode_updates_flags) {
     /* Sanity — same operation in USR/SYS mode for comparison. */
     GBA* gba = make_gba();
@@ -109,4 +143,6 @@ void run_cpu_tests(void) {
     RUN_TEST(cpu_regs_zero_init);
     RUN_TEST(cmp_in_fiq_mode_updates_flags);
     RUN_TEST(cmp_in_user_mode_updates_flags);
+    RUN_TEST(soft_reset_default_jumps_to_rom);
+    RUN_TEST(soft_reset_flag_set_jumps_to_ewram);
 }
