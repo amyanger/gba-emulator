@@ -154,6 +154,7 @@ set(LIB_SOURCES
     src/sio/sio_link.c
     src/trace/trace.c
     src/headless/fb_hash.c
+    src/headless/headless.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
     src/frontend/slot_picker.c
