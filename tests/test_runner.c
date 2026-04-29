@@ -9,6 +9,7 @@ int _test_failed_flag = 0;
 void run_savestate_tests(void);
 void run_bus_tests(void);
 void run_cpu_tests(void);
+void run_dma_tests(void);
 void run_rewind_tests(void);
 void run_screenshot_tests(void);
 void run_trace_tests(void);
@@ -32,6 +33,7 @@ int main(void) {
     RUN_SUITE(run_savestate_tests);
     RUN_SUITE(run_bus_tests);
     RUN_SUITE(run_cpu_tests);
+    RUN_SUITE(run_dma_tests);
     RUN_SUITE(run_rewind_tests);
     RUN_SUITE(run_screenshot_tests);
     RUN_SUITE(run_trace_tests);
