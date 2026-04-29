@@ -88,6 +88,71 @@ TEST(cmp_in_fiq_mode_updates_flags) {
     free(gba);
 }
 
+TEST(mode_switch_banks_sp_independently) {
+    /* Each privileged mode has its own banked SP. Setting SP in one
+     * mode and switching to another must NOT see the same SP.
+     * Pin this contract since several real games (and test ROMs)
+     * rely on FIQ/IRQ banking. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    cpu_switch_mode(cpu, CPU_MODE_SYS);
+    cpu->regs[REG_SP] = 0x03007F00;
+
+    cpu_switch_mode(cpu, CPU_MODE_IRQ);
+    cpu->regs[REG_SP] = 0x03007FA0;
+
+    cpu_switch_mode(cpu, CPU_MODE_FIQ);
+    cpu->regs[REG_SP] = 0x12345678;
+
+    /* Bouncing back through each mode must restore the per-mode SP. */
+    cpu_switch_mode(cpu, CPU_MODE_IRQ);
+    ASSERT_EQ_HEX(cpu->regs[REG_SP], 0x03007FA0);
+
+    cpu_switch_mode(cpu, CPU_MODE_SYS);
+    ASSERT_EQ_HEX(cpu->regs[REG_SP], 0x03007F00);
+
+    cpu_switch_mode(cpu, CPU_MODE_FIQ);
+    ASSERT_EQ_HEX(cpu->regs[REG_SP], 0x12345678);
+    free(gba);
+}
+
+TEST(fiq_mode_banks_r8_through_r12) {
+    /* FIQ mode banks R8-R14, not just R13/R14. Verify R8-R12 also
+     * bank (this is what the jsmolka FIQ-banking tests exercise). */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    cpu_switch_mode(cpu, CPU_MODE_SYS);
+    cpu->regs[8]  = 0x11111111;
+    cpu->regs[9]  = 0x22222222;
+    cpu->regs[10] = 0x33333333;
+    cpu->regs[11] = 0x44444444;
+    cpu->regs[12] = 0x55555555;
+
+    cpu_switch_mode(cpu, CPU_MODE_FIQ);
+    cpu->regs[8]  = 0xAAAAAAAA;
+    cpu->regs[9]  = 0xBBBBBBBB;
+    cpu->regs[10] = 0xCCCCCCCC;
+    cpu->regs[11] = 0xDDDDDDDD;
+    cpu->regs[12] = 0xEEEEEEEE;
+
+    cpu_switch_mode(cpu, CPU_MODE_SYS);
+    ASSERT_EQ_HEX(cpu->regs[8],  0x11111111);
+    ASSERT_EQ_HEX(cpu->regs[9],  0x22222222);
+    ASSERT_EQ_HEX(cpu->regs[10], 0x33333333);
+    ASSERT_EQ_HEX(cpu->regs[11], 0x44444444);
+    ASSERT_EQ_HEX(cpu->regs[12], 0x55555555);
+
+    cpu_switch_mode(cpu, CPU_MODE_FIQ);
+    ASSERT_EQ_HEX(cpu->regs[8],  0xAAAAAAAA);
+    ASSERT_EQ_HEX(cpu->regs[9],  0xBBBBBBBB);
+    ASSERT_EQ_HEX(cpu->regs[10], 0xCCCCCCCC);
+    ASSERT_EQ_HEX(cpu->regs[11], 0xDDDDDDDD);
+    ASSERT_EQ_HEX(cpu->regs[12], 0xEEEEEEEE);
+    free(gba);
+}
+
 TEST(stmfd_ldmfd_round_trip_in_iwram) {
     /* Pin the basic stack push/pop contract: STMFD a few registers,
      * then LDMFD them back and verify they restore correctly with SP
@@ -179,6 +244,8 @@ void run_cpu_tests(void) {
     RUN_TEST(cpu_regs_zero_init);
     RUN_TEST(cmp_in_fiq_mode_updates_flags);
     RUN_TEST(cmp_in_user_mode_updates_flags);
+    RUN_TEST(mode_switch_banks_sp_independently);
+    RUN_TEST(fiq_mode_banks_r8_through_r12);
     RUN_TEST(stmfd_ldmfd_round_trip_in_iwram);
     RUN_TEST(soft_reset_default_jumps_to_rom);
     RUN_TEST(soft_reset_flag_set_jumps_to_ewram);
