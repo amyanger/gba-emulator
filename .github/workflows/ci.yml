@@ -66,3 +66,9 @@ jobs:
 
       - name: Check golden frames (jsmolka arm)
         run: tools/check_golden.sh build/gba_emulator /tmp/gba-test-roms/jsmolka_arm.gba tests/golden/jsmolka_arm.hash
+
+      - name: Check golden frames (jsmolka thumb)
+        run: tools/check_golden.sh build/gba_emulator /tmp/gba-test-roms/jsmolka_thumb.gba tests/golden/jsmolka_thumb.hash
+
+      - name: Check golden frames (jsmolka memory)
+        run: tools/check_golden.sh build/gba_emulator /tmp/gba-test-roms/jsmolka_memory.gba tests/golden/jsmolka_memory.hash
