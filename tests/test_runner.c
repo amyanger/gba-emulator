@@ -23,6 +23,7 @@ void run_keymap_tests(void);
 void run_eeprom_tests(void);
 void run_practice_tests(void);
 void run_fb_hash_tests(void);
+void run_ppu_tests(void);
 #ifndef _WIN32
 // These suites depend on POSIX APIs (unistd.h, pthreads, AF_UNIX socketpair)
 // and are not compiled into the Windows test binary.
@@ -52,6 +53,7 @@ int main(void) {
     RUN_SUITE(run_eeprom_tests);
     RUN_SUITE(run_practice_tests);
     RUN_SUITE(run_fb_hash_tests);
+    RUN_SUITE(run_ppu_tests);
 #ifndef _WIN32
     RUN_SUITE(run_rtc_tests);
     RUN_SUITE(run_sio_tests);
