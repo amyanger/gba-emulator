@@ -70,6 +70,17 @@ void gba_run_frame(GBA* gba);
 // Public so test code can drive sub-scanline state directly.
 void gba_run_cycles(GBA* gba, int cycles);
 
+// Advance the system by one full scanline (1232 cycles), running
+// the orchestrator's per-line state machine: HDraw cycles, HBlank
+// edge events (flag set, render-if-visible, HBlank DMA, HBlank
+// IRQ), HBlank-tail cycles, end-of-line edges (flag clear,
+// vcount++, VCount match, VBlank set/clear, frame_complete).
+//
+// Equivalent to one iteration of the loop inside gba_run_frame.
+// Public so tests can drive the orchestrator at scanline
+// granularity instead of full-frame granularity.
+void gba_run_scanline(GBA* gba);
+
 // Attach (or detach with NULL) a LinkPeer transport for SIO multiplayer.
 // Used by the CLI to wire up --link-master / --link-client at startup.
 void gba_set_link_peer(GBA* gba, LinkPeer* peer);

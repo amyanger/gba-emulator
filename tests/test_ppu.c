@@ -166,6 +166,26 @@ TEST(force_blank_fills_framebuffer_with_white) {
     ASSERT_EQ(gba.ppu.vcount, 0);
 }
 
+TEST(vblank_flag_clears_on_line_227) {
+    GBA gba;
+    ppu_test_setup(&gba);
+
+    /* Drive 160 scanlines — vcount lands on 160, VBlank flag is set. */
+    for (int i = 0; i < 160; i++) gba_run_scanline(&gba);
+    ASSERT_EQ(gba.ppu.vcount, 160);
+    ASSERT_EQ(BIT(gba.ppu.dispstat, 0), 1);
+
+    /* Drive 66 more — vcount=226, still in VBlank, flag still set. */
+    for (int i = 0; i < 66; i++) gba_run_scanline(&gba);
+    ASSERT_EQ(gba.ppu.vcount, 226);
+    ASSERT_EQ(BIT(gba.ppu.dispstat, 0), 1);
+
+    /* One more — vcount=227, flag must clear. */
+    gba_run_scanline(&gba);
+    ASSERT_EQ(gba.ppu.vcount, 227);
+    ASSERT_EQ(BIT(gba.ppu.dispstat, 0), 0);
+}
+
 /* Suite registration (called from test_runner.c). */
 void run_ppu_tests(void) {
     TEST_SUITE("ppu");
@@ -181,4 +201,5 @@ void run_ppu_tests(void) {
     RUN_TEST(vcount_match_flag_set_regardless_of_irq_enable);
     RUN_TEST(affine_refs_reload_from_latches_at_vblank_start);
     RUN_TEST(force_blank_fills_framebuffer_with_white);
+    RUN_TEST(vblank_flag_clears_on_line_227);
 }

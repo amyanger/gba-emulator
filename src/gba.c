@@ -68,66 +68,52 @@ void gba_run_cycles(GBA* gba, int cycles) {
     sio_tick(&gba->sio, cycles);
 }
 
+void gba_run_scanline(GBA* gba) {
+    /* This is the body of gba_run_frame's for-loop, lifted verbatim.
+     * Keep this function in lock-step with gba_run_frame's per-line
+     * code. */
+    gba_run_cycles(gba, HDRAW_PIXELS * CYCLES_PER_PIXEL); // 960
+
+    ppu_set_hblank(&gba->ppu, true);
+    if (gba->ppu.vcount < VDRAW_LINES) {
+        ppu_render_scanline(&gba->ppu);
+        dma_on_hblank(&gba->dma);
+    }
+    interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_HBLANK);
+
+    gba_run_cycles(gba, HBLANK_PIXELS * CYCLES_PER_PIXEL); // 272
+
+    ppu_set_hblank(&gba->ppu, false);
+    ppu_increment_vcount(&gba->ppu);
+
+    if (ppu_vcount_match(&gba->ppu)) {
+        interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_VCOUNT);
+    }
+
+    if (gba->ppu.vcount == VDRAW_LINES) {
+        ppu_set_vblank(&gba->ppu, true);
+        interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_VBLANK);
+        dma_on_vblank(&gba->dma);
+        cheat_apply(&gba->cheats, &gba->bus);
+        gba->ppu.bg_ref_x[0] = gba->ppu.bg_ref_x_latch[0];
+        gba->ppu.bg_ref_y[0] = gba->ppu.bg_ref_y_latch[0];
+        gba->ppu.bg_ref_x[1] = gba->ppu.bg_ref_x_latch[1];
+        gba->ppu.bg_ref_y[1] = gba->ppu.bg_ref_y_latch[1];
+        gba->frame_complete = true;
+    }
+
+    if (gba->ppu.vcount == 227) {
+        ppu_set_vblank(&gba->ppu, false);
+    }
+
+    gba->total_cycles += SCANLINE_CYCLES;
+}
+
 void gba_run_frame(GBA* gba) {
     gba->frame_complete = false;
 
     for (int line = 0; line < TOTAL_LINES; line++) {
-        // --- HDraw period (visible pixel rendering time) ---
-        gba_run_cycles(gba, HDRAW_PIXELS * CYCLES_PER_PIXEL); // 960
-
-        // --- HBlank ---
-        ppu_set_hblank(&gba->ppu, true);
-
-        if (line < VDRAW_LINES) {
-            // Render this scanline
-            ppu_render_scanline(&gba->ppu);
-
-            // Trigger HBlank DMA
-            dma_on_hblank(&gba->dma);
-        }
-
-        // Fire HBlank IRQ if enabled
-        interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_HBLANK);
-
-        gba_run_cycles(gba, HBLANK_PIXELS * CYCLES_PER_PIXEL); // 272
-
-        // --- End of scanline ---
-        ppu_set_hblank(&gba->ppu, false);
-        ppu_increment_vcount(&gba->ppu);
-
-        // Check VCount match
-        if (ppu_vcount_match(&gba->ppu)) {
-            interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_VCOUNT);
-        }
-
-        // VBlank start
-        if (gba->ppu.vcount == VDRAW_LINES) {
-            ppu_set_vblank(&gba->ppu, true);
-            interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_VBLANK);
-            dma_on_vblank(&gba->dma);
-
-            // Apply cheat codes at VBlank (matches real cheat device timing)
-            cheat_apply(&gba->cheats, &gba->bus);
-
-            // Reload affine reference points from latches at VBlank start.
-            // Per GBATEK: the internal reference point registers are reloaded
-            // from the latch values at the beginning of each VBlank period.
-            gba->ppu.bg_ref_x[0] = gba->ppu.bg_ref_x_latch[0];
-            gba->ppu.bg_ref_y[0] = gba->ppu.bg_ref_y_latch[0];
-            gba->ppu.bg_ref_x[1] = gba->ppu.bg_ref_x_latch[1];
-            gba->ppu.bg_ref_y[1] = gba->ppu.bg_ref_y_latch[1];
-
-            gba->frame_complete = true;
-        }
-
-        // VBlank end: per GBATEK, the V-Blank flag in DISPSTAT is
-        // set for vcount values 160..226 only — cleared at line 227,
-        // the last VBlank line, NOT at the wrap to vcount=0.
-        if (gba->ppu.vcount == 227) {
-            ppu_set_vblank(&gba->ppu, false);
-        }
-
-        gba->total_cycles += SCANLINE_CYCLES;
+        gba_run_scanline(gba);
     }
 
 #ifdef ENABLE_REWIND
