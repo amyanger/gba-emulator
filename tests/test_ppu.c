@@ -112,6 +112,24 @@ TEST(vcount_irq_never_fires_when_target_above_max) {
     ASSERT_EQ(gba.interrupts.irf & IRQ_VCOUNT, 0);
 }
 
+TEST(vcount_match_flag_set_regardless_of_irq_enable) {
+    GBA gba;
+    ppu_test_setup(&gba);
+    /* Set LYC=1, IRQ-enable bit (5) clear. */
+    gba.ppu.dispstat = (1u << 8);
+    gba_run_frame(&gba);
+    /* After one frame, vcount=0; LYC=1 → flag should be 0. */
+    ASSERT_EQ(BIT(gba.ppu.dispstat, 2), 0);
+
+    /* Now set LYC=0 to match. Run another frame; the flag should
+     * end up set with no IRQ-enable bit. */
+    gba.ppu.dispstat = (0u << 8);
+    gba_run_frame(&gba);
+    ASSERT_EQ(BIT(gba.ppu.dispstat, 2), 1);
+    /* And no IRQ fired (DISPSTAT.5 clear). */
+    ASSERT_EQ(gba.interrupts.irf & IRQ_VCOUNT, 0);
+}
+
 /* Suite registration (called from test_runner.c). */
 void run_ppu_tests(void) {
     TEST_SUITE("ppu");
@@ -124,4 +142,5 @@ void run_ppu_tests(void) {
     RUN_TEST(vcount_irq_fires_when_target_in_visible_range);
     RUN_TEST(vcount_irq_fires_when_target_in_vblank_range);
     RUN_TEST(vcount_irq_never_fires_when_target_above_max);
+    RUN_TEST(vcount_match_flag_set_regardless_of_irq_enable);
 }
