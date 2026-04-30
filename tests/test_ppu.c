@@ -149,6 +149,23 @@ TEST(affine_refs_reload_from_latches_at_vblank_start) {
     ASSERT_EQ_HEX((uint32_t)gba.ppu.bg_ref_y[0], 0x0ABCDEF0u);
 }
 
+TEST(force_blank_fills_framebuffer_with_white) {
+    GBA gba;
+    ppu_test_setup(&gba);
+    /* Force-blank: DISPCNT bit 7. */
+    gba.ppu.dispcnt = (1u << 7);
+
+    gba_run_frame(&gba);
+
+    /* Sample a few framebuffer pixels — all must be 0x7FFF. */
+    ASSERT_EQ_HEX(gba.ppu.framebuffer[0], 0x7FFFu);
+    ASSERT_EQ_HEX(gba.ppu.framebuffer[SCREEN_WIDTH * 80 + 120], 0x7FFFu);
+    ASSERT_EQ_HEX(gba.ppu.framebuffer[SCREEN_WIDTH * SCREEN_HEIGHT - 1], 0x7FFFu);
+
+    /* vcount still progressed normally. */
+    ASSERT_EQ(gba.ppu.vcount, 0);
+}
+
 /* Suite registration (called from test_runner.c). */
 void run_ppu_tests(void) {
     TEST_SUITE("ppu");
@@ -163,4 +180,5 @@ void run_ppu_tests(void) {
     RUN_TEST(vcount_irq_never_fires_when_target_above_max);
     RUN_TEST(vcount_match_flag_set_regardless_of_irq_enable);
     RUN_TEST(affine_refs_reload_from_latches_at_vblank_start);
+    RUN_TEST(force_blank_fills_framebuffer_with_white);
 }
