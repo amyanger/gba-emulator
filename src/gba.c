@@ -69,9 +69,9 @@ void gba_run_cycles(GBA* gba, int cycles) {
 }
 
 void gba_run_scanline(GBA* gba) {
-    /* This is the body of gba_run_frame's for-loop, lifted verbatim.
-     * Keep this function in lock-step with gba_run_frame's per-line
-     * code. */
+    /* One full scanline: HDraw cycles, HBlank edge events, HBlank-tail
+     * cycles, end-of-line edge events. gba_run_frame calls this in a
+     * 228-iteration loop. */
     gba_run_cycles(gba, HDRAW_PIXELS * CYCLES_PER_PIXEL); // 960
 
     ppu_set_hblank(&gba->ppu, true);
