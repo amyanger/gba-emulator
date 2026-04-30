@@ -120,8 +120,10 @@ void gba_run_frame(GBA* gba) {
             gba->frame_complete = true;
         }
 
-        // VBlank end (wrap around)
-        if (gba->ppu.vcount == 0) {
+        // VBlank end: per GBATEK, the V-Blank flag in DISPSTAT is
+        // set for vcount values 160..226 only — cleared at line 227,
+        // the last VBlank line, NOT at the wrap to vcount=0.
+        if (gba->ppu.vcount == 227) {
             ppu_set_vblank(&gba->ppu, false);
         }
 
