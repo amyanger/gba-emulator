@@ -186,6 +186,26 @@ TEST(vblank_flag_clears_on_line_227) {
     ASSERT_EQ(BIT(gba.ppu.dispstat, 0), 0);
 }
 
+TEST(hblank_constants_consistent_with_scanline) {
+    /* Pin the chunk-budget arithmetic — if any of these change, the
+     * orchestrator's per-line cycle accounting will drift. */
+    ASSERT_EQ(HBLANK_FLAG_SET_CYCLE, 1006);
+    ASSERT_EQ(HBLANK_TAIL_CYCLES, 226);
+    ASSERT_EQ(HBLANK_FLAG_SET_CYCLE + HBLANK_TAIL_CYCLES, SCANLINE_CYCLES);
+}
+
+TEST(hblank_flag_zero_before_cycle_1006) {
+    /* gba_run_cycles does not fire scanline edge events, so after
+     * 1005 cycles into a scanline, the HBlank flag must still be 0
+     * (no edge has been triggered yet). The set-edge fires when the
+     * orchestrator reaches the chunk boundary — i.e., during a
+     * gba_run_scanline call, not a gba_run_cycles call. */
+    GBA gba;
+    ppu_test_setup(&gba);
+    gba_run_cycles(&gba, HBLANK_FLAG_SET_CYCLE - 1);
+    ASSERT_EQ(BIT(gba.ppu.dispstat, 1), 0);
+}
+
 /* Suite registration (called from test_runner.c). */
 void run_ppu_tests(void) {
     TEST_SUITE("ppu");
@@ -202,4 +222,6 @@ void run_ppu_tests(void) {
     RUN_TEST(affine_refs_reload_from_latches_at_vblank_start);
     RUN_TEST(force_blank_fills_framebuffer_with_white);
     RUN_TEST(vblank_flag_clears_on_line_227);
+    RUN_TEST(hblank_constants_consistent_with_scanline);
+    RUN_TEST(hblank_flag_zero_before_cycle_1006);
 }

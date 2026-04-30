@@ -69,19 +69,23 @@ void gba_run_cycles(GBA* gba, int cycles) {
 }
 
 void gba_run_scanline(GBA* gba) {
-    /* One full scanline: HDraw cycles, HBlank edge events, HBlank-tail
-     * cycles, end-of-line edge events. gba_run_frame calls this in a
-     * 228-iteration loop. */
-    gba_run_cycles(gba, HDRAW_PIXELS * CYCLES_PER_PIXEL); // 960
+    /* Three-chunk scanline (per GBATEK):
+     *   1. HDraw to cycle 1006     (1006 cycles)
+     *   2. HBlank flag set + edge events  (instant)
+     *   3. HBlank tail              (226 cycles)
+     *   4. End-of-line edge events  (instant)
+     */
+    gba_run_cycles(gba, HBLANK_FLAG_SET_CYCLE);  // 1006
 
     ppu_set_hblank(&gba->ppu, true);
     if (gba->ppu.vcount < VDRAW_LINES) {
         ppu_render_scanline(&gba->ppu);
+        /* DMA fires before IRQ — order matters; do not swap. */
         dma_on_hblank(&gba->dma);
     }
     interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_HBLANK);
 
-    gba_run_cycles(gba, HBLANK_PIXELS * CYCLES_PER_PIXEL); // 272
+    gba_run_cycles(gba, HBLANK_TAIL_CYCLES);  // 226
 
     ppu_set_hblank(&gba->ppu, false);
     ppu_increment_vcount(&gba->ppu);
