@@ -61,16 +61,19 @@ bool gba_load_bios(GBA* gba, const char* path) {
     return bus_load_bios(&gba->bus, path);
 }
 
+void gba_run_cycles(GBA* gba, int cycles) {
+    cpu_run(&gba->cpu, cycles);
+    timer_tick(gba->timers, cycles, &gba->interrupts, &gba->apu);
+    apu_tick(&gba->apu, cycles);
+    sio_tick(&gba->sio, cycles);
+}
+
 void gba_run_frame(GBA* gba) {
     gba->frame_complete = false;
 
     for (int line = 0; line < TOTAL_LINES; line++) {
         // --- HDraw period (visible pixel rendering time) ---
-        int hdraw_cycles = HDRAW_PIXELS * CYCLES_PER_PIXEL; // 960
-        cpu_run(&gba->cpu, hdraw_cycles);
-        timer_tick(gba->timers, hdraw_cycles, &gba->interrupts, &gba->apu);
-        apu_tick(&gba->apu, hdraw_cycles);
-        sio_tick(&gba->sio, hdraw_cycles);
+        gba_run_cycles(gba, HDRAW_PIXELS * CYCLES_PER_PIXEL); // 960
 
         // --- HBlank ---
         ppu_set_hblank(&gba->ppu, true);
@@ -86,11 +89,7 @@ void gba_run_frame(GBA* gba) {
         // Fire HBlank IRQ if enabled
         interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_HBLANK);
 
-        int hblank_cycles = HBLANK_PIXELS * CYCLES_PER_PIXEL; // 272
-        cpu_run(&gba->cpu, hblank_cycles);
-        timer_tick(gba->timers, hblank_cycles, &gba->interrupts, &gba->apu);
-        apu_tick(&gba->apu, hblank_cycles);
-        sio_tick(&gba->sio, hblank_cycles);
+        gba_run_cycles(gba, HBLANK_PIXELS * CYCLES_PER_PIXEL); // 272
 
         // --- End of scanline ---
         ppu_set_hblank(&gba->ppu, false);

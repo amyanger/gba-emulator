@@ -62,6 +62,14 @@ bool gba_load_bios(GBA* gba, const char* path);
 // Run one full frame (280,896 cycles)
 void gba_run_frame(GBA* gba);
 
+// Advance the system by an arbitrary number of CPU cycles. Ticks CPU,
+// timers, APU, and SIO uniformly. Does NOT fire scanline edge events
+// (HBlank/VBlank flag changes, IRQs, DMAs, vcount changes) — those
+// remain the responsibility of gba_run_frame's per-line state machine.
+//
+// Public so test code can drive sub-scanline state directly.
+void gba_run_cycles(GBA* gba, int cycles);
+
 // Attach (or detach with NULL) a LinkPeer transport for SIO multiplayer.
 // Used by the CLI to wire up --link-master / --link-client at startup.
 void gba_set_link_peer(GBA* gba, LinkPeer* peer);
