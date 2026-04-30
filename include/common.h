@@ -31,6 +31,14 @@
 #define HDRAW_PIXELS 240
 #define HBLANK_PIXELS 68
 #define SCANLINE_CYCLES 1232 // (240 + 68) * 4
+
+// Sub-scanline timing edges (per GBATEK).
+// HBlank flag becomes 1 at cycle 1006 of each 1232-cycle scanline,
+// not at the end of pixel transmission (cycle 960). Tests + the
+// orchestrator use these to split chunk 1.
+#define HBLANK_FLAG_SET_CYCLE 1006
+#define HBLANK_TAIL_CYCLES    226   // 1232 - 1006
+
 #define VDRAW_LINES 160
 #define VBLANK_LINES 68
 #define TOTAL_LINES 228 // 160 + 68
