@@ -130,6 +130,25 @@ TEST(vcount_match_flag_set_regardless_of_irq_enable) {
     ASSERT_EQ(gba.interrupts.irf & IRQ_VCOUNT, 0);
 }
 
+TEST(affine_refs_reload_from_latches_at_vblank_start) {
+    GBA gba;
+    ppu_test_setup(&gba);
+    /* Set affine BG2 internal refs and latches to distinct values. */
+    gba.ppu.bg_ref_x_latch[0] = 0x12345678;
+    gba.ppu.bg_ref_y_latch[0] = 0x0ABCDEF0;
+    gba.ppu.bg_ref_x[0]       = 0x00000000;
+    gba.ppu.bg_ref_y[0]       = 0x00000000;
+
+    gba_run_frame(&gba);
+
+    /* At line 160 (VBlank start), the orchestrator copies latches
+     * into internal refs. By end-of-frame the internal refs equal
+     * the latches (no rendering occurred to advance them past
+     * VBlank, so the post-VBlank value is exactly the latch). */
+    ASSERT_EQ_HEX((uint32_t)gba.ppu.bg_ref_x[0], 0x12345678u);
+    ASSERT_EQ_HEX((uint32_t)gba.ppu.bg_ref_y[0], 0x0ABCDEF0u);
+}
+
 /* Suite registration (called from test_runner.c). */
 void run_ppu_tests(void) {
     TEST_SUITE("ppu");
@@ -143,4 +162,5 @@ void run_ppu_tests(void) {
     RUN_TEST(vcount_irq_fires_when_target_in_vblank_range);
     RUN_TEST(vcount_irq_never_fires_when_target_above_max);
     RUN_TEST(vcount_match_flag_set_regardless_of_irq_enable);
+    RUN_TEST(affine_refs_reload_from_latches_at_vblank_start);
 }
