@@ -77,6 +77,41 @@ TEST(frame_complete_set_exactly_once_per_frame) {
     ASSERT_EQ(gba.frame_complete, true);
 }
 
+TEST(vcount_irq_fires_when_target_in_visible_range) {
+    GBA gba;
+    ppu_test_setup(&gba);
+    /* Set LYC=100, enable VCount IRQ in DISPSTAT (bit 5) and IE (bit 2). */
+    gba.ppu.dispstat = (100u << 8) | (1u << 5);
+    gba.interrupts.ie = IRQ_VCOUNT;
+    gba.interrupts.ime = true;
+    gba.interrupts.irf = 0;
+    gba_run_frame(&gba);
+    ASSERT_TRUE((gba.interrupts.irf & IRQ_VCOUNT) != 0);
+}
+
+TEST(vcount_irq_fires_when_target_in_vblank_range) {
+    GBA gba;
+    ppu_test_setup(&gba);
+    gba.ppu.dispstat = (200u << 8) | (1u << 5);
+    gba.interrupts.ie = IRQ_VCOUNT;
+    gba.interrupts.ime = true;
+    gba.interrupts.irf = 0;
+    gba_run_frame(&gba);
+    ASSERT_TRUE((gba.interrupts.irf & IRQ_VCOUNT) != 0);
+}
+
+TEST(vcount_irq_never_fires_when_target_above_max) {
+    GBA gba;
+    ppu_test_setup(&gba);
+    /* LYC=228 is impossible — vcount tops out at 227. */
+    gba.ppu.dispstat = (228u << 8) | (1u << 5);
+    gba.interrupts.ie = IRQ_VCOUNT;
+    gba.interrupts.ime = true;
+    gba.interrupts.irf = 0;
+    gba_run_frame(&gba);
+    ASSERT_EQ(gba.interrupts.irf & IRQ_VCOUNT, 0);
+}
+
 /* Suite registration (called from test_runner.c). */
 void run_ppu_tests(void) {
     TEST_SUITE("ppu");
@@ -86,4 +121,7 @@ void run_ppu_tests(void) {
     RUN_TEST(vblank_irq_fires_when_dispstat_bit_set);
     RUN_TEST(vblank_irq_does_not_fire_when_dispstat_bit_clear);
     RUN_TEST(frame_complete_set_exactly_once_per_frame);
+    RUN_TEST(vcount_irq_fires_when_target_in_visible_range);
+    RUN_TEST(vcount_irq_fires_when_target_in_vblank_range);
+    RUN_TEST(vcount_irq_never_fires_when_target_above_max);
 }
