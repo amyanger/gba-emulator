@@ -126,11 +126,7 @@ void ppu_render_bg_regular(PPU* ppu, int bg_index) {
             uint32_t pal_offset = (pal_num * 16 + color_idx) * 2;
             uint16_t color = (uint16_t)ppu->palette_ram[pal_offset]
                            | ((uint16_t)ppu->palette_ram[pal_offset + 1] << 8);
-            // Track layers for blending: push current top pixel down to second
-            ppu->second_pixel[screen_x] = ppu->scanline_buffer[screen_x];
-            ppu->second_layer[screen_x] = ppu->top_layer[screen_x];
-            ppu->scanline_buffer[screen_x] = color;
-            ppu->top_layer[screen_x] = (uint8_t)bg_index;
+            ppu_push_pixel(ppu, (uint32_t)screen_x, color, (uint8_t)bg_index);
         } else {
             // 8bpp mode: 64 bytes per tile, 8 bytes per row, 1 byte per pixel
             uint32_t tile_addr = char_base + tile_num * 64 + ty * 8 + tx;
@@ -146,11 +142,7 @@ void ppu_render_bg_regular(PPU* ppu, int bg_index) {
             uint32_t pal_offset = color_idx * 2;
             uint16_t color = (uint16_t)ppu->palette_ram[pal_offset]
                            | ((uint16_t)ppu->palette_ram[pal_offset + 1] << 8);
-            // Track layers for blending: push current top pixel down to second
-            ppu->second_pixel[screen_x] = ppu->scanline_buffer[screen_x];
-            ppu->second_layer[screen_x] = ppu->top_layer[screen_x];
-            ppu->scanline_buffer[screen_x] = color;
-            ppu->top_layer[screen_x] = (uint8_t)bg_index;
+            ppu_push_pixel(ppu, (uint32_t)screen_x, color, (uint8_t)bg_index);
         }
     }
 }
@@ -250,11 +242,7 @@ void ppu_render_bg_affine(PPU* ppu, int bg_index) {
             uint32_t pal_offset = (uint32_t)pixel * 2;
             uint16_t color = (uint16_t)ppu->palette_ram[pal_offset]
                            | ((uint16_t)ppu->palette_ram[pal_offset + 1] << 8);
-            // Track layers for blending: push current top pixel down to second
-            ppu->second_pixel[screen_x] = ppu->scanline_buffer[screen_x];
-            ppu->second_layer[screen_x] = ppu->top_layer[screen_x];
-            ppu->scanline_buffer[screen_x] = color;
-            ppu->top_layer[screen_x] = (uint8_t)bg_index;
+            ppu_push_pixel(ppu, (uint32_t)screen_x, color, (uint8_t)bg_index);
         }
 
         // Advance texture coordinates by PA/PC for the next screen pixel

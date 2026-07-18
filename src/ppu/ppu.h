@@ -73,6 +73,19 @@ struct PPU {
 };
 typedef struct PPU PPU;
 
+// Push a rendered pixel onto the scanline, demoting the current top pixel to
+// the second slot so the blend pass can reach it. Layer IDs: 0-3 = BG0-BG3,
+// 4 = OBJ. The backdrop (5) is the initial fill and never pushed here.
+// Returns true if the pixel was written.
+static inline bool ppu_push_pixel(PPU* ppu, uint32_t x, uint16_t color,
+                                  uint8_t layer) {
+    ppu->second_pixel[x] = ppu->scanline_buffer[x];
+    ppu->second_layer[x] = ppu->top_layer[x];
+    ppu->scanline_buffer[x] = color;
+    ppu->top_layer[x] = layer;
+    return true;
+}
+
 void ppu_init(PPU* ppu);
 void ppu_render_scanline(PPU* ppu);
 void ppu_set_hblank(PPU* ppu, bool active);

@@ -17,10 +17,7 @@ void ppu_render_mode3(PPU* ppu) {
         uint16_t color = (uint16_t)ppu->vram[offset]
                        | ((uint16_t)ppu->vram[offset + 1] << 8);
         // Track layers for blending: bitmap modes use BG2 (layer 2)
-        ppu->second_pixel[x] = ppu->scanline_buffer[x];
-        ppu->second_layer[x] = ppu->top_layer[x];
-        ppu->scanline_buffer[x] = color;
-        ppu->top_layer[x] = 2;
+        ppu_push_pixel(ppu, x, color, 2);
     }
 }
 
@@ -41,10 +38,7 @@ void ppu_render_mode4(PPU* ppu) {
         uint16_t color = (uint16_t)ppu->palette_ram[palette_idx * 2]
                        | ((uint16_t)ppu->palette_ram[palette_idx * 2 + 1] << 8);
         // Track layers for blending: bitmap modes use BG2 (layer 2)
-        ppu->second_pixel[x] = ppu->scanline_buffer[x];
-        ppu->second_layer[x] = ppu->top_layer[x];
-        ppu->scanline_buffer[x] = color;
-        ppu->top_layer[x] = 2;
+        ppu_push_pixel(ppu, x, color, 2);
     }
 }
 
@@ -68,9 +62,6 @@ void ppu_render_mode5(PPU* ppu) {
         uint16_t color = (uint16_t)ppu->vram[offset]
                        | ((uint16_t)ppu->vram[offset + 1] << 8);
         // Track layers for blending: bitmap modes use BG2 (layer 2)
-        ppu->second_pixel[x] = ppu->scanline_buffer[x];
-        ppu->second_layer[x] = ppu->top_layer[x];
-        ppu->scanline_buffer[x] = color;
-        ppu->top_layer[x] = 2;
+        ppu_push_pixel(ppu, x, color, 2);
     }
 }
