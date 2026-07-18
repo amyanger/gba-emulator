@@ -3,7 +3,6 @@
 #include "cheat/cheat_file.h"
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 
 TEST(cheat_init_zeros_engine) {
     CheatEngine eng;

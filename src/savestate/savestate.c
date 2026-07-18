@@ -1149,6 +1149,10 @@ SaveStateResult savestate_write_file_atomic(const char* path, const uint8_t* buf
         return SS_ERR_FILE_WRITE;
     }
 
+#ifdef _WIN32
+    /* MSVC rename() cannot replace an existing file; drop atomicity there. */
+    remove(path);
+#endif
     if (rename(tmp_path, path) != 0) {
         LOG_ERROR("Save state: cannot commit '%s'", path);
         remove(tmp_path);

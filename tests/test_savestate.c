@@ -1,5 +1,7 @@
 #include "test_harness.h"
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 
 // Include the .c directly to access static functions (crc32)
 // This file must NOT be linked alongside savestate.o
@@ -269,13 +271,12 @@ TEST(savestate_peek_label_reads_without_full_load) {
     ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &buf, &size));
     ASSERT_EQ(true, savestate_buffer_set_label(buf, size, "test-label"));
 
-    /* Write to a temp file. */
-    char path[] = "/tmp/gba_peek_label_XXXXXX";
-    int fd = mkstemp(path);
-    ASSERT_TRUE(fd >= 0);
-    ssize_t wrote = write(fd, buf, size);
-    close(fd);
-    ASSERT_EQ((ssize_t)size, wrote);
+    /* Write to a temp file (stdio so this also builds on Windows). */
+    const char* path = "gba_peek_label_test.ss";
+    FILE* f = fopen(path, "wb");
+    ASSERT_TRUE(f != NULL);
+    ASSERT_EQ(size, fwrite(buf, 1, size, f));
+    fclose(f);
 
     /* Mutate the in-memory GBA so we can detect any restoration. */
     uint32_t marker = 0xDEADBEEF;
@@ -348,6 +349,7 @@ TEST(savestate_load_rejects_lying_chunk_size) {
     gba_destroy(&gba);
 }
 
+#ifndef _WIN32 /* pins POSIX rename() semantics; mkstemp/chmod are unavailable on MSVC */
 TEST(savestate_save_is_atomic_replace) {
     /* savestate_save must write via a temp file + rename() so a torn
      * write can never destroy the previous good state.  Pin the
@@ -382,6 +384,7 @@ TEST(savestate_save_is_atomic_replace) {
     gba_destroy(&loaded);
     gba_destroy(&gba);
 }
+#endif /* !_WIN32 */
 
 TEST(savestate_upgrade_v5_to_v6_preserves_body) {
     GBA gba;
@@ -453,6 +456,8 @@ void run_savestate_tests(void) {
     RUN_TEST(savestate_label_filters_control_chars);
     RUN_TEST(savestate_peek_label_reads_without_full_load);
     RUN_TEST(savestate_load_rejects_lying_chunk_size);
+#ifndef _WIN32
     RUN_TEST(savestate_save_is_atomic_replace);
+#endif
     RUN_TEST(savestate_upgrade_v5_to_v6_preserves_body);
 }
