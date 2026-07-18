@@ -12,11 +12,14 @@ void apu_init(APU* apu) {
 void apu_fifo_write(APU* apu, int fifo_id, uint32_t data) {
     FIFO* fifo = (fifo_id == 0) ? &apu->fifo_a : &apu->fifo_b;
 
+    /* A write that doesn't fit is dropped (matches mGBA).  Resetting the
+     * FIFO here would discard ~32 queued samples — an audible dropout
+     * whenever the game briefly outruns the DMA drain. */
+    if (fifo->count > FIFO_SIZE - 4) {
+        return;
+    }
+
     for (int i = 0; i < 4; i++) {
-        /* Per hardware: writing to a full FIFO resets it to empty */
-        if (fifo->count >= FIFO_SIZE) {
-            fifo_reset(fifo);
-        }
         fifo->buffer[fifo->write_idx] = (int8_t)(data >> (i * 8));
         fifo->write_idx = (fifo->write_idx + 1) % FIFO_SIZE;
         fifo->count++;
@@ -56,6 +59,19 @@ void apu_on_timer_overflow(APU* apu, int timer_id) {
 }
 
 /* --- Sample mixing --- */
+
+/* Append one stereo sample pair to the ring buffer (drops when full;
+ * a 1-slot gap distinguishes full from empty). */
+static void apu_push_sample(APU* apu, int16_t left, int16_t right) {
+    uint32_t pos = apu->write_pos;
+    uint32_t next_pos = (pos + 1) % SAMPLE_BUFFER_SIZE;
+    if (next_pos == apu->read_pos) {
+        return; /* Buffer full, drop this sample */
+    }
+    apu->sample_buffer[pos * 2] = left;
+    apu->sample_buffer[pos * 2 + 1] = right;
+    apu->write_pos = next_pos;
+}
 
 static void apu_mix_sample(APU* apu) {
     int32_t left = 0;
@@ -185,22 +201,21 @@ static void apu_mix_sample(APU* apu) {
     apu->prev_left = left_s16;
     apu->prev_right = right_s16;
 
-    /* Write to ring buffer (leave 1-slot gap to distinguish full from empty) */
-    uint32_t pos = apu->write_pos;
-    uint32_t next_pos = (pos + 1) % SAMPLE_BUFFER_SIZE;
-    if (next_pos == apu->read_pos) {
-        return; /* Buffer full, drop this sample */
-    }
-    apu->sample_buffer[pos * 2] = left_s16;
-    apu->sample_buffer[pos * 2 + 1] = right_s16;
-    apu->write_pos = next_pos;
+    apu_push_sample(apu, left_s16, right_s16);
 }
 
 /* --- Main APU tick --- */
 
 void apu_tick(APU* apu, int cycles) {
-    /* Master enable check */
+    /* Master enable check.  Even while disabled the APU must keep
+     * producing (silent) samples at the normal rate — the SDL audio
+     * queue is paced by this stream and would underrun otherwise. */
     if (!BIT(apu->soundcnt_x, 7)) {
+        apu->sample_timer += (uint32_t)cycles;
+        while (apu->sample_timer >= apu->sample_period) {
+            apu->sample_timer -= apu->sample_period;
+            apu_push_sample(apu, 0, 0);
+        }
         return;
     }
 
