@@ -89,12 +89,12 @@ TEST(cheat_clear_all_empties_engine) {
     ASSERT_EQ(eng.cheat_count, 0);
 }
 
-/* Write content to a temp .cht file, load it, return the loaded count. */
+/* Write content to a temp .cht file, load it, return the loaded count.
+ * Plain stdio with a fixed name so this also builds on Windows. */
 static int32_t load_cht_content(CheatEngine* eng, const char* content, char* path_out) {
-    char path[] = "/tmp/gba_cheat_XXXXXX";
-    int fd = mkstemp(path);
-    if (fd < 0) return -100;
-    FILE* f = fdopen(fd, "w");
+    const char* path = "gba_cheat_test.cht";
+    FILE* f = fopen(path, "w");
+    if (!f) return -100;
     fputs(content, f);
     fclose(f);
     strcpy(path_out, path);
