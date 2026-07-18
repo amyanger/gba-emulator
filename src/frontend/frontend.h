@@ -16,6 +16,7 @@ typedef struct Frontend {
     uint32_t* overlay_buffer;     /* SCREEN_WIDTH * SCREEN_HEIGHT pixels, ARGB8888 */
     bool overlay_dirty;  /* set by overlay producers each frame; cleared by frontend_overlay_clear */
     SDL_AudioDeviceID audio_device;
+    uint32_t audio_target_bytes;  /* frame-sync queue target: 3x the device pull size */
     SDL_GameController* controller;
 
     int scale;

@@ -77,6 +77,8 @@ bool frontend_init(Frontend* fe, int scale) {
 
     fe->fullscreen = false;
     fe->muted = false;
+    fe->audio_device = 0;
+    fe->audio_target_bytes = 0;
     fe->controller_keys = 0;
     fe->slot_picker.mode = SLOT_PICKER_CLOSED;
 
@@ -418,6 +420,13 @@ void frontend_audio_init(Frontend* fe) {
         return;
     }
 
+    /* Frame sync drains the queue down to this target each frame. It must
+     * comfortably exceed one device pull (have.samples frames), or every
+     * callback empties the queue and SDL pads with silence — audio comes out
+     * as stutter/gaps. 3 pulls keeps >= 2 pulls of margin after each drain. */
+    fe->audio_target_bytes =
+        3u * (uint32_t)have.samples * have.channels * (uint32_t)sizeof(int16_t);
+
     SDL_PauseAudioDevice(fe->audio_device, 0);
     LOG_INFO("Audio initialized: %d Hz, %d channels", have.freq, have.channels);
 }
@@ -470,9 +479,10 @@ void frontend_frame_sync(Frontend* fe) {
     if (fe->audio_device != 0 && !fe->muted) {
         /* Audio-driven sync: block until SDL's audio queue drains.
          * This ties emulation speed to the audio playback rate (~60fps).
-         * Target: ~2 frames of audio buffered (low latency, no underrun).
+         * Target is sized from the device pull size (see frontend_audio_init);
+         * a fixed small target underruns on devices with large I/O buffers.
          * Cap iterations to avoid hanging if the audio device stalls. */
-        uint32_t target = 1100 * 2 * sizeof(int16_t);
+        uint32_t target = fe->audio_target_bytes;
         int max_wait = 100;
         while (SDL_GetQueuedAudioSize(fe->audio_device) > target && max_wait > 0) {
             SDL_Delay(1);
