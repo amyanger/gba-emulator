@@ -1,4 +1,5 @@
 #include "thumb_instr.h"
+#include "cpu_alu.h"
 #include "bios_hle.h"
 #include "memory/bus.h"
 
@@ -11,114 +12,8 @@
  * References: GBATEK "THUMB Opcodes", ARM7TDMI Technical Reference Manual.
  */
 
-/* ========================================================================
- * Flag Helpers (duplicated from arm_instr.c — those are static)
- * ======================================================================== */
-
-/* Set N and Z flags from a 32-bit result */
-static void set_nz_flags(ARM7TDMI* cpu, uint32_t result) {
-    if (BIT(result, 31)) {
-        cpu->cpsr = SET_BIT(cpu->cpsr, CPSR_N);
-    } else {
-        cpu->cpsr = CLR_BIT(cpu->cpsr, CPSR_N);
-    }
-    if (result == 0) {
-        cpu->cpsr = SET_BIT(cpu->cpsr, CPSR_Z);
-    } else {
-        cpu->cpsr = CLR_BIT(cpu->cpsr, CPSR_Z);
-    }
-}
-
-/* Set carry flag */
-static void set_c_flag(ARM7TDMI* cpu, bool carry) {
-    if (carry) {
-        cpu->cpsr = SET_BIT(cpu->cpsr, CPSR_C);
-    } else {
-        cpu->cpsr = CLR_BIT(cpu->cpsr, CPSR_C);
-    }
-}
-
-/* Set overflow flag */
-static void set_v_flag(ARM7TDMI* cpu, bool overflow) {
-    if (overflow) {
-        cpu->cpsr = SET_BIT(cpu->cpsr, CPSR_V);
-    } else {
-        cpu->cpsr = CLR_BIT(cpu->cpsr, CPSR_V);
-    }
-}
-
-/* Detect addition overflow: (a ^ result) & (b ^ result) bit31 */
-static bool add_overflow(uint32_t a, uint32_t b, uint32_t result) {
-    return BIT((a ^ result) & (b ^ result), 31);
-}
-
-/* Detect subtraction overflow: (a ^ b) & (a ^ result) bit31 */
-static bool sub_overflow(uint32_t a, uint32_t b, uint32_t result) {
-    return BIT((a ^ b) & (a ^ result), 31);
-}
-
-/* ========================================================================
- * Barrel Shifter (duplicated from arm_instr.c — those are static)
- * ======================================================================== */
-
-/*
- * Barrel shift for register-specified shift amounts (used by Format 4 ALU).
- * When amount == 0, value passes through unchanged and carry is preserved.
- */
-static uint32_t barrel_shift_reg(uint32_t value, uint8_t shift_type,
-                                 uint8_t amount, bool* carry_out) {
-    if (amount == 0) {
-        return value;
-    }
-
-    switch (shift_type) {
-    case 0: /* LSL */
-        if (amount < 32) {
-            *carry_out = BIT(value, 32 - amount);
-            return value << amount;
-        } else if (amount == 32) {
-            *carry_out = BIT(value, 0);
-            return 0;
-        } else {
-            *carry_out = false;
-            return 0;
-        }
-
-    case 1: /* LSR */
-        if (amount < 32) {
-            *carry_out = BIT(value, amount - 1);
-            return value >> amount;
-        } else if (amount == 32) {
-            *carry_out = BIT(value, 31);
-            return 0;
-        } else {
-            *carry_out = false;
-            return 0;
-        }
-
-    case 2: /* ASR */
-        if (amount < 32) {
-            *carry_out = BIT(value, amount - 1);
-            return (uint32_t)((int32_t)value >> amount);
-        } else {
-            *carry_out = BIT(value, 31);
-            return BIT(value, 31) ? 0xFFFFFFFF : 0;
-        }
-
-    case 3: /* ROR */
-        amount &= 31;
-        if (amount == 0) {
-            /* ROR by 32 (or multiple of 32) */
-            *carry_out = BIT(value, 31);
-            return value;
-        }
-        *carry_out = BIT(value, amount - 1);
-        return (value >> amount) | (value << (32 - amount));
-
-    default:
-        return value;
-    }
-}
+/* Flag helpers and barrel shifter are shared with the ARM decoder via
+ * cpu_alu.h — they must stay bit-identical between instruction sets. */
 
 /* ========================================================================
  * Format 1: Move Shifted Register (bits[15:13]=000, bits[12:11]!=11)
