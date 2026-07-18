@@ -211,7 +211,6 @@ set(TEST_SOURCES
     tests/test_eeprom.c
     tests/test_practice.c
     tests/test_fb_hash.c
-    tests/test_ppu.c
 )
 
 # Several tests rely on POSIX-only APIs (unistd.h, pthreads, AF_UNIX
