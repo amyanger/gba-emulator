@@ -30,12 +30,25 @@ static inline uint16_t pack_rgb(uint32_t r, uint32_t g, uint32_t b) {
 // Apply blending effects to the entire scanline after compositing.
 // Must be called after all BG and OBJ layers have been rendered and
 // layer-tracking arrays (top_layer, second_pixel, second_layer) are filled.
+// Alpha-blend the pixel at x against its second-priority pixel.
+static void alpha_blend_pixel(PPU* ppu, uint32_t x, uint32_t eva, uint32_t evb) {
+    uint32_t r1, g1, b1, r2, g2, b2;
+    unpack_rgb(ppu->scanline_buffer[x], &r1, &g1, &b1);
+    unpack_rgb(ppu->second_pixel[x], &r2, &g2, &b2);
+
+    uint32_t r = (r1 * eva + r2 * evb) >> 4;
+    uint32_t g = (g1 * eva + g2 * evb) >> 4;
+    uint32_t b = (b1 * eva + b2 * evb) >> 4;
+    if (r > 31) r = 31;
+    if (g > 31) g = 31;
+    if (b > 31) b = 31;
+
+    ppu->scanline_buffer[x] = pack_rgb(r, g, b);
+}
+
 void ppu_apply_blend_scanline(PPU* ppu) {
     uint16_t bldcnt = ppu->bldcnt;
     uint8_t mode = (uint8_t)BITS(bldcnt, 7, 6);
-
-    // Mode 0: no blending -- early out
-    if (mode == 0) return;
 
     // Alpha blend coefficients (BLDALPHA register), clamped to 0-16
     uint32_t eva = ppu->bldalpha & 0x1F;
@@ -57,25 +70,25 @@ void ppu_apply_blend_scanline(PPU* ppu) {
 
         uint8_t top_id = ppu->top_layer[x];
 
+        // Semi-transparent OBJ pixels (GFX mode 1) force alpha blending
+        // against a valid 2nd target, regardless of the BLDCNT mode bits
+        // and of the OBJ 1st-target bit.
+        if (top_id == 4 && ppu->obj_semitransparent[x]
+            && is_second_target(bldcnt, ppu->second_layer[x])) {
+            alpha_blend_pixel(ppu, x, eva, evb);
+            continue;
+        }
+
+        // Mode 0: no (further) blending
+        if (mode == 0) continue;
+
         // All modes require the top pixel to be a 1st target
         if (!is_first_target(bldcnt, top_id)) continue;
 
         if (mode == 1) {
             // Alpha blend: 2nd target must also match
             if (!is_second_target(bldcnt, ppu->second_layer[x])) continue;
-
-            uint32_t r1, g1, b1, r2, g2, b2;
-            unpack_rgb(ppu->scanline_buffer[x], &r1, &g1, &b1);
-            unpack_rgb(ppu->second_pixel[x], &r2, &g2, &b2);
-
-            uint32_t r = (r1 * eva + r2 * evb) >> 4;
-            uint32_t g = (g1 * eva + g2 * evb) >> 4;
-            uint32_t b = (b1 * eva + b2 * evb) >> 4;
-            if (r > 31) r = 31;
-            if (g > 31) g = 31;
-            if (b > 31) b = 31;
-
-            ppu->scanline_buffer[x] = pack_rgb(r, g, b);
+            alpha_blend_pixel(ppu, x, eva, evb);
         } else if (mode == 2) {
             // Brightness increase (fade to white)
             uint32_t r, g, b;
@@ -106,24 +119,26 @@ void ppu_apply_blend_scanline(PPU* ppu) {
 
 // Check if the current scanline (vcount) falls within a window's vertical range.
 static bool win_v_active(uint16_t win_v, uint16_t vcount) {
-    uint8_t top    = (uint8_t)(win_v >> 8);
-    uint8_t bottom = (uint8_t)(win_v & 0xFF);
+    uint32_t top    = win_v >> 8;
+    uint32_t bottom = win_v & 0xFF;
 
-    if (top > bottom) {
-        // Wrapping range: active when vcount >= top OR vcount < bottom
-        return (vcount >= top || vcount < bottom);
+    // GBATEK: garbage values (Y1 > Y2, or Y2 > 160) are interpreted as
+    // Y2 = 160 — the window extends to the bottom edge, no wrapping.
+    if (top > bottom || bottom > SCREEN_HEIGHT) {
+        bottom = SCREEN_HEIGHT;
     }
     return (vcount >= top && vcount < bottom);
 }
 
 // Check if a pixel X coordinate falls within a window's horizontal range.
 static bool win_h_active(uint16_t win_h, uint32_t x) {
-    uint8_t left  = (uint8_t)(win_h >> 8);
-    uint8_t right = (uint8_t)(win_h & 0xFF);
+    uint32_t left  = win_h >> 8;
+    uint32_t right = win_h & 0xFF;
 
-    if (left > right) {
-        // Wrapping range: active when x >= left OR x < right
-        return (x >= left || x < right);
+    // GBATEK: garbage values (X1 > X2, or X2 > 240) are interpreted as
+    // X2 = 240 — the window extends to the right edge, no wrapping.
+    if (left > right || right > SCREEN_WIDTH) {
+        right = SCREEN_WIDTH;
     }
     return (x >= left && x < right);
 }

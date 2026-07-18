@@ -51,6 +51,10 @@ struct PPU {
     // Per-pixel flag: true if the top OBJ pixel was from a mosaic-enabled sprite
     bool obj_mosaic[SCREEN_WIDTH];
 
+    // Per-pixel flag: true if the top OBJ pixel is semi-transparent
+    // (GFX mode 1) — forces alpha blending in the effects pass
+    bool obj_semitransparent[SCREEN_WIDTH];
+
     // Per-pixel flag set by windowing: false = color effects disabled for this pixel
     bool win_blend_enable[SCREEN_WIDTH];
 

@@ -29,6 +29,82 @@ static const uint8_t sprite_height[3][4] = {
     {16, 32, 32, 64},  // Vertical
 };
 
+// Fetch one OBJ texel (palette index) at texture coords (tex_x, tex_y).
+// Handles 1D/2D tile mapping and 4/8bpp tile layout; width is the
+// TEXTURE width in pixels (not the affine bounding box).
+static uint8_t obj_fetch_texel(const PPU* ppu, bool mapping_1d, bool color_8bpp,
+                               uint16_t base_tile, uint32_t width,
+                               uint32_t tex_x, uint32_t tex_y) {
+    uint32_t tile_row = tex_y / 8;
+    uint32_t tile_col = tex_x / 8;
+    uint32_t pixel_row = tex_y % 8;
+    uint32_t pixel_col = tex_x % 8;
+
+    uint16_t tile_num;
+    if (color_8bpp) {
+        if (mapping_1d) {
+            tile_num = base_tile + (uint16_t)((tile_row * (width / 8) + tile_col) * 2);
+        } else {
+            tile_num = base_tile + (uint16_t)(tile_row * 32 + tile_col * 2);
+        }
+    } else {
+        if (mapping_1d) {
+            tile_num = base_tile + (uint16_t)(tile_row * (width / 8) + tile_col);
+        } else {
+            tile_num = base_tile + (uint16_t)(tile_row * 32 + tile_col);
+        }
+    }
+
+    // Each tile is 32 bytes; OBJ tiles start at VRAM offset 0x10000.
+    uint32_t tile_addr = OBJ_TILE_BASE + (uint32_t)tile_num * 32;
+
+    if (color_8bpp) {
+        // 8bpp: 8 bytes per row, 1 byte per pixel
+        uint32_t offset = tile_addr + pixel_row * 8 + pixel_col;
+        if (offset >= VRAM_SIZE) offset -= VRAM_MIRROR_OFFSET;
+        return ppu->vram[offset];
+    }
+    // 4bpp: 4 bytes per row, each byte holds 2 pixels (low nibble = left)
+    uint32_t offset = tile_addr + pixel_row * 4 + pixel_col / 2;
+    if (offset >= VRAM_SIZE) offset -= VRAM_MIRROR_OFFSET;
+    uint8_t byte = ppu->vram[offset];
+    return (pixel_col & 1) ? (byte >> 4) : (byte & 0x0F);
+}
+
+// Read PA/PB/PC/PD (8.8 fixed) for the affine group in attr1 bits 13-9.
+// Group N's parameters live at OAM offsets N*32 + 6/14/22/30.
+static void obj_read_affine_params(const PPU* ppu, uint16_t attr1,
+                                   int16_t* pa, int16_t* pb,
+                                   int16_t* pc, int16_t* pd) {
+    uint32_t grp = (uint32_t)BITS(attr1, 13, 9) * 32;
+    *pa = (int16_t)((uint16_t)ppu->oam[grp + 6] | ((uint16_t)ppu->oam[grp + 7] << 8));
+    *pb = (int16_t)((uint16_t)ppu->oam[grp + 14] | ((uint16_t)ppu->oam[grp + 15] << 8));
+    *pc = (int16_t)((uint16_t)ppu->oam[grp + 22] | ((uint16_t)ppu->oam[grp + 23] << 8));
+    *pd = (int16_t)((uint16_t)ppu->oam[grp + 30] | ((uint16_t)ppu->oam[grp + 31] << 8));
+}
+
+// Map a bounding-box pixel to texture coords.  For affine sprites the
+// screen offset is taken relative to the bbox center, transformed by the
+// 8.8 matrix, and re-centered on the texture; out-of-bounds -> false
+// (transparent).  Regular sprites just apply the flip bits.
+static bool obj_texcoord(int32_t px, int32_t local_y, bool affine,
+                         int16_t pa, int16_t pb, int16_t pc, int16_t pd,
+                         int32_t bbox_w, int32_t bbox_h,
+                         int32_t width, int32_t height,
+                         bool h_flip, bool v_flip,
+                         int32_t* tex_x, int32_t* tex_y) {
+    if (affine) {
+        int32_t dx = px - bbox_w / 2;
+        int32_t dy = local_y - bbox_h / 2;
+        *tex_x = ((pa * dx + pb * dy) >> 8) + width / 2;
+        *tex_y = ((pc * dx + pd * dy) >> 8) + height / 2;
+        return *tex_x >= 0 && *tex_x < width && *tex_y >= 0 && *tex_y < height;
+    }
+    *tex_x = h_flip ? (width - 1 - px) : px;
+    *tex_y = v_flip ? (height - 1 - local_y) : local_y;
+    return true;
+}
+
 // Render all sprites whose OAM priority field matches the given priority level.
 // Iterates OAM entries from 127 down to 0 so that lower-numbered entries
 // overwrite higher-numbered ones (lower index = higher display priority among
@@ -57,7 +133,7 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
         // 0 = Regular, 1 = Affine, 2 = Disabled, 3 = Affine double-size
         uint8_t obj_mode = BITS(attr0, 9, 8);
         if (obj_mode == 2) continue;  // Disabled sprite
-        if (obj_mode == 1 || obj_mode == 3) continue;  // Affine: skip for now
+        bool affine = (obj_mode == 1) || (obj_mode == 3);
 
         // GFX Mode: attr0 bits 11-10
         // 0 = Normal, 1 = Semi-transparent, 2 = OBJ window
@@ -78,17 +154,21 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
         // Guard against invalid shape (shape=3 is reserved/undefined)
         if (shape > 2) continue;
 
-        uint8_t width  = sprite_width[shape][size];
-        uint8_t height = sprite_height[shape][size];
+        int32_t width  = sprite_width[shape][size];
+        int32_t height = sprite_height[shape][size];
+
+        // Affine double-size mode renders into a doubled bounding box.
+        int32_t bbox_w = (obj_mode == 3) ? width * 2 : width;
+        int32_t bbox_h = (obj_mode == 3) ? height * 2 : height;
 
         // Y coordinate: attr0 bits 7-0 (unsigned 0-255)
         // Values >= 160 are treated as negative (wrap around): y - 256
         int32_t sprite_y = BITS(attr0, 7, 0);
         if (sprite_y >= 160) sprite_y -= 256;
 
-        // Check if the sprite intersects the current scanline
+        // Check if the sprite's bounding box intersects the scanline
         int32_t local_y = (int32_t)scanline - sprite_y;
-        if (local_y < 0 || local_y >= height) continue;
+        if (local_y < 0 || local_y >= bbox_h) continue;
 
         // Apply vertical mosaic: snap sprite row to the top of the mosaic block.
         // OAM attr0 bit 12 enables mosaic for this sprite.
@@ -119,71 +199,33 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
         // Palette number: attr2 bits 15-12 (only used in 4bpp mode)
         uint8_t pal_num = BITS(attr2, 15, 12);
 
-        // Flip flags (regular mode only)
-        bool h_flip = BIT(attr1, 12);
-        bool v_flip = BIT(attr1, 13);
+        // Flip flags (regular mode only; affine repurposes these bits
+        // as part of the parameter group index)
+        bool h_flip = !affine && BIT(attr1, 12);
+        bool v_flip = !affine && BIT(attr1, 13);
 
-        // Apply vertical flip to the local Y coordinate
-        int32_t tex_y = v_flip ? (height - 1 - local_y) : local_y;
+        int16_t pa = 0x100, pb = 0, pc = 0, pd = 0x100;
+        if (affine) {
+            obj_read_affine_params(ppu, attr1, &pa, &pb, &pc, &pd);
+        }
 
-        // Render each pixel of this sprite row
-        for (int32_t px = 0; px < width; px++) {
+        // Render each pixel of this bounding-box row
+        for (int32_t px = 0; px < bbox_w; px++) {
             int32_t screen_x = sprite_x + px;
 
             // Clip to visible screen area
             if (screen_x < 0 || screen_x >= SCREEN_WIDTH) continue;
 
-            // Apply horizontal flip
-            int32_t tex_x = h_flip ? (width - 1 - px) : px;
-
-            // Compute the tile number for this pixel
-            uint16_t tile_num;
-            uint32_t tile_row = (uint32_t)tex_y / 8;
-            uint32_t tile_col = (uint32_t)tex_x / 8;
-            uint32_t pixel_row = (uint32_t)tex_y % 8;
-            uint32_t pixel_col = (uint32_t)tex_x % 8;
-
-            if (color_8bpp) {
-                // 8bpp tile mapping
-                if (mapping_1d) {
-                    tile_num = base_tile
-                             + (uint16_t)(tile_row * ((uint32_t)width / 8) + tile_col) * 2;
-                } else {
-                    tile_num = base_tile
-                             + (uint16_t)(tile_row * 32 + tile_col * 2);
-                }
-            } else {
-                // 4bpp tile mapping
-                if (mapping_1d) {
-                    tile_num = base_tile
-                             + (uint16_t)(tile_row * ((uint32_t)width / 8) + tile_col);
-                } else {
-                    tile_num = base_tile
-                             + (uint16_t)(tile_row * 32 + tile_col);
-                }
+            int32_t tex_x, tex_y;
+            if (!obj_texcoord(px, local_y, affine, pa, pb, pc, pd,
+                              bbox_w, bbox_h, width, height,
+                              h_flip, v_flip, &tex_x, &tex_y)) {
+                continue;
             }
 
-            // Compute VRAM offset for the pixel within the tile.
-            // Each tile is 32 bytes. OBJ tiles start at VRAM offset 0x10000.
-            uint32_t tile_addr = OBJ_TILE_BASE + (uint32_t)tile_num * 32;
-            uint8_t color_idx;
-
-            if (color_8bpp) {
-                // 8bpp: 8 bytes per row, 1 byte per pixel
-                uint32_t offset = tile_addr + pixel_row * 8 + pixel_col;
-                if (offset >= VRAM_SIZE) offset -= VRAM_MIRROR_OFFSET;
-                color_idx = ppu->vram[offset];
-            } else {
-                // 4bpp: 4 bytes per row, each byte holds 2 pixels (low nibble = left)
-                uint32_t offset = tile_addr + pixel_row * 4 + pixel_col / 2;
-                if (offset >= VRAM_SIZE) offset -= VRAM_MIRROR_OFFSET;
-                uint8_t byte = ppu->vram[offset];
-                if (pixel_col & 1) {
-                    color_idx = byte >> 4;   // High nibble = right pixel
-                } else {
-                    color_idx = byte & 0x0F; // Low nibble = left pixel
-                }
-            }
+            uint8_t color_idx = obj_fetch_texel(ppu, mapping_1d, color_8bpp,
+                                                base_tile, (uint32_t)width,
+                                                (uint32_t)tex_x, (uint32_t)tex_y);
 
             // Palette index 0 is transparent in both modes
             if (color_idx == 0) continue;
@@ -206,6 +248,7 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
             ppu->scanline_buffer[screen_x] = color;
             ppu->top_layer[screen_x] = 4;  // OBJ layer
             ppu->obj_mosaic[screen_x] = BIT(attr0, 12);
+            ppu->obj_semitransparent[screen_x] = (gfx_mode == 1);
         }
     }
 }
@@ -247,7 +290,7 @@ void ppu_build_obj_window(PPU* ppu) {
 
         uint8_t obj_mode = BITS(attr0, 9, 8);
         if (obj_mode == 2) continue;  // Disabled
-        if (obj_mode == 1 || obj_mode == 3) continue;  // Affine: skip for now
+        bool affine = (obj_mode == 1) || (obj_mode == 3);
 
         // Only process GFX mode 2 (OBJ window) sprites
         uint8_t gfx_mode = BITS(attr0, 11, 10);
@@ -257,14 +300,16 @@ void ppu_build_obj_window(PPU* ppu) {
         uint8_t size  = BITS(attr1, 15, 14);
         if (shape > 2) continue;
 
-        uint8_t width  = sprite_width[shape][size];
-        uint8_t height = sprite_height[shape][size];
+        int32_t width  = sprite_width[shape][size];
+        int32_t height = sprite_height[shape][size];
+        int32_t bbox_w = (obj_mode == 3) ? width * 2 : width;
+        int32_t bbox_h = (obj_mode == 3) ? height * 2 : height;
 
         int32_t sprite_y = BITS(attr0, 7, 0);
         if (sprite_y >= 160) sprite_y -= 256;
 
         int32_t local_y = (int32_t)scanline - sprite_y;
-        if (local_y < 0 || local_y >= height) continue;
+        if (local_y < 0 || local_y >= bbox_h) continue;
 
         int32_t sprite_x = BITS(attr1, 8, 0);
         if (BIT(attr1, 8)) {
@@ -275,53 +320,28 @@ void ppu_build_obj_window(PPU* ppu) {
         uint16_t base_tile = BITS(attr2, 9, 0);
         if (color_8bpp) base_tile &= ~(uint16_t)1;
 
-        bool h_flip = BIT(attr1, 12);
-        bool v_flip = BIT(attr1, 13);
-        int32_t tex_y = v_flip ? (height - 1 - local_y) : local_y;
+        bool h_flip = !affine && BIT(attr1, 12);
+        bool v_flip = !affine && BIT(attr1, 13);
 
-        for (int32_t px = 0; px < width; px++) {
+        int16_t pa = 0x100, pb = 0, pc = 0, pd = 0x100;
+        if (affine) {
+            obj_read_affine_params(ppu, attr1, &pa, &pb, &pc, &pd);
+        }
+
+        for (int32_t px = 0; px < bbox_w; px++) {
             int32_t screen_x = sprite_x + px;
             if (screen_x < 0 || screen_x >= SCREEN_WIDTH) continue;
 
-            int32_t tex_x = h_flip ? (width - 1 - px) : px;
-
-            uint32_t tile_row = (uint32_t)tex_y / 8;
-            uint32_t tile_col = (uint32_t)tex_x / 8;
-            uint32_t pixel_row = (uint32_t)tex_y % 8;
-            uint32_t pixel_col = (uint32_t)tex_x % 8;
-
-            uint16_t tile_num;
-            if (color_8bpp) {
-                if (mapping_1d) {
-                    tile_num = base_tile
-                             + (uint16_t)(tile_row * ((uint32_t)width / 8) + tile_col) * 2;
-                } else {
-                    tile_num = base_tile
-                             + (uint16_t)(tile_row * 32 + tile_col * 2);
-                }
-            } else {
-                if (mapping_1d) {
-                    tile_num = base_tile
-                             + (uint16_t)(tile_row * ((uint32_t)width / 8) + tile_col);
-                } else {
-                    tile_num = base_tile
-                             + (uint16_t)(tile_row * 32 + tile_col);
-                }
+            int32_t tex_x, tex_y;
+            if (!obj_texcoord(px, local_y, affine, pa, pb, pc, pd,
+                              bbox_w, bbox_h, width, height,
+                              h_flip, v_flip, &tex_x, &tex_y)) {
+                continue;
             }
 
-            uint32_t tile_addr = OBJ_TILE_BASE + (uint32_t)tile_num * 32;
-            uint8_t color_idx;
-
-            if (color_8bpp) {
-                uint32_t offset = tile_addr + pixel_row * 8 + pixel_col;
-                if (offset >= VRAM_SIZE) offset -= VRAM_MIRROR_OFFSET;
-                color_idx = ppu->vram[offset];
-            } else {
-                uint32_t offset = tile_addr + pixel_row * 4 + pixel_col / 2;
-                if (offset >= VRAM_SIZE) offset -= VRAM_MIRROR_OFFSET;
-                uint8_t byte = ppu->vram[offset];
-                color_idx = (pixel_col & 1) ? (byte >> 4) : (byte & 0x0F);
-            }
+            uint8_t color_idx = obj_fetch_texel(ppu, mapping_1d, color_8bpp,
+                                                base_tile, (uint32_t)width,
+                                                (uint32_t)tex_x, (uint32_t)tex_y);
 
             // Only non-transparent pixels contribute to the OBJ window
             if (color_idx != 0) {

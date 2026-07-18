@@ -52,7 +52,6 @@ set(SOURCES
     src/ppu/bitmap.c
     src/ppu/sprites.c
     src/ppu/effects.c
-    src/ppu/affine.c
     src/apu/apu.c
     src/apu/channel.c
     src/apu/fifo.c
@@ -140,7 +139,6 @@ set(LIB_SOURCES
     src/ppu/bitmap.c
     src/ppu/sprites.c
     src/ppu/effects.c
-    src/ppu/affine.c
     src/apu/apu.c
     src/apu/channel.c
     src/apu/fifo.c
