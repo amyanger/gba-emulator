@@ -32,6 +32,24 @@ endif()
 
 find_package(SDL2 REQUIRED)
 
+# Treat warnings as errors (used in CI; off by default so a new local
+# compiler's extra warnings don't block development)
+option(ENABLE_WERROR "Treat compiler warnings as errors" OFF)
+if(ENABLE_WERROR)
+    if(MSVC)
+        add_compile_options(/WX)
+    else()
+        add_compile_options(-Werror)
+    endif()
+endif()
+
+# Address/UB sanitizers (Debug-oriented; used by the CI sanitizer job)
+option(ENABLE_SANITIZERS "Build with AddressSanitizer + UBSan" OFF)
+if(ENABLE_SANITIZERS AND NOT MSVC)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 # X-Ray hardware visualization mode (default ON)
 option(ENABLE_XRAY "Enable Hardware X-Ray Mode (F2 hotkey)" ON)
 

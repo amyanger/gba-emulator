@@ -34,7 +34,7 @@ jobs:
         run: ${{ matrix.install }}
 
       - name: Configure (Debug)
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug ${{ matrix.cmake_extra }}
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DENABLE_WERROR=ON ${{ matrix.cmake_extra }}
 
       - name: Build emulator
         run: cmake --build build --target gba_emulator --config Debug -j
@@ -45,6 +45,29 @@ jobs:
       - name: Run tests
         working-directory: build
         run: ctest --output-on-failure -C Debug
+
+  sanitizers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SDL2
+        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+
+      - name: Configure (Debug + ASan/UBSan)
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+          -DENABLE_WERROR=ON -DENABLE_SANITIZERS=ON
+
+      - name: Build tests
+        run: cmake --build build --target gba_tests -j
+
+      - name: Run tests under ASan/UBSan
+        working-directory: build
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+        run: ctest --output-on-failure
 
   golden-frame:
     needs: build-and-test
