@@ -1,5 +1,7 @@
 #include "test_harness.h"
 #include "gba.h"
+#include "ppu/ppu.h"
+#include <stdlib.h>
 
 /* Helper: build a GBA in a clean reset state, with no ROM loaded.
  * gba_run_frame works against the bus's empty memory and HLE BIOS,
@@ -206,6 +208,191 @@ TEST(hblank_flag_zero_before_cycle_1006) {
     ASSERT_EQ(BIT(gba.ppu.dispstat, 1), 0);
 }
 
+/* ---- Rendering: windowing, affine sprites, semi-transparency ------ */
+
+/* Heap-allocated GBA for the rendering tests below (large struct). */
+static GBA* make_gba(void) {
+    GBA* gba = calloc(1, sizeof(GBA));
+    gba_init(gba);
+    return gba;
+}
+
+TEST(window_inverted_h_range_clamps_no_wrap) {
+    /* GBATEK: garbage WIN0H values (X1 > X2, or X2 > 240) are
+     * interpreted as X2 = 240 — the window runs from X1 to the right
+     * edge.  It does NOT wrap around to the left edge. */
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+
+    /* Mode 3 bitmap, BG2 on, WIN0 on. */
+    ppu->dispcnt = 3 | (1u << 10) | (1u << 13);
+    ppu->vcount = 0;
+
+    /* Row 0 all red (BGR555 0x001F). */
+    for (int x = 0; x < SCREEN_WIDTH; x++) {
+        ppu->vram[x * 2] = 0x1F;
+        ppu->vram[x * 2 + 1] = 0x00;
+    }
+    /* Backdrop (palette entry 0) = blue, distinct from red and from
+     * zero-initialized memory. */
+    ppu->palette_ram[0] = 0x00;
+    ppu->palette_ram[1] = 0x7C;
+
+    /* WIN0: horizontal left=100 right=10 (inverted), full-height. */
+    ppu->win_h[0] = (uint16_t)((100 << 8) | 10);
+    ppu->win_v[0] = (uint16_t)((0 << 8) | 160);
+    /* Inside WIN0: BG2 visible.  Outside: nothing (backdrop). */
+    ppu->winin = 1u << 2;
+    ppu->winout = 0;
+
+    ppu_render_scanline(ppu);
+
+    const uint16_t red = 0x001F, blue = 0x7C00;
+    /* x=150 is in [100, 240): inside the window — BG2 shows. */
+    ASSERT_EQ_HEX(ppu->framebuffer[150], red);
+    /* x=5 would only be inside if the range wrapped; it must not. */
+    ASSERT_EQ_HEX(ppu->framebuffer[5], blue);
+    /* x=50 is outside either way. */
+    ASSERT_EQ_HEX(ppu->framebuffer[50], blue);
+
+    free(gba);
+}
+
+/* Set up an 8x8 4bpp OBJ: tile 1 solid color-index 1, OBJ palette
+ * color 1 = red, identity affine params in OAM group 0. */
+static void setup_affine_obj_fixture(PPU* ppu) {
+    /* Tile 1 (OBJ VRAM 0x10000 + 32): every 4bpp pixel = color 1. */
+    for (int i = 0; i < 32; i++) {
+        ppu->vram[0x10000 + 32 + i] = 0x11;
+    }
+    /* OBJ palette entry 1 = red (0x001F). */
+    ppu->palette_ram[0x200 + 2] = 0x1F;
+    ppu->palette_ram[0x200 + 3] = 0x00;
+    /* Backdrop = blue so misses are visible. */
+    ppu->palette_ram[0] = 0x00;
+    ppu->palette_ram[1] = 0x7C;
+
+    /* Affine parameter group 0 = identity (PA=PD=0x100, PB=PC=0).
+     * Group N's PA/PB/PC/PD live at OAM offsets N*32 + 6/14/22/30. */
+    ppu->oam[6] = 0x00; ppu->oam[7] = 0x01;   /* PA = 0x100 */
+    ppu->oam[14] = 0x00; ppu->oam[15] = 0x00; /* PB = 0 */
+    ppu->oam[22] = 0x00; ppu->oam[23] = 0x00; /* PC = 0 */
+    ppu->oam[30] = 0x00; ppu->oam[31] = 0x01; /* PD = 0x100 */
+}
+
+TEST(affine_sprite_identity_renders) {
+    /* OBJ mode 1 (affine) with an identity matrix must render exactly
+     * like a regular sprite — today affine sprites are skipped
+     * entirely and Emerald's battle/menu scaling effects vanish. */
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+
+    ppu->dispcnt = 0 | (1u << 12); /* mode 0, OBJ on */
+    ppu->vcount = 0;
+    setup_affine_obj_fixture(ppu);
+
+    /* OAM entry 0: y=0, affine (bit 8), 4bpp, square 8x8, x=10,
+     * param group 0, tile 1, priority 0. */
+    uint16_t attr0 = 0 | (1u << 8);
+    uint16_t attr1 = 10;
+    uint16_t attr2 = 1;
+    ppu->oam[0] = (uint8_t)attr0; ppu->oam[1] = (uint8_t)(attr0 >> 8);
+    ppu->oam[2] = (uint8_t)attr1; ppu->oam[3] = (uint8_t)(attr1 >> 8);
+    ppu->oam[4] = (uint8_t)attr2; ppu->oam[5] = (uint8_t)(attr2 >> 8);
+
+    ppu_render_scanline(ppu);
+
+    const uint16_t red = 0x001F, blue = 0x7C00;
+    ASSERT_EQ_HEX(ppu->framebuffer[10], red);
+    ASSERT_EQ_HEX(ppu->framebuffer[17], red);
+    ASSERT_EQ_HEX(ppu->framebuffer[9], blue);
+    ASSERT_EQ_HEX(ppu->framebuffer[18], blue);
+
+    free(gba);
+}
+
+TEST(affine_sprite_double_size_centers_texture) {
+    /* OBJ mode 3 doubles the bounding box (16x16 for an 8x8 sprite);
+     * with an identity matrix the texture sits centered in the box:
+     * visible columns are bbox x 4..11, rows 4..11. */
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+
+    ppu->dispcnt = 0 | (1u << 12);
+    ppu->vcount = 4; /* local_y = 4 → first texture row */
+    setup_affine_obj_fixture(ppu);
+
+    /* OAM entry 0: y=0, affine double-size (bits 8+9), x=100. */
+    uint16_t attr0 = 0 | (3u << 8);
+    uint16_t attr1 = 100;
+    uint16_t attr2 = 1;
+    ppu->oam[0] = (uint8_t)attr0; ppu->oam[1] = (uint8_t)(attr0 >> 8);
+    ppu->oam[2] = (uint8_t)attr1; ppu->oam[3] = (uint8_t)(attr1 >> 8);
+    ppu->oam[4] = (uint8_t)attr2; ppu->oam[5] = (uint8_t)(attr2 >> 8);
+
+    ppu_render_scanline(ppu);
+
+    const uint16_t red = 0x001F, blue = 0x7C00;
+    const uint32_t row = 4 * SCREEN_WIDTH; /* vcount=4 renders row 4 */
+    ASSERT_EQ_HEX(ppu->framebuffer[row + 104], red);  /* bbox col 4 → tex col 0 */
+    ASSERT_EQ_HEX(ppu->framebuffer[row + 111], red);  /* bbox col 11 → tex col 7 */
+    ASSERT_EQ_HEX(ppu->framebuffer[row + 103], blue); /* outside texture */
+    ASSERT_EQ_HEX(ppu->framebuffer[row + 112], blue);
+
+    free(gba);
+}
+
+TEST(semi_transparent_sprite_forces_alpha_blend) {
+    /* OBJ GFX mode 1 (semi-transparent) forces alpha blending against
+     * a valid BLDCNT 2nd target, regardless of the BLDCNT mode bits and
+     * of the OBJ 1st-target bit.  Emerald uses this for shadows and
+     * battle effects; without it these sprites render opaque. */
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+
+    /* Mode 3 (BG2 bitmap) + OBJ. */
+    ppu->dispcnt = 3 | (1u << 10) | (1u << 12);
+    ppu->vcount = 0;
+
+    /* BG row 0 red. */
+    for (int x = 0; x < SCREEN_WIDTH; x++) {
+        ppu->vram[x * 2] = 0x1F;
+        ppu->vram[x * 2 + 1] = 0x00;
+    }
+
+    /* OBJ tile 1 solid color 1; OBJ palette color 1 = white. */
+    for (int i = 0; i < 32; i++) {
+        ppu->vram[0x10000 + 32 + i] = 0x11;
+    }
+    ppu->palette_ram[0x200 + 2] = 0xFF;
+    ppu->palette_ram[0x200 + 3] = 0x7F;
+
+    /* OAM entry 0: regular sprite, GFX mode 1 (attr0 bit 10), 8x8,
+     * x=10, tile 1. */
+    uint16_t attr0 = 0 | (1u << 10);
+    uint16_t attr1 = 10;
+    uint16_t attr2 = 1;
+    ppu->oam[0] = (uint8_t)attr0; ppu->oam[1] = (uint8_t)(attr0 >> 8);
+    ppu->oam[2] = (uint8_t)attr1; ppu->oam[3] = (uint8_t)(attr1 >> 8);
+    ppu->oam[4] = (uint8_t)attr2; ppu->oam[5] = (uint8_t)(attr2 >> 8);
+
+    /* BLDCNT mode 0 (no effect selected), but BG2 is a 2nd target —
+     * semi-transparency must still blend.  EVA=EVB=8 (half/half). */
+    ppu->bldcnt = 1u << 10;
+    ppu->bldalpha = 8 | (8u << 8);
+
+    ppu_render_scanline(ppu);
+
+    /* white/2 + red/2: r=(31*8+31*8)>>4=31, g=b=(31*8)>>4=15. */
+    const uint16_t blended = (uint16_t)(31 | (15u << 5) | (15u << 10));
+    ASSERT_EQ_HEX(ppu->framebuffer[10], blended);
+    ASSERT_EQ_HEX(ppu->framebuffer[17], blended);
+    /* Outside the sprite the BG stays plain red. */
+    ASSERT_EQ_HEX(ppu->framebuffer[9], 0x001F);
+
+    free(gba);
+}
+
 /* Suite registration (called from test_runner.c). */
 void run_ppu_tests(void) {
     TEST_SUITE("ppu");
@@ -224,4 +411,8 @@ void run_ppu_tests(void) {
     RUN_TEST(vblank_flag_clears_on_line_227);
     RUN_TEST(hblank_constants_consistent_with_scanline);
     RUN_TEST(hblank_flag_zero_before_cycle_1006);
+    RUN_TEST(window_inverted_h_range_clamps_no_wrap);
+    RUN_TEST(affine_sprite_identity_renders);
+    RUN_TEST(affine_sprite_double_size_centers_texture);
+    RUN_TEST(semi_transparent_sprite_forces_alpha_blend);
 }
