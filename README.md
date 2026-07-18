@@ -230,6 +230,19 @@ fails the workflow.
 5. Commit the new `.hash` file and CI step together so they land in the
    same change.
 
+### Pokemon Emerald smoke check (local only)
+
+`tests/golden/emerald.hash` pins the first 300 frames of an Emerald boot
+(Game Freak logo + intro movie). The ROM is commercial and never fetched
+in CI, so the check runs locally and skips cleanly when the ROM is
+absent:
+
+```bash
+tools/smoke_emerald.sh              # uses build/gba_emulator + roms/emerald.gba
+```
+
+Run it before and after changes to the CPU, PPU, DMA, or timers.
+
 ## Link Cable
 
 Two emulator instances on the same machine can connect over a UNIX domain socket and exchange GBA SIO multiplayer-mode packets — enough for Pokemon trade and battle between local windows.
