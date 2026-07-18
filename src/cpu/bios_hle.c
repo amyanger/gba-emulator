@@ -93,17 +93,32 @@ static void swi_halt(ARM7TDMI* cpu) {
  * ====================================================================== */
 static void swi_intr_wait(ARM7TDMI* cpu) {
     uint32_t discard = cpu->regs[0];
-    uint32_t mask = cpu->regs[1];
+    uint16_t mask = (uint16_t)cpu->regs[1];
 
-    /* IntrCheckFlag address in IWRAM: 0x03007FF8 */
-    if (discard & 1) {
-        /* Clear the bits we are waiting for in [0x03007FF8] */
-        uint32_t old_flags = bus_read32(cpu->bus, 0x03007FF8);
-        old_flags &= ~mask;
-        bus_write32(cpu->bus, 0x03007FF8, old_flags);
+    /* The BIOS forces IME on so the wait can complete. */
+    bus_write16(cpu->bus, 0x04000208, 1);
+
+    uint16_t flags = bus_read16(cpu->bus, 0x03007FF8);
+
+    if ((discard & 1) && !cpu->in_intr_wait) {
+        /* First entry with r0=1: throw away stale flags and wait for a
+         * NEW occurrence.  Must not run again on re-entry, or flags set
+         * by the IRQ handler while we slept would be discarded too. */
+        bus_write16(cpu->bus, 0x03007FF8, flags & ~mask);
+    } else if (flags & mask) {
+        /* Satisfied: consume only the awaited bits and return. */
+        bus_write16(cpu->bus, 0x03007FF8, flags & ~mask);
+        cpu->in_intr_wait = false;
+        return;
     }
 
+    /* Not satisfied: halt, and rewind PC onto the SWI instruction so it
+     * re-executes (and re-checks) when the next IRQ handler returns.
+     * During execution PC = instr + 8 (ARM) / instr + 4 (Thumb). */
+    cpu->in_intr_wait = true;
     cpu->halted = true;
+    cpu->regs[REG_PC] -= BIT(cpu->cpsr, CPSR_T) ? 4 : 8;
+    cpu_flush_pipeline(cpu);
 }
 
 /* ======================================================================
@@ -131,6 +146,15 @@ static void swi_div(ARM7TDMI* cpu) {
         cpu->regs[0] = (num < 0) ? (uint32_t)-1 : 1;
         cpu->regs[1] = (uint32_t)num;
         cpu->regs[3] = 1;
+        return;
+    }
+
+    /* INT32_MIN / -1 overflows (UB in C, SIGFPE on x86).  The BIOS'
+     * software divide yields 0x80000000 rem 0. */
+    if (num == INT32_MIN && den == -1) {
+        cpu->regs[0] = 0x80000000u;
+        cpu->regs[1] = 0;
+        cpu->regs[3] = 0x80000000u;
         return;
     }
 
@@ -193,7 +217,7 @@ static void swi_arctan(ARM7TDMI* cpu) {
      * This matches the real BIOS output. */
     int32_t r0 = (int32_t)(int16_t)(uint16_t)cpu->regs[0];
 
-    int32_t a = -(r0 * r0) >> 14;
+    int32_t a = -((r0 * r0) >> 14);
     int32_t r = ((0xA9 * a) >> 14) + 0x390;
     r = ((r * a) >> 14) + (int32_t)0xFFFFA57B;
     r = ((r * a) >> 14) + 0x3276;

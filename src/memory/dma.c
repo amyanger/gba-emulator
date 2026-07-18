@@ -11,6 +11,7 @@
 void dma_init(DMAController* dma) {
     memset(dma->channels, 0, sizeof(dma->channels));
     dma->active_channel = -1;
+    dma->pending_stall = 0;
 }
 
 void dma_write_control(DMAController* dma, int ch, uint16_t val) {
@@ -74,9 +75,10 @@ int dma_execute(DMAController* dma, int ch) {
     xray_notify_dma_trigger(g_xray, ch);
 #endif
 
-    // Determine transfer count.
-    // When count is 0, use the maximum: 0x4000 for channels 0-2, 0x10000 for ch 3.
-    uint32_t count = dc->count;
+    // Determine transfer count.  The count register is 14-bit on
+    // channels 0-2 and 16-bit on channel 3 (GBATEK); upper bits ignored.
+    // When the masked count is 0, use the channel's maximum.
+    uint32_t count = dc->count & ((ch == 3) ? 0xFFFF : 0x3FFF);
     if (count == 0) {
         count = (ch == 3) ? 0x10000 : 0x4000;
     }
@@ -174,5 +176,10 @@ int dma_execute(DMAController* dma, int ch) {
 
     // Base 2 cycles/unit + wait cycles accumulated by the bus accesses above.
     // Draining here keeps DMA wait cycles from leaking into the next cpu_step.
-    return (int)(count * 2) + bus_drain_pending(bus);
+    int cost = (int)(count * 2) + bus_drain_pending(bus);
+
+    // DMA halts the CPU: bank the cost as a stall that cpu_run consumes
+    // before executing further instructions.
+    dma->pending_stall += cost;
+    return cost;
 }

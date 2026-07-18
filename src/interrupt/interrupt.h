@@ -18,5 +18,6 @@ void interrupt_request(InterruptController* ic, uint16_t irq_bit);
 void interrupt_request_if_enabled(InterruptController* ic, PPU* ppu, uint16_t irq_bit);
 void interrupt_acknowledge(InterruptController* ic, uint16_t val);
 bool interrupt_pending(InterruptController* ic);
+bool interrupt_pending_raw(InterruptController* ic);
 
 #endif // INTERRUPT_H

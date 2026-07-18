@@ -2,6 +2,8 @@
 #include "gba.h"
 #include "cpu/arm_instr.h"
 #include "cpu/bios_hle.h"
+#include "ppu/ppu.h"
+#include "timer/timer.h"
 
 /* Helper: create a fully wired GBA on the heap and return it. */
 static GBA* make_gba(void) {
@@ -105,12 +107,154 @@ TEST(irq_entry_saves_cpsr_into_spsr_irq) {
     ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x00000018);
     ASSERT_EQ(BIT(cpu->cpsr, CPSR_I), 1);     /* IRQs masked during handler */
     ASSERT_EQ(BIT(cpu->cpsr, CPSR_T), 0);     /* Forced into ARM state */
-    ASSERT_EQ_HEX(cpu->regs[REG_LR], 0x08001234);
+
+    /* In ARM state PC = next_instr + 8 between steps, and hardware sets
+     * LR_irq = next_instr + 4 so SUBS PC, LR, #4 resumes at next_instr.
+     * LR must therefore be PC - 4, not PC — LR = PC would skip one
+     * instruction on every IRQ that lands on ARM code. */
+    ASSERT_EQ_HEX(cpu->regs[REG_LR], 0x08001230);
 
     /* SPSR_irq should hold the pre-IRQ CPSR (SYS mode). */
     uint32_t* spsr = cpu_get_spsr(cpu);
     ASSERT_TRUE(spsr != NULL);
     ASSERT_EQ_HEX(*spsr & 0x1F, CPU_MODE_SYS);
+    free(gba);
+}
+
+TEST(irq_entry_thumb_state_lr) {
+    /* In Thumb state PC = next_instr + 4 between steps; hardware wants
+     * LR_irq = next_instr + 4 = PC exactly, so SUBS PC, LR, #4 lands on
+     * the next Thumb instruction. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    cpu_switch_mode(cpu, CPU_MODE_SYS);
+    cpu->cpsr = CPU_MODE_SYS | (1u << CPSR_T); /* SYS, Thumb state */
+    cpu->regs[REG_PC] = 0x08001234;
+
+    cpu_handle_irq(cpu);
+
+    ASSERT_EQ_HEX(cpu->regs[REG_LR], 0x08001234);
+    ASSERT_EQ(BIT(cpu->cpsr, CPSR_T), 0); /* handler runs in ARM state */
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x00000018);
+    free(gba);
+}
+
+TEST(halt_wakes_on_ie_and_if_even_with_ime_off) {
+    /* GBATEK: HALT ends whenever (IE & IF) != 0, regardless of IME and
+     * CPSR.I — those only gate IRQ *dispatch*, not the wake-up.  A game
+     * that sets IE, clears IME, then halts must not hang forever. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    gba->interrupts.ime = false;
+    gba->interrupts.ie = IRQ_VBLANK;
+    gba->interrupts.irf = IRQ_VBLANK; /* pending, but dispatch disabled */
+    cpu->halted = true;
+
+    cpu_run(cpu, 8);
+
+    ASSERT_TRUE(!cpu->halted);
+
+    /* With IME off no IRQ may be dispatched: still in the boot SVC mode,
+     * not IRQ mode. */
+    ASSERT_EQ_HEX(cpu_get_mode(cpu), CPU_MODE_SVC);
+    free(gba);
+}
+
+TEST(halt_stays_halted_when_irq_not_enabled_in_ie) {
+    /* A pending IF bit not present in IE must NOT wake the CPU. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    gba->interrupts.ime = true;
+    gba->interrupts.ie = IRQ_VBLANK;
+    gba->interrupts.irf = IRQ_TIMER0; /* pending but not enabled */
+    cpu->halted = true;
+
+    cpu_run(cpu, 8);
+
+    ASSERT_TRUE(cpu->halted);
+    free(gba);
+}
+
+TEST(swi_arctan_precedence_matches_bios) {
+    /* The BIOS polynomial computes a = -((r0*r0) >> 14).  Writing it as
+     * -(r0*r0) >> 14 shifts the NEGATED square, which rounds toward
+     * negative infinity and diverges by one LSB for most inputs.
+     * ArcTan(0x34) is 0x28 on hardware; the precedence bug yields 0x29. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    cpu->regs[0] = 0x34;
+    bios_hle_execute(cpu, 0x09);
+    ASSERT_EQ_HEX(cpu->regs[0], 0x28);
+
+    free(gba);
+}
+
+TEST(vblank_intr_wait_honors_mask_and_rehalts) {
+    /* GBATEK: VBlankIntrWait = IntrWait(1, 1).  It must (a) discard a
+     * stale VBlank flag on entry, (b) stay waiting when a NON-VBlank
+     * interrupt wakes the CPU, and (c) return only once the game's IRQ
+     * handler sets the VBlank bit in IntrCheckFlag (0x03007FF8).  The
+     * HLE implementation re-executes the SWI after each wake by
+     * rewinding PC. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+    cpu_skip_bios(cpu);
+
+    /* Pretend the SWI instruction sits at 0x08000100 (ARM state:
+     * PC = swi + 8 during execution). */
+    cpu->cpsr &= ~(1u << CPSR_T);
+    cpu->regs[REG_PC] = 0x08000108;
+
+    /* Stale VBlank flag before the call — must be discarded, not
+     * treated as satisfaction. */
+    bus_write16(&gba->bus, 0x03007FF8, 0x0001);
+
+    bios_hle_execute(cpu, 0x05);
+    ASSERT_TRUE(cpu->halted);
+    ASSERT_EQ_HEX(bus_read16(&gba->bus, 0x03007FF8), 0x0000);
+    /* PC rewound to the SWI itself so it re-executes on wake. */
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x08000100);
+
+    /* A timer IRQ wakes the CPU; its handler sets only the timer bit.
+     * Re-executing the SWI must re-halt and leave the timer flag. */
+    cpu->halted = false;
+    cpu->regs[REG_PC] = 0x08000108; /* refetched SWI */
+    bus_write16(&gba->bus, 0x03007FF8, IRQ_TIMER0);
+    bios_hle_execute(cpu, 0x05);
+    ASSERT_TRUE(cpu->halted);
+    ASSERT_EQ_HEX(bus_read16(&gba->bus, 0x03007FF8), IRQ_TIMER0);
+
+    /* VBlank handler ran: flag set.  SWI re-executes, consumes ONLY the
+     * VBlank bit, and returns without halting. */
+    cpu->halted = false;
+    cpu->regs[REG_PC] = 0x08000108;
+    bus_write16(&gba->bus, 0x03007FF8, IRQ_TIMER0 | 0x0001);
+    bios_hle_execute(cpu, 0x05);
+    ASSERT_TRUE(!cpu->halted);
+    ASSERT_EQ_HEX(bus_read16(&gba->bus, 0x03007FF8), IRQ_TIMER0);
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x08000108); /* no rewind */
+
+    free(gba);
+}
+
+TEST(swi_div_int_min_by_minus_one_no_crash) {
+    /* INT_MIN / -1 overflows and raises SIGFPE with native division —
+     * a guest ROM must never be able to kill the host.  The BIOS'
+     * software divide yields 0x80000000 rem 0. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    cpu->regs[0] = 0x80000000; /* INT32_MIN */
+    cpu->regs[1] = 0xFFFFFFFF; /* -1 */
+    bios_hle_execute(cpu, 0x06);
+
+    ASSERT_EQ_HEX(cpu->regs[0], 0x80000000);
+    ASSERT_EQ_HEX(cpu->regs[1], 0x00000000);
+    ASSERT_EQ_HEX(cpu->regs[3], 0x80000000);
     free(gba);
 }
 
@@ -271,6 +415,12 @@ void run_cpu_tests(void) {
     RUN_TEST(cmp_in_fiq_mode_updates_flags);
     RUN_TEST(cmp_in_user_mode_updates_flags);
     RUN_TEST(irq_entry_saves_cpsr_into_spsr_irq);
+    RUN_TEST(irq_entry_thumb_state_lr);
+    RUN_TEST(halt_wakes_on_ie_and_if_even_with_ime_off);
+    RUN_TEST(halt_stays_halted_when_irq_not_enabled_in_ie);
+    RUN_TEST(swi_div_int_min_by_minus_one_no_crash);
+    RUN_TEST(vblank_intr_wait_honors_mask_and_rehalts);
+    RUN_TEST(swi_arctan_precedence_matches_bios);
     RUN_TEST(mode_switch_banks_sp_independently);
     RUN_TEST(fiq_mode_banks_r8_through_r12);
     RUN_TEST(stmfd_ldmfd_round_trip_in_iwram);

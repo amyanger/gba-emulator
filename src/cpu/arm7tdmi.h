@@ -60,6 +60,10 @@ struct ARM7TDMI {
 
     /* CPU state */
     bool halted;
+    /* HLE IntrWait in progress: the SWI re-executes after each wake and
+     * must not re-discard flags on re-entry (not serialized; worst case
+     * after a mid-wait savestate load is one extra discarded flag). */
+    bool in_intr_wait;
     bool has_bios;
     int cycles_executed;
 

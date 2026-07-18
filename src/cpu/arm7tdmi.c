@@ -3,6 +3,7 @@
 #include "thumb_instr.h"
 #include "bios_hle.h"
 #include "memory/bus.h"
+#include "memory/dma.h"
 #include "interrupt/interrupt.h"
 #include "trace/trace.h"
 
@@ -158,8 +159,8 @@ bool cpu_check_irq(ARM7TDMI* cpu) {
 
 /* Enter IRQ exception: save state, switch to IRQ mode, jump to vector.
  *
- * Called between cpu_step calls.  Sets LR_irq = PC so the BIOS handler
- * can return with SUBS PC, LR, #4. */
+ * Called between cpu_step calls.  Sets LR_irq = next_instr + 4 so the
+ * BIOS handler can return with SUBS PC, LR, #4. */
 void cpu_handle_irq(ARM7TDMI* cpu) {
     uint32_t old_cpsr = cpu->cpsr;
 
@@ -170,9 +171,14 @@ void cpu_handle_irq(ARM7TDMI* cpu) {
      * Must happen AFTER mode switch so SPSR_irq slot is accessible. */
     cpu->spsr[3] = old_cpsr;
 
-    /* LR_irq = current PC.  The BIOS IRQ handler does SUBS PC, LR, #4
-     * to return to the correct instruction. */
-    cpu->regs[REG_LR] = cpu->regs[REG_PC];
+    /* The BIOS IRQ handler returns with SUBS PC, LR, #4, so hardware
+     * sets LR_irq = next_instr + 4.  Between steps PC = next_instr + 8
+     * in ARM state but next_instr + 4 in Thumb, so the offset differs. */
+    if (BIT(old_cpsr, CPSR_T)) {
+        cpu->regs[REG_LR] = cpu->regs[REG_PC];
+    } else {
+        cpu->regs[REG_LR] = cpu->regs[REG_PC] - 4;
+    }
 
     /* Disable IRQs to prevent re-entry */
     cpu->cpsr |= (1u << CPSR_I);
@@ -407,10 +413,25 @@ void cpu_run(ARM7TDMI* cpu, int cycles) {
     cpu->cycles_executed = 0;
 
     while (cpu->cycles_executed < cycles) {
+        /* DMA halts the CPU: burn off any pending transfer stall before
+         * executing instructions.  Timers/APU are unaffected — gba.c
+         * ticks them by wall-chunk, not by instructions executed. */
+        DMAController* dma = cpu->bus->dma;
+        if (dma && dma->pending_stall > 0) {
+            int take = dma->pending_stall;
+            int remaining = cycles - cpu->cycles_executed;
+            if (take > remaining) take = remaining;
+            dma->pending_stall -= take;
+            cpu->cycles_executed += take;
+            continue;
+        }
+
         if (cpu->halted) {
-            if (cpu_check_irq(cpu)) {
+            /* HALT ends on IE & IF alone; IME and CPSR.I only gate
+             * dispatch (handled below). */
+            InterruptController* ic = cpu->bus->interrupts;
+            if (ic && interrupt_pending_raw(ic)) {
                 cpu->halted = false;
-                cpu_handle_irq(cpu);
             } else {
                 /* Stay halted: consume all remaining cycles */
                 cpu->cycles_executed = cycles;

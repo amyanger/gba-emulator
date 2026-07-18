@@ -28,6 +28,10 @@ typedef struct {
 struct DMAController {
     DMAChannel channels[4];
     int8_t active_channel; // -1 if none active
+    /* Cycles owed to completed transfers: DMA halts the CPU, so cpu_run
+     * consumes this stall before executing instructions.  Transient
+     * (not serialized in savestates). */
+    int32_t pending_stall;
     Bus* bus;
     InterruptController* interrupts;
 };

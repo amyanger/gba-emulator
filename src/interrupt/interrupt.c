@@ -38,3 +38,10 @@ void interrupt_acknowledge(InterruptController* ic, uint16_t val) {
 bool interrupt_pending(InterruptController* ic) {
     return ic->ime && (ic->ie & ic->irf);
 }
+
+/* Wake condition for HALT: IE & IF, ignoring IME (and CPSR.I).
+ * Hardware leaves HALT whenever an enabled interrupt is requested,
+ * even if it cannot be dispatched. */
+bool interrupt_pending_raw(InterruptController* ic) {
+    return (ic->ie & ic->irf) != 0;
+}

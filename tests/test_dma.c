@@ -51,6 +51,58 @@ TEST(dma3_immediate_word_copy) {
     free(gba);
 }
 
+TEST(dma_transfer_stalls_cpu) {
+    /* DMA halts the CPU: the cycles a transfer costs must be consumed
+     * from the CPU's budget before it executes further instructions. */
+    GBA* gba = make_gba();
+    Bus* bus = &gba->bus;
+
+    /* Immediate 64-word IWRAM copy on DMA3. */
+    bus_write32(bus, 0x040000D4, 0x03000000);
+    bus_write32(bus, 0x040000D8, 0x03000400);
+    bus_write16(bus, 0x040000DC, 64);
+    bus_write16(bus, 0x040000DE, dma_control(true, 0));
+
+    /* The transfer cost is now pending as a CPU stall. */
+    ASSERT_TRUE(gba->dma.pending_stall >= 128); /* >= 2 cycles per word */
+    int stall = gba->dma.pending_stall;
+
+    /* Running the CPU for fewer cycles than the stall must consume the
+     * budget WITHOUT executing any instruction (PC unchanged). */
+    uint32_t pc_before = gba->cpu.regs[REG_PC];
+    cpu_run(&gba->cpu, 10);
+    ASSERT_EQ_HEX(gba->cpu.regs[REG_PC], pc_before);
+    ASSERT_EQ(gba->dma.pending_stall, stall - 10);
+
+    free(gba);
+}
+
+TEST(dma0_count_masked_to_14_bits) {
+    /* DMA0-2 word counts are 14-bit (GBATEK); bits 14-15 of CNT_L are
+     * ignored.  0x4001 must transfer exactly 1 unit, not 0x4001. */
+    GBA* gba = make_gba();
+    Bus* bus = &gba->bus;
+
+    bus->iwram[0] = 0xAA;
+    bus->iwram[1] = 0xBB;
+    bus->iwram[2] = 0xCC;
+    bus->iwram[3] = 0xDD;
+    memset(&bus->iwram[0x200], 0, 8);
+
+    bus_write32(bus, 0x040000B0, 0x03000000); /* DMA0 SAD */
+    bus_write32(bus, 0x040000B4, 0x03000200); /* DMA0 DAD */
+    bus_write16(bus, 0x040000B8, 0x4001);     /* count: bit 14 ignored */
+    bus_write16(bus, 0x040000BA, dma_control(false, 0)); /* 16-bit, immediate */
+
+    /* Exactly one halfword copied. */
+    ASSERT_EQ_HEX(bus->iwram[0x200], 0xAA);
+    ASSERT_EQ_HEX(bus->iwram[0x201], 0xBB);
+    ASSERT_EQ_HEX(bus->iwram[0x202], 0x00);
+    ASSERT_EQ_HEX(bus->iwram[0x203], 0x00);
+
+    free(gba);
+}
+
 TEST(dma_disabled_does_not_transfer) {
     /* If the enable bit is clear, no transfer happens even with a
      * valid SAD/DAD/count. */
@@ -73,5 +125,7 @@ TEST(dma_disabled_does_not_transfer) {
 void run_dma_tests(void) {
     TEST_SUITE("dma");
     RUN_TEST(dma3_immediate_word_copy);
+    RUN_TEST(dma_transfer_stalls_cpu);
+    RUN_TEST(dma0_count_masked_to_14_bits);
     RUN_TEST(dma_disabled_does_not_transfer);
 }
