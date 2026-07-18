@@ -130,6 +130,22 @@ TEST(flash_bank_switch_selects_second_bank) {
     ASSERT_EQ(flash.state, FLASH_READY);
 }
 
+TEST(flash_bank_switch_ignored_on_64k_chip) {
+    /* A 64K chip has no banks; the bank-switch command must not select
+     * the (nonexistent) upper 64K.  A stray B0 sequence would otherwise
+     * silently redirect all saves to the wrong half of the buffer. */
+    FlashChip flash;
+    flash_init(&flash, false);
+
+    flash_write(&flash, 0x5555, 0xAA);
+    flash_write(&flash, 0x2AAA, 0x55);
+    flash_write(&flash, 0x5555, 0xB0);
+    flash_write(&flash, 0x0000, 1);
+
+    ASSERT_EQ(flash.bank, 0);
+    ASSERT_EQ(flash.state, FLASH_READY);
+}
+
 TEST(flash_invalid_command_resets_state) {
     /* Wrong second-step value drops the FSM back to READY. */
     FlashChip flash;
@@ -150,5 +166,6 @@ void run_flash_tests(void) {
     RUN_TEST(flash_sector_erase_clears_4kb_aligned_block);
     RUN_TEST(flash_chip_erase_clears_all_data);
     RUN_TEST(flash_bank_switch_selects_second_bank);
+    RUN_TEST(flash_bank_switch_ignored_on_64k_chip);
     RUN_TEST(flash_invalid_command_resets_state);
 }

@@ -123,7 +123,9 @@ void flash_write(FlashChip* flash, uint32_t addr, uint8_t val) {
         break;
 
     case FLASH_BANKSWITCH:
-        if (addr == 0x0000) {
+        /* Only the 128K chip has banks; a 64K chip ignores the value so
+         * a stray command can't redirect saves to the unused upper half. */
+        if (addr == 0x0000 && flash->device == MACRONIX_DEVICE_128K) {
             flash->bank = val & 1;
         }
         flash->state = FLASH_READY;

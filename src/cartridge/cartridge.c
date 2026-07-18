@@ -294,19 +294,25 @@ void cartridge_load_save_file(Cartridge* cart) {
     fseek(f, 0, SEEK_SET);
 
     size_t to_read = (size >= (long)payload) ? payload : (size > 0 ? (size_t)size : 0);
+    size_t got = 0;
     switch (cart->save_type) {
     case SAVE_SRAM:
-        fread(cart->sram, 1, to_read, f);
+        got = fread(cart->sram, 1, to_read, f);
         break;
     case SAVE_FLASH64:
     case SAVE_FLASH128:
-        fread(cart->flash.data, 1, to_read, f);
+        got = fread(cart->flash.data, 1, to_read, f);
         break;
     case SAVE_EEPROM:
-        fread(cart->eeprom.data, 1, to_read, f);
+        got = fread(cart->eeprom.data, 1, to_read, f);
         break;
     default:
         break;
+    }
+    if (got != to_read) {
+        LOG_WARN("Short read on save file %s (%zu of %zu bytes) — "
+                 "save data may be incomplete",
+                 cart->save_path, got, to_read);
     }
 
     cart->rtc.offset_secs = 0;
