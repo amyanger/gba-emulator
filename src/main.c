@@ -42,6 +42,7 @@ static void print_usage(const char* prog) {
     printf("  --headless             Run without SDL window or audio\n");
     printf("  --frames <n>           Headless: number of frames to run\n");
     printf("  --hash-out <file>      Headless: write per-frame framebuffer hashes\n");
+    printf("  --screenshot-out <f>   Headless: write final-frame screenshot to file\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
@@ -105,7 +106,18 @@ int main(int argc, char* argv[]) {
             hash_out_path = argv[++i];
         } else if (strcmp(argv[i], "--screenshot-out") == 0 && i + 1 < argc) {
             screenshot_out_path = argv[++i];
+        } else {
+            /* Also catches value-taking options with the value missing:
+             * they fail the i + 1 < argc guard and fall through here. */
+            LOG_ERROR("Unknown or incomplete option: %s", argv[i]);
+            print_usage(argv[0]);
+            return 1;
         }
+    }
+
+    if (scale < 1 || scale > 10) {
+        LOG_ERROR("--scale must be between 1 and 10 (got %d)", scale);
+        return 1;
     }
 
     if (headless && (link_master_path || link_client_path)) {
