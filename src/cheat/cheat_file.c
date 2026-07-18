@@ -7,6 +7,21 @@
 // Maximum line length in a .cht file
 #define LINE_BUF_SIZE 512
 
+// A code line is exactly "XXXXXXXX YYYY" or "XXXXXXXX YYYYYYYY": an
+// 8-digit hex address, one space, then a 4-8 digit hex value and nothing
+// else.  Anything looser (sscanf prefix matching) would eat cheat names
+// that happen to start with hex digits, e.g. "Feebas Fix".
+static bool parse_code_line(const char* line, uint32_t* addr, uint32_t* val) {
+    static const char hex[] = "0123456789abcdefABCDEF";
+    size_t a_len = strspn(line, hex);
+    if (a_len != 8 || line[8] != ' ') return false;
+    size_t v_len = strspn(line + 9, hex);
+    if (v_len < 4 || v_len > 8 || line[9 + v_len] != '\0') return false;
+
+    if (sscanf(line, "%8" SCNx32 " %8" SCNx32, addr, val) != 2) return false;
+    return true;
+}
+
 // Trim leading/trailing whitespace in-place, return pointer to trimmed start
 static char* trim(char* str) {
     while (*str && isspace((unsigned char)*str)) str++;
@@ -99,14 +114,24 @@ int32_t cheat_file_load(CheatEngine* engine, const char* path) {
             continue;
         }
 
-        // Try to parse as a hex code line: XXXXXXXX YYYYYYYY or XXXXXXXX YYYY
-        if (cur_code_count >= CHEAT_MAX_LINES) continue;
-
+        // Code line: XXXXXXXX YYYYYYYY or XXXXXXXX YYYY (strict match)
         uint32_t addr = 0, val = 0;
-        if (sscanf(line, "%8" SCNx32 " %8" SCNx32, &addr, &val) == 2) {
-            cur_codes[cur_code_count].address = addr;
-            cur_codes[cur_code_count].value = val;
-            cur_code_count++;
+        if (parse_code_line(line, &addr, &val)) {
+            if (cur_code_count < CHEAT_MAX_LINES) {
+                cur_codes[cur_code_count].address = addr;
+                cur_codes[cur_code_count].value = val;
+                cur_code_count++;
+            }
+            continue;
+        }
+
+        // Documented format: the first free-text line of a block is the
+        // cheat's name ("[GameShark]" / name / codes).
+        if (cur_name[0] == '\0') {
+            strncpy(cur_name, line, CHEAT_NAME_LEN - 1);
+            cur_name[CHEAT_NAME_LEN - 1] = '\0';
+        } else {
+            LOG_WARN("[CHEAT] Ignoring unrecognized line: %s", line);
         }
     }
 

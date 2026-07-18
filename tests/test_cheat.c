@@ -1,6 +1,9 @@
 #include "test_harness.h"
 #include "cheat/cheat.h"
+#include "cheat/cheat_file.h"
+#include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 
 TEST(cheat_init_zeros_engine) {
     CheatEngine eng;
@@ -87,9 +90,83 @@ TEST(cheat_clear_all_empties_engine) {
     ASSERT_EQ(eng.cheat_count, 0);
 }
 
+/* Write content to a temp .cht file, load it, return the loaded count. */
+static int32_t load_cht_content(CheatEngine* eng, const char* content, char* path_out) {
+    char path[] = "/tmp/gba_cheat_XXXXXX";
+    int fd = mkstemp(path);
+    if (fd < 0) return -100;
+    FILE* f = fdopen(fd, "w");
+    fputs(content, f);
+    fclose(f);
+    strcpy(path_out, path);
+    cheat_init(eng);
+    return cheat_file_load(eng, path);
+}
+
+TEST(cheat_file_load_documented_bare_name_format) {
+    /* README/CLAUDE.md document this exact shape: section header, bare
+     * name line, code lines.  It must load. */
+    CheatEngine eng;
+    char path[64];
+    int32_t n = load_cht_content(&eng,
+        "# comment\n"
+        "[GameShark]\n"
+        "Infinite Rare Candies\n"
+        "12345678 9ABCDEF0\n"
+        "82005274 0044\n",
+        path);
+    remove(path);
+
+    ASSERT_EQ(n, 1);
+    ASSERT_STR_EQ(eng.cheats[0].name, "Infinite Rare Candies");
+    ASSERT_EQ(eng.cheats[0].code_count, 2);
+    ASSERT_EQ_HEX(eng.cheats[0].codes[0].address, 0x12345678);
+    ASSERT_EQ_HEX(eng.cheats[0].codes[1].value, 0x0044);
+    ASSERT_EQ(eng.cheats[0].enabled, true);
+}
+
+TEST(cheat_file_load_hexlike_name_not_eaten_as_code) {
+    /* A name whose words start with hex digits ("Feebas Fix") must not
+     * be half-parsed by sscanf into a bogus code line. */
+    CheatEngine eng;
+    char path[64];
+    int32_t n = load_cht_content(&eng,
+        "[CodeBreaker]\n"
+        "Feebas Fix\n"
+        "82005274 0044\n",
+        path);
+    remove(path);
+
+    ASSERT_EQ(n, 1);
+    ASSERT_STR_EQ(eng.cheats[0].name, "Feebas Fix");
+    ASSERT_EQ(eng.cheats[0].code_count, 1);
+    ASSERT_EQ_HEX(eng.cheats[0].codes[0].address, 0x82005274);
+}
+
+TEST(cheat_file_load_name_eq_format_still_works) {
+    /* The writer emits name=/enabled= — keep reading that form. */
+    CheatEngine eng;
+    char path[64];
+    int32_t n = load_cht_content(&eng,
+        "[GameShark]\n"
+        "name=Walk Through Walls\n"
+        "enabled=false\n"
+        "509197D3 542975F4\n",
+        path);
+    remove(path);
+
+    ASSERT_EQ(n, 1);
+    ASSERT_STR_EQ(eng.cheats[0].name, "Walk Through Walls");
+    ASSERT_EQ(eng.cheats[0].enabled, false);
+    ASSERT_EQ(eng.cheats[0].code_count, 1);
+}
+
 void run_cheat_tests(void) {
     TEST_SUITE("cheat");
     RUN_TEST(cheat_init_zeros_engine);
+    RUN_TEST(cheat_file_load_documented_bare_name_format);
+    RUN_TEST(cheat_file_load_hexlike_name_not_eaten_as_code);
+    RUN_TEST(cheat_file_load_name_eq_format_still_works);
     RUN_TEST(cheat_add_returns_index_and_appends);
     RUN_TEST(cheat_add_returns_minus_one_when_full);
     RUN_TEST(cheat_toggle_flips_enabled);
