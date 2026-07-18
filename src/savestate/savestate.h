@@ -35,6 +35,10 @@ typedef enum {
 
 SaveStateResult savestate_save(GBA* gba, const char* path);
 SaveStateResult savestate_load(GBA* gba, const char* path);
+
+/* Atomic file write (temp + rename); never truncates an existing file
+ * on failure. */
+SaveStateResult savestate_write_file_atomic(const char* path, const uint8_t* buf, size_t size);
 void savestate_slot_path(const char* rom_path, int32_t slot, char* out, size_t out_size);
 
 /* Buffer-based variants — used by rewind and (internally) by the file API.

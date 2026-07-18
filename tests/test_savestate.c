@@ -292,6 +292,97 @@ TEST(savestate_peek_label_reads_without_full_load) {
     gba_destroy(&gba);
 }
 
+TEST(savestate_load_rejects_lying_chunk_size) {
+    /* A chunk whose declared size is smaller than its fixed layout must
+     * be rejected before the loader dereferences past the buffer end.
+     * Craft: take a valid state, shrink the LAST chunk's declared size,
+     * truncate the buffer to match, and re-seal header size + CRC.  The
+     * loader would otherwise read the full fixed layout — off the end
+     * of the allocation. */
+    GBA gba;
+    gba_init(&gba);
+
+    uint8_t* buf = NULL;
+    size_t size = 0;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &buf, &size));
+
+    /* Walk chunks to find the last one. */
+    size_t pos = HEADER_SIZE, last_hdr = 0;
+    while (pos + 8 <= size) {
+        uint32_t csize = (uint32_t)buf[pos + 4] | ((uint32_t)buf[pos + 5] << 8)
+                       | ((uint32_t)buf[pos + 6] << 16) | ((uint32_t)buf[pos + 7] << 24);
+        last_hdr = pos;
+        pos += 8 + csize;
+    }
+    ASSERT_TRUE(last_hdr != 0);
+
+    /* Shrink the last chunk by 10 bytes and truncate the buffer. */
+    uint32_t csize = (uint32_t)buf[last_hdr + 4] | ((uint32_t)buf[last_hdr + 5] << 8)
+                   | ((uint32_t)buf[last_hdr + 6] << 16) | ((uint32_t)buf[last_hdr + 7] << 24);
+    ASSERT_TRUE(csize > 10);
+    uint32_t lied = csize - 10;
+    size_t new_size = size - 10;
+    buf[last_hdr + 4] = (uint8_t)(lied);
+    buf[last_hdr + 5] = (uint8_t)(lied >> 8);
+    buf[last_hdr + 6] = (uint8_t)(lied >> 16);
+    buf[last_hdr + 7] = (uint8_t)(lied >> 24);
+
+    /* Re-seal: total_size at header offset 8, body CRC at offset 12. */
+    buf[8]  = (uint8_t)(new_size);
+    buf[9]  = (uint8_t)(new_size >> 8);
+    buf[10] = (uint8_t)(new_size >> 16);
+    buf[11] = (uint8_t)(new_size >> 24);
+    uint32_t crc = crc32(buf + HEADER_SIZE, new_size - HEADER_SIZE);
+    buf[12] = (uint8_t)(crc);
+    buf[13] = (uint8_t)(crc >> 8);
+    buf[14] = (uint8_t)(crc >> 16);
+    buf[15] = (uint8_t)(crc >> 24);
+
+    GBA target;
+    gba_init(&target);
+    SaveStateResult r = savestate_load_from_buffer(&target, buf, new_size);
+    ASSERT_TRUE(r != SS_OK);
+
+    free(buf);
+    gba_destroy(&target);
+    gba_destroy(&gba);
+}
+
+TEST(savestate_save_is_atomic_replace) {
+    /* savestate_save must write via a temp file + rename() so a torn
+     * write can never destroy the previous good state.  Pin the
+     * observable consequences: (a) an existing read-only target is
+     * still replaced (the target itself is never opened for writing),
+     * and (b) no .tmp sibling is left behind. */
+    GBA gba;
+    gba_init(&gba);
+
+    char path[] = "/tmp/gba_atomic_save_XXXXXX";
+    int fd = mkstemp(path);
+    ASSERT_TRUE(fd >= 0);
+    ASSERT_EQ(5, (int)write(fd, "stale", 5));
+    close(fd);
+    ASSERT_EQ(0, chmod(path, 0444)); /* read-only prior save */
+
+    ASSERT_EQ(SS_OK, savestate_save(&gba, path));
+
+    /* Replaced content must be a loadable state, not the stale bytes. */
+    GBA loaded;
+    gba_init(&loaded);
+    ASSERT_EQ(SS_OK, savestate_load(&loaded, path));
+
+    /* No temp sibling left behind. */
+    char tmp_path[600];
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+    FILE* tf = fopen(tmp_path, "rb");
+    ASSERT_TRUE(tf == NULL);
+
+    chmod(path, 0644);
+    remove(path);
+    gba_destroy(&loaded);
+    gba_destroy(&gba);
+}
+
 TEST(savestate_upgrade_v5_to_v6_preserves_body) {
     GBA gba;
     gba_init(&gba);
@@ -361,5 +452,7 @@ void run_savestate_tests(void) {
     RUN_TEST(savestate_label_truncates_at_31_bytes);
     RUN_TEST(savestate_label_filters_control_chars);
     RUN_TEST(savestate_peek_label_reads_without_full_load);
+    RUN_TEST(savestate_load_rejects_lying_chunk_size);
+    RUN_TEST(savestate_save_is_atomic_replace);
     RUN_TEST(savestate_upgrade_v5_to_v6_preserves_body);
 }

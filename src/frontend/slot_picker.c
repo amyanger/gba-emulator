@@ -155,19 +155,10 @@ static bool commit_label(Frontend* fe, GBA* gba) {
         return false;
     }
 
-    /* NOTE: not atomic; a torn write can leave the .ssN file zero-length,
-     * losing the saved state. Matches the existing savestate_save behavior. */
-    f = fopen(path, "wb");
-    if (!f) {
-        free(v6);
-        snprintf(p->status, sizeof(p->status), "Write failed");
-        return false;
-    }
-    size_t wrote = fwrite(v6, 1, v6_size, f);
-    fclose(f);
+    SaveStateResult r = savestate_write_file_atomic(path, v6, v6_size);
     free(v6);
-    if (wrote != v6_size) {
-        snprintf(p->status, sizeof(p->status), "Short write");
+    if (r != SS_OK) {
+        snprintf(p->status, sizeof(p->status), "Write failed");
         return false;
     }
     return true;

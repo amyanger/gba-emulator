@@ -34,6 +34,56 @@
 #define CHUNK_INPT 0x54504E49  /* "INPT"  */
 #define CHUNK_SIO  0x004F4953  /* "SIO\0" */
 
+/* Per-channel APU payload sizes (field-by-field, see save_*_channel) */
+/* Square channel payload: see save_square_channel */
+#define SQUARE_CH_SIZE 23
+/* Wave channel payload: 1+2+1+2+4+16+1+1+1+1+1 = 31 bytes */
+#define WAVE_CH_SIZE   31
+/* Noise channel payload: 1+2+1+1+1+1+1+2+1+1+1+4 = 17 bytes */
+#define NOISE_CH_SIZE  17
+/* FIFO payload: 32+1+1+1+1+1 = 37 bytes */
+#define FIFO_CH_SIZE   37
+
+/* Fixed payload size of each chunk.  Single source of truth shared by
+ * the chunk writers and the load-time size validator: the writer stamps
+ * these into chunk headers, and savestate_load_from_buffer refuses any
+ * known chunk whose declared size differs (a lying size would let the
+ * fixed-layout loaders read past the end of the buffer). */
+#define CHUNK_GBA_PAYLOAD  (8 + 1)
+#define CHUNK_CPU_PAYLOAD  (64 + 4 + 20 + 88 + 8 + 1 + 1 + 4)
+#define CHUNK_BRAM_PAYLOAD (EWRAM_SIZE + IWRAM_SIZE + IO_SIZE \
+                            + PALETTE_SIZE + VRAM_SIZE + OAM_SIZE + 4 + 1 + 4)
+#define CHUNK_DMA_PAYLOAD  (4 * (4 * 4 + 2 * 2 + 2 + 4 + 1) + 1)
+#define CHUNK_PPU_PAYLOAD  (6 + 24 + 16 + 32 + 8 + 4 + 6 + 2 + 4)
+#define CHUNK_APU_PAYLOAD  (2 * SQUARE_CH_SIZE + WAVE_CH_SIZE + NOISE_CH_SIZE \
+                            + 2 * FIFO_CH_SIZE \
+                            + 2 + 4 * 2 + 1 + 4 + 4 + 4 + 2 * 2)
+#define CHUNK_TMR_PAYLOAD  (4 * (4 * 2 + 3 + 4))
+#define CHUNK_IRQ_PAYLOAD  (1 + 2 + 2)
+#define CHUNK_CART_PAYLOAD (1 + 0x20000 + 4 + 0x8000 + 6 + 23 \
+                            + EEPROM_MAX_SIZE + 1 + 1 + 2 + 2 + 2 + 8 + 2 + 1)
+#define CHUNK_INPT_PAYLOAD (2 + 2)
+#define CHUNK_SIO_PAYLOAD  (8 + 2 + 2 + 2 + 4 + 1 + 1 + 1 + 4)
+
+/* Expected payload size for a known chunk id; 0 for unknown chunks
+ * (which are skipped, never dispatched). */
+static uint32_t expected_chunk_payload(uint32_t chunk_id) {
+    switch (chunk_id) {
+    case CHUNK_GBA:  return CHUNK_GBA_PAYLOAD;
+    case CHUNK_CPU:  return CHUNK_CPU_PAYLOAD;
+    case CHUNK_BRAM: return CHUNK_BRAM_PAYLOAD;
+    case CHUNK_DMA:  return CHUNK_DMA_PAYLOAD;
+    case CHUNK_PPU:  return CHUNK_PPU_PAYLOAD;
+    case CHUNK_APU:  return CHUNK_APU_PAYLOAD;
+    case CHUNK_TMR:  return CHUNK_TMR_PAYLOAD;
+    case CHUNK_IRQ:  return CHUNK_IRQ_PAYLOAD;
+    case CHUNK_CART: return CHUNK_CART_PAYLOAD;
+    case CHUNK_INPT: return CHUNK_INPT_PAYLOAD;
+    case CHUNK_SIO:  return CHUNK_SIO_PAYLOAD;
+    default:         return 0;
+    }
+}
+
 /* -------------------------------------------------------------------------- */
 /*  CRC32 (standard polynomial 0xEDB88320)                                    */
 /* -------------------------------------------------------------------------- */
@@ -178,16 +228,14 @@ static void write_chunk_header(WriteBuffer* wb, uint32_t id, uint32_t data_size)
 }
 
 static void save_gba_chunk(WriteBuffer* wb, GBA* gba) {
-    uint32_t payload_size = 8 + 1; /* u64 total_cycles + u8 frame_complete */
-    write_chunk_header(wb, CHUNK_GBA, payload_size);
+    write_chunk_header(wb, CHUNK_GBA, CHUNK_GBA_PAYLOAD);
     write_u64(wb, gba->total_cycles);
     write_u8(wb, gba->frame_complete ? 1 : 0);
 }
 
 static void save_cpu_chunk(WriteBuffer* wb, ARM7TDMI* cpu) {
     /* 16*4 + 4 + 5*4 + 22*4 + 2*4 + 1 + 1 + 4 = 184 bytes */
-    uint32_t payload_size = 64 + 4 + 20 + 88 + 8 + 1 + 1 + 4;
-    write_chunk_header(wb, CHUNK_CPU, payload_size);
+    write_chunk_header(wb, CHUNK_CPU, CHUNK_CPU_PAYLOAD);
 
     for (int i = 0; i < 16; i++) write_u32(wb, cpu->regs[i]);
     write_u32(wb, cpu->cpsr);
@@ -200,10 +248,7 @@ static void save_cpu_chunk(WriteBuffer* wb, ARM7TDMI* cpu) {
 }
 
 static void save_bram_chunk(WriteBuffer* wb, Bus* bus) {
-    uint32_t payload_size = EWRAM_SIZE + IWRAM_SIZE + IO_SIZE
-                          + PALETTE_SIZE + VRAM_SIZE + OAM_SIZE
-                          + 4 + 1 + 4;
-    write_chunk_header(wb, CHUNK_BRAM, payload_size);
+    write_chunk_header(wb, CHUNK_BRAM, CHUNK_BRAM_PAYLOAD);
 
     write_bytes(wb, bus->ewram, EWRAM_SIZE);
     write_bytes(wb, bus->iwram, IWRAM_SIZE);
@@ -218,8 +263,7 @@ static void save_bram_chunk(WriteBuffer* wb, Bus* bus) {
 
 static void save_dma_chunk(WriteBuffer* wb, DMAController* dma) {
     /* per channel: 4*4 + 2*2 + 2*1 + 4*1 + 1 = 27 bytes, x4 = 108, + 1 = 109 */
-    uint32_t payload_size = 4 * (4 * 4 + 2 * 2 + 2 + 4 + 1) + 1;
-    write_chunk_header(wb, CHUNK_DMA, payload_size);
+    write_chunk_header(wb, CHUNK_DMA, CHUNK_DMA_PAYLOAD);
 
     for (int ch = 0; ch < 4; ch++) {
         DMAChannel* c = &dma->channels[ch];
@@ -245,8 +289,7 @@ static void save_ppu_chunk(WriteBuffer* wb, PPU* ppu) {
      * + 4*2*u32 (bg_ref_xy + latches) + 2*2*u16 (win_h/v) + 2*u16 (winin/out)
      * + 3*u16 (bld) + u16 (mosaic) + u32 (cycle_counter)
      * = 6 + 24 + 16 + 32 + 8 + 4 + 6 + 2 + 4 = 102 */
-    uint32_t payload_size = 6 + 24 + 16 + 32 + 8 + 4 + 6 + 2 + 4;
-    write_chunk_header(wb, CHUNK_PPU, payload_size);
+    write_chunk_header(wb, CHUNK_PPU, CHUNK_PPU_PAYLOAD);
 
     write_u16(wb, ppu->dispcnt);
     write_u16(wb, ppu->dispstat);
@@ -331,20 +374,9 @@ static void save_fifo(WriteBuffer* wb, FIFO* fifo) {
     write_u8(wb, (uint8_t)fifo->last_sample);
 }
 
-/* Square channel payload: 1+2+1+2+4+1+1+1+1+1+1+1+1+1+1+2+1 = 23 bytes */
-#define SQUARE_CH_SIZE 23
-/* Wave channel payload: 1+2+1+2+4+16+1+1+1+1+1 = 31 bytes */
-#define WAVE_CH_SIZE   31
-/* Noise channel payload: 1+2+1+1+1+1+1+2+1+1+1+4 = 17 bytes */
-#define NOISE_CH_SIZE  17
-/* FIFO payload: 32+1+1+1+1+1 = 37 bytes */
-#define FIFO_CH_SIZE   37
 
 static void save_apu_chunk(WriteBuffer* wb, APU* apu) {
-    uint32_t payload_size = 2 * SQUARE_CH_SIZE + WAVE_CH_SIZE + NOISE_CH_SIZE
-                          + 2 * FIFO_CH_SIZE
-                          + 2 + 4 * 2 + 1 + 4 + 4 + 4 + 2 * 2;
-    write_chunk_header(wb, CHUNK_APU, payload_size);
+    write_chunk_header(wb, CHUNK_APU, CHUNK_APU_PAYLOAD);
 
     save_square_channel(wb, &apu->ch1);
     save_square_channel(wb, &apu->ch2);
@@ -369,8 +401,7 @@ static void save_apu_chunk(WriteBuffer* wb, APU* apu) {
 
 static void save_tmr_chunk(WriteBuffer* wb, Timer timers[4]) {
     /* per timer: 4*2 + 3*1 + 4 = 15 bytes, x4 = 60 */
-    uint32_t payload_size = 4 * (4 * 2 + 3 + 4);
-    write_chunk_header(wb, CHUNK_TMR, payload_size);
+    write_chunk_header(wb, CHUNK_TMR, CHUNK_TMR_PAYLOAD);
 
     for (int i = 0; i < 4; i++) {
         Timer* t = &timers[i];
@@ -386,8 +417,7 @@ static void save_tmr_chunk(WriteBuffer* wb, Timer timers[4]) {
 }
 
 static void save_irq_chunk(WriteBuffer* wb, InterruptController* ic) {
-    uint32_t payload_size = 1 + 2 + 2; /* 5 bytes */
-    write_chunk_header(wb, CHUNK_IRQ, payload_size);
+    write_chunk_header(wb, CHUNK_IRQ, CHUNK_IRQ_PAYLOAD);
 
     write_u8(wb, ic->ime ? 1 : 0);
     write_u16(wb, ic->ie);
@@ -396,9 +426,7 @@ static void save_irq_chunk(WriteBuffer* wb, InterruptController* ic) {
 
 static void save_cart_chunk(WriteBuffer* wb, Cartridge* cart) {
     /* save_type + flash + flash meta + sram + GPIO (6) + RTC (23) + EEPROM (8211) */
-    uint32_t eeprom_size = (uint32_t)EEPROM_MAX_SIZE + 1 + 1 + 2 + 2 + 2 + 8 + 2 + 1;
-    uint32_t payload_size = 1 + 0x20000 + 4 + 0x8000 + 6 + 23 + eeprom_size;
-    write_chunk_header(wb, CHUNK_CART, payload_size);
+    write_chunk_header(wb, CHUNK_CART, CHUNK_CART_PAYLOAD);
 
     write_u8(wb, (uint8_t)cart->save_type);
     write_bytes(wb, cart->flash.data, 0x20000);
@@ -440,8 +468,7 @@ static void save_cart_chunk(WriteBuffer* wb, Cartridge* cart) {
 }
 
 static void save_inpt_chunk(WriteBuffer* wb, InputState* input) {
-    uint32_t payload_size = 2 + 2; /* 4 bytes */
-    write_chunk_header(wb, CHUNK_INPT, payload_size);
+    write_chunk_header(wb, CHUNK_INPT, CHUNK_INPT_PAYLOAD);
 
     write_u16(wb, input->keyinput);
     write_u16(wb, input->keycnt);
@@ -455,8 +482,7 @@ static void save_sio_chunk(WriteBuffer* wb, SIO* sio) {
      * NOTE: the InterruptController* and LinkPeer* pointer fields are
      * deliberately NOT serialized — they're meaningless across processes
      * and are re-attached after load by savestate_load_from_buffer. */
-    uint32_t payload_size = 8 + 2 + 2 + 2 + 4 + 1 + 1 + 1 + 4;
-    write_chunk_header(wb, CHUNK_SIO, payload_size);
+    write_chunk_header(wb, CHUNK_SIO, CHUNK_SIO_PAYLOAD);
 
     for (int i = 0; i < 4; i++) write_u16(wb, sio->siomulti[i]);
     write_u16(wb, sio->siocnt);
@@ -1036,6 +1062,16 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
             return SS_ERR_TRUNCATED;
         }
 
+        /* Known chunks have a fixed layout; a declared size that doesn't
+         * match would let the loader read past the chunk (and possibly
+         * the buffer).  Reject before dispatch. */
+        uint32_t expected = expected_chunk_payload(chunk_id);
+        if (expected != 0 && chunk_size != expected) {
+            LOG_ERROR("Save state: chunk 0x%08X size %u != expected %u",
+                      chunk_id, chunk_size, expected);
+            return SS_ERR_CORRUPT;
+        }
+
         const uint8_t* chunk_data = cur;
 
         switch (chunk_id) {
@@ -1056,7 +1092,15 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
             break;
         }
 
-        /* Advance past chunk data regardless of how much the loader consumed */
+        /* A known chunk's loader must consume exactly the declared size —
+         * anything else means the save/load field layouts have drifted
+         * apart and the state would load silently corrupt. */
+        if (expected != 0 && (size_t)(chunk_data - cur) != chunk_size) {
+            LOG_ERROR("Save state: chunk 0x%08X loader consumed %td of %u bytes",
+                      chunk_id, chunk_data - cur, chunk_size);
+            return SS_ERR_CORRUPT;
+        }
+
         cur += chunk_size;
     }
 
@@ -1079,6 +1123,40 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
     return SS_OK;
 }
 
+/* Write a buffer to 'path' via temp file + rename().  POSIX rename() is
+ * atomic, so a crash/disk-full mid-write leaves any previous file at
+ * 'path' intact instead of truncated. */
+SaveStateResult savestate_write_file_atomic(const char* path, const uint8_t* buf, size_t size) {
+    char tmp_path[600];
+    int n = snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+    if (n < 0 || (size_t)n >= sizeof(tmp_path)) {
+        LOG_ERROR("Save state: path too long: '%s'", path);
+        return SS_ERR_FILE_OPEN;
+    }
+
+    FILE* f = fopen(tmp_path, "wb");
+    if (!f) {
+        LOG_ERROR("Save state: cannot open '%s' for writing", tmp_path);
+        return SS_ERR_FILE_OPEN;
+    }
+
+    size_t written = fwrite(buf, 1, size, f);
+    fclose(f);
+
+    if (written != size) {
+        LOG_ERROR("Save state: write error (wrote %zu of %zu bytes)", written, size);
+        remove(tmp_path);
+        return SS_ERR_FILE_WRITE;
+    }
+
+    if (rename(tmp_path, path) != 0) {
+        LOG_ERROR("Save state: cannot commit '%s'", path);
+        remove(tmp_path);
+        return SS_ERR_FILE_WRITE;
+    }
+    return SS_OK;
+}
+
 SaveStateResult savestate_save(GBA* gba, const char* path) {
     uint8_t* buf = NULL;
     size_t   buf_size = 0;
@@ -1088,25 +1166,12 @@ SaveStateResult savestate_save(GBA* gba, const char* path) {
     /* Ensure saves directory exists (legacy path; harmless for ROM-adjacent paths) */
     mkdir("saves", 0755);
 
-    FILE* f = fopen(path, "wb");
-    if (!f) {
-        LOG_ERROR("Save state: cannot open '%s' for writing", path);
-        free(buf);
-        return SS_ERR_FILE_OPEN;
-    }
-
-    size_t written = fwrite(buf, 1, buf_size, f);
-    fclose(f);
-
-    if (written != buf_size) {
-        LOG_ERROR("Save state: write error (wrote %zu of %zu bytes)", written, buf_size);
-        free(buf);
-        return SS_ERR_FILE_WRITE;
-    }
-
-    LOG_INFO("Save state written to '%s' (%zu bytes)", path, buf_size);
+    r = savestate_write_file_atomic(path, buf, buf_size);
     free(buf);
-    return SS_OK;
+    if (r == SS_OK) {
+        LOG_INFO("Save state written to '%s' (%zu bytes)", path, buf_size);
+    }
+    return r;
 }
 
 SaveStateResult savestate_load(GBA* gba, const char* path) {
