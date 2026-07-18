@@ -180,6 +180,9 @@ cmake .. -DENABLE_REWIND=OFF
 | `` ` `` | Toggle fast-forward |
 | `\` | Frame advance — auto-pauses if running; ignored during fast-forward / rewind |
 | Backspace (hold) | Rewind (60s window, audio muted) |
+| M | Toggle audio mute |
+| Space | Pause / resume emulation |
+| F12 | Screenshot (saved next to ROM) |
 | F11 | Toggle fullscreen |
 | Escape | Quit |
 
