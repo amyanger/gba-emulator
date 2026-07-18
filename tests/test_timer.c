@@ -109,6 +109,41 @@ TEST(timer_cascade_increments_only_on_lower_overflow) {
     ASSERT_EQ(ts[1].counter, 1);
 }
 
+TEST(timer_read_projects_unsynced_cycles) {
+    /* Timers only sync at scanline-chunk boundaries; a mid-chunk read
+     * must project the counter forward by the cycles the CPU has run
+     * since the last sync, or games see values stale by up to ~960
+     * cycles (RNG divergence). */
+    Timer ts[4];
+    timer_init(ts);
+
+    timer_write_reload(&ts[0], 0x1000);
+    timer_write_control(&ts[0], 0x80); /* enable, prescaler 1 */
+    ASSERT_EQ_HEX(timer_read_counter(&ts[0], 0), 0x1000);
+
+    /* 100 unsynced cycles at prescaler 1 → counter reads +100, without
+     * mutating the timer itself. */
+    ASSERT_EQ_HEX(timer_read_counter(&ts[0], 100), 0x1064);
+    ASSERT_EQ_HEX(ts[0].counter, 0x1000);
+}
+
+TEST(timer_read_projection_respects_prescaler_and_wrap) {
+    Timer ts[4];
+    timer_init(ts);
+
+    /* Prescaler 64: 130 cycles = 2 ticks. */
+    timer_write_reload(&ts[1], 0);
+    timer_write_control(&ts[1], 0x81); /* enable, prescaler 64 */
+    ASSERT_EQ_HEX(timer_read_counter(&ts[1], 130), 2);
+
+    /* Wrap: counter near overflow reloads through the reload value. */
+    timer_write_reload(&ts[0], 0xFFF0);
+    timer_write_control(&ts[0], 0x80); /* enable, prescaler 1 */
+    /* Period is 0x10000 - 0xFFF0 = 0x10 ticks.  0x18 ticks overflow
+     * once and leave 8 more: reload + 8 = 0xFFF8. */
+    ASSERT_EQ_HEX(timer_read_counter(&ts[0], 0x18), 0xFFF8);
+}
+
 void run_timer_tests(void) {
     TEST_SUITE("timer");
     RUN_TEST(timer_init_zeros_state_and_sets_prescaler_to_one);
@@ -117,4 +152,6 @@ void run_timer_tests(void) {
     RUN_TEST(timer_overflow_fires_irq_when_enabled);
     RUN_TEST(timer_overflow_does_not_fire_irq_when_disabled);
     RUN_TEST(timer_cascade_increments_only_on_lower_overflow);
+    RUN_TEST(timer_read_projects_unsynced_cycles);
+    RUN_TEST(timer_read_projection_respects_prescaler_and_wrap);
 }

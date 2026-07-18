@@ -212,7 +212,10 @@ static uint8_t io_read8(Bus* bus, uint32_t addr) {
         }
         /* Timer index: (offset - 0x100) / 4 */
         uint32_t timer_idx = (offset - 0x100) / 4;
-        uint16_t counter = timer_read_counter(&bus->timers[timer_idx]);
+        /* Project past the last scanline-chunk sync: the CPU has run
+         * cycles_executed cycles that timer_tick hasn't applied yet. */
+        uint32_t elapsed = bus->cpu ? (uint32_t)bus->cpu->cycles_executed : 0;
+        uint16_t counter = timer_read_counter(&bus->timers[timer_idx], elapsed);
         /* Even offset = low byte, odd = high byte */
         if (offset & 1) {
             return (uint8_t)(counter >> 8);
@@ -604,6 +607,9 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
                                 | ((uint16_t)(val & 7) << 8);
         bus->apu->ch1.length_enable = BIT(val, 6);
         if (BIT(val, 7)) {
+            /* Trigger reloads the envelope initial volume (NRx2 bits
+             * 4-7); io_regs holds the last-written envelope byte. */
+            bus->apu->ch1.volume = (bus->io_regs[0x63] >> 4) & 0xF;
             square_channel_trigger(&bus->apu->ch1, true);
         }
         return;
@@ -648,6 +654,7 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
                                 | ((uint16_t)(val & 7) << 8);
         bus->apu->ch2.length_enable = BIT(val, 6);
         if (BIT(val, 7)) {
+            bus->apu->ch2.volume = (bus->io_regs[0x69] >> 4) & 0xF;
             square_channel_trigger(&bus->apu->ch2, false);
         }
         return;
@@ -745,6 +752,7 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         if (!bus->apu) return;
         bus->apu->ch4.length_enable = BIT(val, 6);
         if (BIT(val, 7)) {
+            bus->apu->ch4.volume = (bus->io_regs[0x79] >> 4) & 0xF;
             noise_channel_trigger(&bus->apu->ch4);
         }
         return;
@@ -1332,6 +1340,15 @@ uint32_t bus_read32(Bus* bus, uint32_t addr) {
          | ((uint32_t)bus_read8_raw(bus, addr + 3) << 24);
 }
 
+/* Helper: resolve VRAM offset with 96KB mirroring */
+static uint32_t vram_offset(uint32_t addr) {
+    uint32_t off = addr & 0x1FFFF;
+    if (off >= VRAM_SIZE) {
+        off -= 0x8000;
+    }
+    return off;
+}
+
 static void bus_write8_raw(Bus* bus, uint32_t addr, uint8_t val) {
     switch (decode_region(addr)) {
     case 0x02:
@@ -1355,14 +1372,23 @@ static void bus_write8_raw(Bus* bus, uint32_t addr, uint8_t val) {
         break;
     case 0x06:
     {
-        uint32_t vram_offset = addr & 0x1FFFF;
-        if (vram_offset >= VRAM_SIZE) {
-            vram_offset -= 0x8000;
+        uint32_t off = vram_offset(addr);
+
+        /* 8-bit writes to OBJ VRAM are ignored (like OAM).  The OBJ
+         * region starts at 0x10000 in tile modes (0-2) and 0x14000 in
+         * bitmap modes (3-5), where BG data extends further. */
+        uint32_t obj_base = 0x10000;
+        if (bus->ppu && (bus->ppu->dispcnt & 0x7) >= 3) {
+            obj_base = 0x14000;
         }
-        /* 8-bit VRAM writes write both bytes of halfword (in BG modes) */
-        vram_offset &= ~1u;
-        bus->vram[vram_offset] = val;
-        bus->vram[vram_offset + 1] = val;
+        if (off >= obj_base) {
+            break;
+        }
+
+        /* 8-bit BG VRAM writes write both bytes of the halfword */
+        off &= ~1u;
+        bus->vram[off] = val;
+        bus->vram[off + 1] = val;
         break;
     }
     case 0x07:
@@ -1376,15 +1402,6 @@ static void bus_write8_raw(Bus* bus, uint32_t addr, uint8_t val) {
     default:
         break;
     }
-}
-
-/* Helper: resolve VRAM offset with 96KB mirroring */
-static uint32_t vram_offset(uint32_t addr) {
-    uint32_t off = addr & 0x1FFFF;
-    if (off >= VRAM_SIZE) {
-        off -= 0x8000;
-    }
-    return off;
 }
 
 void bus_write8(Bus* bus, uint32_t addr, uint8_t val) {

@@ -35,8 +35,24 @@ void timer_write_control(Timer* timer, uint16_t val) {
     }
 }
 
-uint16_t timer_read_counter(Timer* timer) {
-    return timer->counter;
+/* Read the counter as of 'elapsed_cycles' past the last timer_tick
+ * sync.  Timers advance in scanline chunks after the CPU runs, so a
+ * mid-chunk read projects forward WITHOUT mutating timer state (the
+ * pending cycles will be applied by the upcoming timer_tick).
+ * Cascade timers are not projected — their advance depends on the lower
+ * timer's overflows, and they move too slowly for the lag to matter. */
+uint16_t timer_read_counter(Timer* timer, uint32_t elapsed_cycles) {
+    if (!timer->enabled || timer->cascade || elapsed_cycles == 0) {
+        return timer->counter;
+    }
+
+    uint32_t ticks = (timer->prescaler_counter + elapsed_cycles) / timer->prescaler;
+    uint32_t projected = (uint32_t)timer->counter + ticks;
+    if (projected > 0xFFFF) {
+        uint32_t period = 0x10000u - timer->reload;
+        projected = timer->reload + (projected - 0x10000u) % period;
+    }
+    return (uint16_t)projected;
 }
 
 void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts, APU* apu) {

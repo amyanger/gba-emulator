@@ -66,6 +66,9 @@ void gba_run_cycles(GBA* gba, int cycles) {
     timer_tick(gba->timers, cycles, &gba->interrupts, &gba->apu);
     apu_tick(&gba->apu, cycles);
     sio_tick(&gba->sio, cycles);
+    // Timers are now synced; clear the CPU's chunk progress so timer
+    // reads don't project these cycles a second time.
+    gba->cpu.cycles_executed = 0;
 }
 
 void gba_run_scanline(GBA* gba) {

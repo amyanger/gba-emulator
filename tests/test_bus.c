@@ -56,6 +56,32 @@ TEST(vram_8bit_duplicate) {
     ASSERT_EQ_HEX(val, 0xCDCD);
 }
 
+/* ---- VRAM: 8-bit writes to OBJ VRAM are ignored -------------------
+ *
+ * GBATEK: like OAM, 8-bit writes to OBJ tile VRAM are dropped.  The
+ * byte-duplication rule only applies to BG VRAM.  The OBJ region starts
+ * at offset 0x10000 in tile modes (0-2) and 0x14000 in bitmap modes. */
+
+TEST(vram_8bit_obj_region_ignored_tile_mode) {
+    GBA* gba = make_gba();
+    gba->ppu.dispcnt = 0; /* mode 0: OBJ VRAM = 0x10000..0x17FFF */
+    bus_write8(&gba->bus, 0x06010000, 0xCD);
+    ASSERT_EQ_HEX(bus_read16(&gba->bus, 0x06010000), 0x0000);
+}
+
+TEST(vram_8bit_obj_region_bitmap_mode_boundary) {
+    GBA* gba = make_gba();
+    gba->ppu.dispcnt = 3; /* mode 3: BG data extends to 0x13FFF */
+
+    /* Below 0x14000: still BG data, byte gets duplicated. */
+    bus_write8(&gba->bus, 0x06012000, 0xCD);
+    ASSERT_EQ_HEX(bus_read16(&gba->bus, 0x06012000), 0xCDCD);
+
+    /* At/above 0x14000: OBJ VRAM, write ignored. */
+    bus_write8(&gba->bus, 0x06014000, 0xEE);
+    ASSERT_EQ_HEX(bus_read16(&gba->bus, 0x06014000), 0x0000);
+}
+
 /* ---- OAM: 8-bit writes are ignored ------------------------------- */
 
 TEST(oam_8bit_ignored) {
@@ -319,6 +345,8 @@ void run_bus_tests(void) {
     RUN_TEST(iwram_write_read);
     RUN_TEST(palette_8bit_duplicate);
     RUN_TEST(vram_8bit_duplicate);
+    RUN_TEST(vram_8bit_obj_region_ignored_tile_mode);
+    RUN_TEST(vram_8bit_obj_region_bitmap_mode_boundary);
     RUN_TEST(oam_8bit_ignored);
     RUN_TEST(vram_mirror);
     RUN_TEST(bus_dispatches_siocnt_writes_to_sio);
