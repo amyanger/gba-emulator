@@ -105,6 +105,10 @@ void ppu_render_scanline(PPU* ppu) {
     // Build OBJ window mask (must happen after sprite rendering)
     ppu_build_obj_window(ppu);
 
+    // Resolve the per-pixel window mask. Not yet consumed by the renderers —
+    // Task 3 moves layer filtering to pixel-write time.
+    ppu_build_window_mask(ppu);
+
     // Apply windowing: mask out layers that are disabled in each window region.
     // Must happen after all compositing, before blending.
     ppu_apply_windowing_scanline(ppu);

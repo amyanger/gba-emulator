@@ -143,6 +143,43 @@ static bool win_h_active(uint16_t win_h, uint32_t x) {
     return (x >= left && x < right);
 }
 
+// Resolve the window mask for every pixel on the current scanline.
+// Region priority is WIN0 > WIN1 > OBJWIN > outside, per GBATEK.
+// Must run after ppu_build_obj_window (OBJWIN regions depend on it) and
+// before any layer renders, since renderers filter their writes on this.
+void ppu_build_window_mask(PPU* ppu) {
+    bool win0_on   = BIT(ppu->dispcnt, 13);
+    bool win1_on   = BIT(ppu->dispcnt, 14);
+    bool objwin_on = BIT(ppu->dispcnt, 15);
+
+    // No window active: every layer and color effects pass unconditionally.
+    if (!win0_on && !win1_on && !objwin_on) {
+        memset(ppu->win_mask, 0x3F, sizeof(ppu->win_mask));
+        return;
+    }
+
+    // Vertical containment is constant across the scanline.
+    bool win0_v = win0_on && win_v_active(ppu->win_v[0], ppu->vcount);
+    bool win1_v = win1_on && win_v_active(ppu->win_v[1], ppu->vcount);
+
+    uint8_t win0_mask    = (uint8_t)(ppu->winin & 0x3F);
+    uint8_t win1_mask    = (uint8_t)((ppu->winin >> 8) & 0x3F);
+    uint8_t outside_mask = (uint8_t)(ppu->winout & 0x3F);
+    uint8_t objwin_mask  = (uint8_t)((ppu->winout >> 8) & 0x3F);
+
+    for (uint32_t x = 0; x < SCREEN_WIDTH; x++) {
+        if (win0_v && win_h_active(ppu->win_h[0], x)) {
+            ppu->win_mask[x] = win0_mask;
+        } else if (win1_v && win_h_active(ppu->win_h[1], x)) {
+            ppu->win_mask[x] = win1_mask;
+        } else if (objwin_on && ppu->obj_window[x]) {
+            ppu->win_mask[x] = objwin_mask;
+        } else {
+            ppu->win_mask[x] = outside_mask;
+        }
+    }
+}
+
 // Apply windowing to the fully composited scanline.
 // For each pixel, determine which window region it belongs to (WIN0 > WIN1 >
 // OBJWIN > outside), then check if the top layer is enabled in that region.

@@ -258,6 +258,54 @@ TEST(window_inverted_h_range_clamps_no_wrap) {
     free(gba);
 }
 
+TEST(window_mask_resolves_region_priority) {
+    /* Region priority is WIN0 > WIN1 > OBJWIN > outside.  Where WIN0 and
+     * WIN1 overlap, WIN0's mask must win. */
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+
+    ppu->dispcnt = (1u << 13) | (1u << 14);  /* WIN0 + WIN1 enabled */
+    ppu->vcount = 0;
+
+    ppu->win_h[0] = (uint16_t)((0u << 8) | 100u);    /* WIN0: x 0..99 */
+    ppu->win_v[0] = (uint16_t)((0u << 8) | 160u);
+    ppu->win_h[1] = (uint16_t)((50u << 8) | 150u);   /* WIN1: x 50..149 */
+    ppu->win_v[1] = (uint16_t)((0u << 8) | 160u);
+
+    /* WININ low byte = WIN0 mask, high byte = WIN1 mask. */
+    ppu->winin  = (uint16_t)(0x01u | (0x02u << 8));
+    ppu->winout = 0x04;
+
+    ppu_build_window_mask(ppu);
+
+    ASSERT_EQ_HEX(ppu->win_mask[10],  0x01);  /* WIN0 only */
+    ASSERT_EQ_HEX(ppu->win_mask[75],  0x01);  /* overlap -> WIN0 wins */
+    ASSERT_EQ_HEX(ppu->win_mask[120], 0x02);  /* WIN1 only */
+    ASSERT_EQ_HEX(ppu->win_mask[200], 0x04);  /* outside both */
+
+    free(gba);
+}
+
+TEST(window_mask_all_bits_set_when_no_window_enabled) {
+    /* With no window enabled in DISPCNT, WININ/WINOUT must be ignored
+     * entirely and every layer plus color effects must pass. */
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+
+    ppu->dispcnt = 0;   /* bits 13/14/15 all clear */
+    ppu->vcount = 0;
+    ppu->winin  = 0;    /* would mask everything if wrongly consulted */
+    ppu->winout = 0;
+
+    ppu_build_window_mask(ppu);
+
+    ASSERT_EQ_HEX(ppu->win_mask[0],   0x3F);
+    ASSERT_EQ_HEX(ppu->win_mask[120], 0x3F);
+    ASSERT_EQ_HEX(ppu->win_mask[239], 0x3F);
+
+    free(gba);
+}
+
 /* Set up an 8x8 4bpp OBJ: tile 1 solid color-index 1, OBJ palette
  * color 1 = red, identity affine params in OAM group 0. */
 static void setup_affine_obj_fixture(PPU* ppu) {
@@ -412,6 +460,8 @@ void run_ppu_tests(void) {
     RUN_TEST(hblank_constants_consistent_with_scanline);
     RUN_TEST(hblank_flag_zero_before_cycle_1006);
     RUN_TEST(window_inverted_h_range_clamps_no_wrap);
+    RUN_TEST(window_mask_resolves_region_priority);
+    RUN_TEST(window_mask_all_bits_set_when_no_window_enabled);
     RUN_TEST(affine_sprite_identity_renders);
     RUN_TEST(affine_sprite_double_size_centers_texture);
     RUN_TEST(semi_transparent_sprite_forces_alpha_blend);

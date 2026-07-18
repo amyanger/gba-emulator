@@ -55,6 +55,11 @@ struct PPU {
     // (GFX mode 1) — forces alpha blending in the effects pass
     bool obj_semitransparent[SCREEN_WIDTH];
 
+    // Resolved per-pixel window mask for the current scanline.
+    // Bits 0-3 = BG0-BG3 enable, bit 4 = OBJ enable, bit 5 = color effects.
+    // All bits set (0x3F) when no window is enabled in DISPCNT.
+    uint8_t win_mask[SCREEN_WIDTH];
+
     // Per-pixel flag set by windowing: false = color effects disabled for this pixel
     bool win_blend_enable[SCREEN_WIDTH];
 
@@ -91,6 +96,7 @@ void ppu_build_obj_window(PPU* ppu);
 
 // Effects (effects.c)
 void ppu_apply_mosaic_scanline(PPU* ppu);
+void ppu_build_window_mask(PPU* ppu);
 void ppu_apply_windowing_scanline(PPU* ppu);
 void ppu_apply_blend_scanline(PPU* ppu);
 
