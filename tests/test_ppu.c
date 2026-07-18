@@ -306,6 +306,176 @@ TEST(window_mask_all_bits_set_when_no_window_enabled) {
     free(gba);
 }
 
+/* Paint a solid 4bpp regular text BG covering the whole top tile row.
+ * Each BG gets its own char base block (0/1/2 -> 0x0000/0x4000/0x8000)
+ * and screen base block (31/30/29 -> 0xF800/0xF000/0xE800) so tile and
+ * map data never overlap.  Tile 1 is solid color-index 1 in palette
+ * bank (bg_index + 1), whose entry 1 is set to `color`. */
+static void setup_solid_bg(PPU* ppu, int bg_index, int priority, uint16_t color) {
+    const uint32_t char_base_blk   = (uint32_t)bg_index;
+    const uint32_t screen_base_blk = 31u - (uint32_t)bg_index;
+    const uint32_t pal_bank        = (uint32_t)bg_index + 1u;
+
+    ppu->bg_cnt[bg_index] = (uint16_t)((uint32_t)priority
+                                     | (char_base_blk << 2)
+                                     | (screen_base_blk << 8));
+
+    /* Tile 1 in this BG's char block: every 4bpp pixel = color index 1. */
+    for (uint32_t i = 0; i < 32; i++) {
+        ppu->vram[char_base_blk * 0x4000u + 32u + i] = 0x11;
+    }
+
+    /* Map row 0: all 32 entries point at tile 1 with this palette bank. */
+    const uint16_t entry = (uint16_t)(1u | (pal_bank << 12));
+    for (uint32_t t = 0; t < 32; t++) {
+        ppu->vram[screen_base_blk * 0x800u + t * 2u]      = (uint8_t)(entry & 0xFF);
+        ppu->vram[screen_base_blk * 0x800u + t * 2u + 1u] = (uint8_t)(entry >> 8);
+    }
+
+    const uint32_t pal_addr = (pal_bank * 16u + 1u) * 2u;
+    ppu->palette_ram[pal_addr]      = (uint8_t)(color & 0xFF);
+    ppu->palette_ram[pal_addr + 1u] = (uint8_t)(color >> 8);
+}
+
+/* OAM entry 0: regular 8x8 4bpp sprite at (0,0), tile 1, solid `color`.
+ * All other OAM entries stay zeroed, which renders tile 0 — all zero,
+ * i.e. fully transparent — so they contribute nothing. */
+static void setup_solid_obj(PPU* ppu, int priority, uint16_t color) {
+    for (uint32_t i = 0; i < 32; i++) {
+        ppu->vram[0x10000u + 32u + i] = 0x11;
+    }
+    ppu->palette_ram[0x200 + 2] = (uint8_t)(color & 0xFF);
+    ppu->palette_ram[0x200 + 3] = (uint8_t)(color >> 8);
+
+    ppu->oam[0] = 0x00; ppu->oam[1] = 0x00;  /* attr0: y=0, normal, square */
+    ppu->oam[2] = 0x00; ppu->oam[3] = 0x00;  /* attr1: x=0, size 0 (8x8) */
+    const uint16_t attr2 = (uint16_t)(1u | ((uint32_t)priority << 10));
+    ppu->oam[4] = (uint8_t)(attr2 & 0xFF);
+    ppu->oam[5] = (uint8_t)(attr2 >> 8);
+}
+
+/* Four layers stacked on the same pixel: OBJ(prio 0) over BG0(1) over
+ * BG1(2) over BG2(3).  Backdrop = white so a miss is unmistakable. */
+static void setup_four_layer_stack(PPU* ppu) {
+    ppu->vcount = 0;
+    ppu->palette_ram[0] = 0xFF;  /* backdrop = white 0x7FFF */
+    ppu->palette_ram[1] = 0x7F;
+
+    setup_solid_bg(ppu, 0, 1, 0x001F);   /* red   */
+    setup_solid_bg(ppu, 1, 2, 0x03E0);   /* green */
+    setup_solid_bg(ppu, 2, 3, 0x7C00);   /* blue  */
+    setup_solid_obj(ppu, 0, 0x7FE0);     /* cyan  */
+}
+
+TEST(window_masking_three_deep_reveals_third_layer) {
+    /* The regression this rewrite exists for.  OBJ, BG0, BG1 and BG2 all
+     * cover x=4.  WIN0 disables OBJ and BG0, so BG1 must show through.
+     * The old post-process could only promote the second-priority pixel,
+     * so it fell through to the backdrop instead. */
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+
+    /* Mode 0; BG0/BG1/BG2 on (bits 8/9/10); OBJ on (12); WIN0 on (13). */
+    ppu->dispcnt = 0u | (1u << 8) | (1u << 9) | (1u << 10)
+                      | (1u << 12) | (1u << 13);
+    setup_four_layer_stack(ppu);
+
+    /* WIN0 covers the whole screen. */
+    ppu->win_h[0] = (uint16_t)((0u << 8) | 240u);
+    ppu->win_v[0] = (uint16_t)((0u << 8) | 160u);
+    /* Inside WIN0: BG1 + BG2 + color effects.  BG0 and OBJ disabled. */
+    ppu->winin  = (uint16_t)((1u << 1) | (1u << 2) | (1u << 5));
+    ppu->winout = 0x3F;
+
+    ppu_render_scanline(ppu);
+
+    ASSERT_EQ_HEX(ppu->framebuffer[4], 0x03E0);  /* BG1 green */
+
+    free(gba);
+}
+
+TEST(no_window_leaves_top_priority_layer_visible) {
+    /* With windowing disabled entirely, the same stack must resolve to
+     * the highest-priority layer, unchanged from before this rewrite. */
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+
+    ppu->dispcnt = 0u | (1u << 8) | (1u << 9) | (1u << 10) | (1u << 12);
+    setup_four_layer_stack(ppu);
+    /* WININ/WINOUT are hostile values that must be ignored. */
+    ppu->winin  = 0;
+    ppu->winout = 0;
+
+    ppu_render_scanline(ppu);
+
+    ASSERT_EQ_HEX(ppu->framebuffer[4], 0x7FE0);  /* OBJ cyan, priority 0 */
+
+    free(gba);
+}
+
+TEST(objwin_region_uses_winout_high_byte_mask) {
+    /* A GFX-mode-2 sprite defines the OBJ window region.  Inside it the
+     * WINOUT high-byte mask applies; outside it the low-byte mask does. */
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+
+    /* Mode 0; BG0/1/2 on; OBJ on; OBJWIN on (bit 15).  WIN0/WIN1 off. */
+    ppu->dispcnt = 0u | (1u << 8) | (1u << 9) | (1u << 10)
+                      | (1u << 12) | (1u << 15);
+    setup_four_layer_stack(ppu);
+
+    /* OAM entry 1: same 8x8 tile-1 sprite at (0,0), but GFX mode 2
+     * (attr0 bits 11-10 = 2) so it only defines the window region. */
+    ppu->oam[8]  = 0x00; ppu->oam[9]  = 0x08;  /* attr0: y=0, gfx mode 2 */
+    ppu->oam[10] = 0x00; ppu->oam[11] = 0x00;  /* attr1: x=0, 8x8 */
+    ppu->oam[12] = 0x01; ppu->oam[13] = 0x00;  /* attr2: tile 1, prio 0 */
+
+    /* Inside OBJWIN (high byte): BG2 only.  Outside (low byte): all on. */
+    ppu->winout = (uint16_t)(0x3Fu | ((1u << 2) << 8));
+
+    ppu_render_scanline(ppu);
+
+    /* x=4 is inside the OBJ window sprite -> only BG2 survives. */
+    ASSERT_EQ_HEX(ppu->framebuffer[4], 0x7C00);   /* BG2 blue */
+    /* x=100 is outside it; the visible OBJ only spans x 0..7, so the
+     * top remaining layer there is BG0. */
+    ASSERT_EQ_HEX(ppu->framebuffer[100], 0x001F); /* BG0 red */
+
+    free(gba);
+}
+
+TEST(window_color_effect_bit_gates_blending) {
+    /* Bit 5 of a region's mask enables colour effects for that region.
+     * BLDCNT selects fade-to-black on BG0 with EVY=16 (full black). */
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+
+    ppu->dispcnt = 0u | (1u << 8) | (1u << 9) | (1u << 10)
+                      | (1u << 12) | (1u << 13);
+    setup_four_layer_stack(ppu);
+
+    /* WIN0 covers x 0..119 only. */
+    ppu->win_h[0] = (uint16_t)((0u << 8) | 120u);
+    ppu->win_v[0] = (uint16_t)((0u << 8) | 160u);
+    /* Inside: all layers on, bit 5 CLEAR -> no colour effects. */
+    ppu->winin  = 0x1F;
+    /* Outside: all layers on, bit 5 SET -> colour effects apply. */
+    ppu->winout = 0x3F;
+
+    /* BLDCNT: mode 3 (brightness decrease) with BG0 as 1st target. */
+    ppu->bldcnt = (uint16_t)((3u << 6) | (1u << 0));
+    ppu->bldy = 16;
+
+    ppu_render_scanline(ppu);
+
+    /* x=50: inside WIN0, past the 8px sprite -> BG0 red, unfaded. */
+    ASSERT_EQ_HEX(ppu->framebuffer[50], 0x001F);
+    /* x=200: outside WIN0 -> BG0 faded fully to black. */
+    ASSERT_EQ_HEX(ppu->framebuffer[200], 0x0000);
+
+    free(gba);
+}
+
 /* Set up an 8x8 4bpp OBJ: tile 1 solid color-index 1, OBJ palette
  * color 1 = red, identity affine params in OAM group 0. */
 static void setup_affine_obj_fixture(PPU* ppu) {
@@ -462,6 +632,10 @@ void run_ppu_tests(void) {
     RUN_TEST(window_inverted_h_range_clamps_no_wrap);
     RUN_TEST(window_mask_resolves_region_priority);
     RUN_TEST(window_mask_all_bits_set_when_no_window_enabled);
+    RUN_TEST(window_masking_three_deep_reveals_third_layer);
+    RUN_TEST(no_window_leaves_top_priority_layer_visible);
+    RUN_TEST(objwin_region_uses_winout_high_byte_mask);
+    RUN_TEST(window_color_effect_bit_gates_blending);
     RUN_TEST(affine_sprite_identity_renders);
     RUN_TEST(affine_sprite_double_size_centers_texture);
     RUN_TEST(semi_transparent_sprite_forces_alpha_blend);

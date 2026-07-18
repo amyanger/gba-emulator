@@ -34,9 +34,15 @@ void ppu_render_scanline(PPU* ppu) {
         ppu->top_layer[x] = 5;       // backdrop
         ppu->second_pixel[x] = backdrop;
         ppu->second_layer[x] = 5;    // backdrop
-        ppu->win_blend_enable[x] = true;
         ppu->obj_mosaic[x] = false;
     }
+
+    // Build the OBJ window mask, then resolve the per-pixel window mask.
+    // Both must precede layer rendering: renderers drop writes for layers
+    // that are disabled in a pixel's window region, which is what keeps the
+    // pixel beneath a masked layer intact.
+    ppu_build_obj_window(ppu);
+    ppu_build_window_mask(ppu);
 
     switch (mode) {
     case 0:
@@ -101,17 +107,6 @@ void ppu_render_scanline(PPU* ppu) {
     // Apply mosaic: horizontal post-process on composited pixels.
     // Vertical mosaic is already applied during BG/sprite rendering.
     ppu_apply_mosaic_scanline(ppu);
-
-    // Build OBJ window mask (must happen after sprite rendering)
-    ppu_build_obj_window(ppu);
-
-    // Resolve the per-pixel window mask. Not yet consumed by the renderers —
-    // Task 3 moves layer filtering to pixel-write time.
-    ppu_build_window_mask(ppu);
-
-    // Apply windowing: mask out layers that are disabled in each window region.
-    // Must happen after all compositing, before blending.
-    ppu_apply_windowing_scanline(ppu);
 
     // Apply color blending effects (fade-to-black, fade-to-white, alpha blend)
     ppu_apply_blend_scanline(ppu);

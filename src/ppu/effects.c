@@ -60,13 +60,10 @@ void ppu_apply_blend_scanline(PPU* ppu) {
     uint32_t evy = ppu->bldy & 0x1F;
     if (evy > 16) evy = 16;
 
-    // Check if any window is enabled — if so, the per-pixel blend flag applies.
-    bool windowing_active = BIT(ppu->dispcnt, 13) || BIT(ppu->dispcnt, 14)
-                          || BIT(ppu->dispcnt, 15);
-
     for (uint32_t x = 0; x < SCREEN_WIDTH; x++) {
-        // If windowing is active and color effects are disabled for this pixel, skip
-        if (windowing_active && !ppu->win_blend_enable[x]) continue;
+        // Bit 5 of the window mask gates color effects for this pixel's region.
+        // It is set for every pixel when no window is enabled.
+        if (!BIT(ppu->win_mask[x], 5)) continue;
 
         uint8_t top_id = ppu->top_layer[x];
 
@@ -177,100 +174,6 @@ void ppu_build_window_mask(PPU* ppu) {
         } else {
             ppu->win_mask[x] = outside_mask;
         }
-    }
-}
-
-// Apply windowing to the fully composited scanline.
-// For each pixel, determine which window region it belongs to (WIN0 > WIN1 >
-// OBJWIN > outside), then check if the top layer is enabled in that region.
-// If the layer is disabled, replace the pixel with the second-priority pixel
-// (if that layer IS enabled), otherwise fall back to backdrop.
-//
-// The "color effects" enable bit (bit 5 of each window's mask) controls whether
-// blending applies to pixels in that region. We store this per-pixel so the
-// subsequent blend pass can consult it.
-void ppu_apply_windowing_scanline(PPU* ppu) {
-    // Windowing is only active if at least one window is enabled in DISPCNT
-    // bits 13 (WIN0), 14 (WIN1), 15 (OBJWIN).
-    bool win0_on  = BIT(ppu->dispcnt, 13);
-    bool win1_on  = BIT(ppu->dispcnt, 14);
-    bool objwin_on = BIT(ppu->dispcnt, 15);
-
-    if (!win0_on && !win1_on && !objwin_on) return;
-
-    // Precompute vertical containment (same for all pixels on this scanline)
-    bool win0_v = win0_on && win_v_active(ppu->win_v[0], ppu->vcount);
-    bool win1_v = win1_on && win_v_active(ppu->win_v[1], ppu->vcount);
-
-    // Extract the 6-bit enable masks for each window region once:
-    //   bits 0-3 = BG0-BG3 enable, bit 4 = OBJ enable, bit 5 = color effects
-    uint8_t win0_mask   = (uint8_t)(ppu->winin & 0x3F);
-    uint8_t win1_mask   = (uint8_t)((ppu->winin >> 8) & 0x3F);
-    uint8_t outside_mask = (uint8_t)(ppu->winout & 0x3F);
-    uint8_t objwin_mask = (uint8_t)((ppu->winout >> 8) & 0x3F);
-
-    // Backdrop color (palette entry 0) for pixels that get fully masked
-    uint16_t backdrop = (uint16_t)ppu->palette_ram[0]
-                      | ((uint16_t)ppu->palette_ram[1] << 8);
-
-    for (uint32_t x = 0; x < SCREEN_WIDTH; x++) {
-        // Determine which window region this pixel belongs to.
-        // Priority: WIN0 > WIN1 > OBJWIN > outside
-        uint8_t mask;
-
-        if (win0_v && win_h_active(ppu->win_h[0], x)) {
-            mask = win0_mask;
-        } else if (win1_v && win_h_active(ppu->win_h[1], x)) {
-            mask = win1_mask;
-        } else if (objwin_on && ppu->obj_window[x]) {
-            mask = objwin_mask;
-        } else {
-            mask = outside_mask;
-        }
-
-        // Check if the top layer is enabled in this window region.
-        // Layer IDs: 0-3 = BG0-BG3, 4 = OBJ, 5 = backdrop
-        uint8_t top_id = ppu->top_layer[x];
-        bool top_enabled;
-
-        if (top_id <= 3) {
-            top_enabled = BIT(mask, top_id);
-        } else if (top_id == 4) {
-            top_enabled = BIT(mask, 4);  // OBJ enable
-        } else {
-            top_enabled = true;  // Backdrop is always visible
-        }
-
-        if (!top_enabled) {
-            // Top pixel is masked out. Try the second pixel.
-            uint8_t second_id = ppu->second_layer[x];
-            bool second_enabled;
-
-            if (second_id <= 3) {
-                second_enabled = BIT(mask, second_id);
-            } else if (second_id == 4) {
-                second_enabled = BIT(mask, 4);
-            } else {
-                second_enabled = true;
-            }
-
-            if (second_enabled) {
-                ppu->scanline_buffer[x] = ppu->second_pixel[x];
-                ppu->top_layer[x] = second_id;
-                // Second becomes backdrop (nothing behind it)
-                ppu->second_pixel[x] = backdrop;
-                ppu->second_layer[x] = 5;
-            } else {
-                // Both masked — show backdrop
-                ppu->scanline_buffer[x] = backdrop;
-                ppu->top_layer[x] = 5;
-                ppu->second_pixel[x] = backdrop;
-                ppu->second_layer[x] = 5;
-            }
-        }
-
-        // Store whether color effects are enabled for this pixel's window region.
-        ppu->win_blend_enable[x] = BIT(mask, 5);
     }
 }
 
