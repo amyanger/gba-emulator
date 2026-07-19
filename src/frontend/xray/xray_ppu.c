@@ -35,11 +35,13 @@ void xray_capture_ppu_layers(PPU* ppu, XRayState* state) {
     uint8_t saved_top_layer[SCREEN_WIDTH];
     uint16_t saved_second_pixel[SCREEN_WIDTH];
     uint8_t saved_second_layer[SCREEN_WIDTH];
+    uint8_t saved_win_mask[SCREEN_WIDTH];
 
     memcpy(saved_scanline, ppu->scanline_buffer, sizeof(saved_scanline));
     memcpy(saved_top_layer, ppu->top_layer, sizeof(saved_top_layer));
     memcpy(saved_second_pixel, ppu->second_pixel, sizeof(saved_second_pixel));
     memcpy(saved_second_layer, ppu->second_layer, sizeof(saved_second_layer));
+    memcpy(saved_win_mask, ppu->win_mask, sizeof(saved_win_mask));
 
     /* Save affine internal refs */
     int32_t saved_ref_x[2], saved_ref_y[2];
@@ -107,9 +109,6 @@ void xray_capture_ppu_layers(PPU* ppu, XRayState* state) {
 
     /* Re-render sprites in isolation */
     if (BIT(ppu->dispcnt, 12)) {
-        /* Isolated layer previews are deliberately unwindowed. */
-        memset(ppu->win_mask, 0x3F, sizeof(ppu->win_mask));
-
         for (int line = 0; line < VDRAW_LINES; line++) {
             ppu->vcount = (uint16_t)line;
 
@@ -131,6 +130,7 @@ void xray_capture_ppu_layers(PPU* ppu, XRayState* state) {
     memcpy(ppu->top_layer, saved_top_layer, sizeof(saved_top_layer));
     memcpy(ppu->second_pixel, saved_second_pixel, sizeof(saved_second_pixel));
     memcpy(ppu->second_layer, saved_second_layer, sizeof(saved_second_layer));
+    memcpy(ppu->win_mask, saved_win_mask, sizeof(saved_win_mask));
     memcpy(ppu->bg_ref_x, saved_ref_x, sizeof(saved_ref_x));
     memcpy(ppu->bg_ref_y, saved_ref_y, sizeof(saved_ref_y));
 }

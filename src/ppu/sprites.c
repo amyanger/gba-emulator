@@ -242,7 +242,8 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
             uint16_t color = (uint16_t)ppu->palette_ram[pal_addr]
                            | ((uint16_t)ppu->palette_ram[pal_addr + 1] << 8);
 
-            // Track layers for blending: push current top pixel down to second
+            // Window-filtered write: dropped if OBJ is masked out at this pixel.
+            // Only set mosaic/semi-transparent flags when the write landed.
             if (ppu_push_pixel(ppu, (uint32_t)screen_x, color, 4)) {
                 ppu->obj_mosaic[screen_x] = BIT(attr0, 12);
                 ppu->obj_semitransparent[screen_x] = (gfx_mode == 1);
