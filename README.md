@@ -155,6 +155,11 @@ cmake .. -DENABLE_REWIND=OFF
 | `--keymap <file>` | Path to a keymap `.ini` for custom keyboard bindings |
 | `--link-master <path>` | Listen for a peer GBA at AF_UNIX socket path (host side) |
 | `--link-client <path>` | Connect to a peer GBA at AF_UNIX socket path (client side) |
+| `--mute` | Start with audio muted (toggle back with `M`) |
+| `--trace <file>` | Write a per-instruction execution trace to `file` (expect 5-10x slowdown) |
+| `--trace-from <hex>` | Only trace instructions at PC >= this address (hex) |
+| `--trace-to <hex>` | Only trace instructions at PC <= this address (hex) |
+| `--trace-frames <n>` | Stop tracing after `n` frames |
 
 ### Example
 
