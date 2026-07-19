@@ -54,6 +54,9 @@ void xray_capture_ppu_layers(PPU* ppu, XRayState* state) {
     uint16_t backdrop = (uint16_t)ppu->palette_ram[0] |
                         ((uint16_t)ppu->palette_ram[1] << 8);
 
+    /* Isolated layer previews are deliberately unwindowed. */
+    memset(ppu->win_mask, 0x3F, sizeof(ppu->win_mask));
+
     /* Re-render each BG layer in isolation */
     for (int bg = 0; bg < 4; bg++) {
         if (!BIT(ppu->dispcnt, 8 + bg)) continue;
@@ -104,6 +107,9 @@ void xray_capture_ppu_layers(PPU* ppu, XRayState* state) {
 
     /* Re-render sprites in isolation */
     if (BIT(ppu->dispcnt, 12)) {
+        /* Isolated layer previews are deliberately unwindowed. */
+        memset(ppu->win_mask, 0x3F, sizeof(ppu->win_mask));
+
         for (int line = 0; line < VDRAW_LINES; line++) {
             ppu->vcount = (uint16_t)line;
 

@@ -35,6 +35,7 @@ void ppu_render_scanline(PPU* ppu) {
         ppu->second_pixel[x] = backdrop;
         ppu->second_layer[x] = 5;    // backdrop
         ppu->obj_mosaic[x] = false;
+        ppu->obj_semitransparent[x] = false;
     }
 
     // Build the OBJ window mask, then resolve the per-pixel window mask.
