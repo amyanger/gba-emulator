@@ -53,7 +53,7 @@ cmake .. -DENABLE_XRAY=OFF
 - **Save States** — 10 numbered slots (0–9), versioned and ROM-hash guarded, written next to the ROM as `<rom>.ss<N>`
 - **Cheats** — GameShark / Action Replay v1–v3 + CodeBreaker, loaded from a `.cht` file
 - **Fast-Forward** — Hold Tab or toggle with `` ` `` (skips audio, renders every Nth frame)
-- **Rewind** — Hold Backspace to step back through the last 60 seconds (LZ4-compressed snapshots in RAM, audio muted while rewinding)
+- **Rewind** — Hold Backspace to step back through the last 60 seconds (LZ4-compressed snapshots in RAM, capped at 256 MB, audio muted while rewinding)
 - **Input** — Active-low KEYINPUT register with SDL2 keyboard mapping
 - **Link Cable (local)** — Two-instance Multiplayer mode SIO over an AF_UNIX socket (`--link-master`/`--link-client`)
 - **SDL2 Frontend** — Windowed or fullscreen rendering, configurable scale, audio-driven frame sync

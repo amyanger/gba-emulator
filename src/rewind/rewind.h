@@ -16,6 +16,10 @@ typedef struct {
     bool     uncompressed;  /* true if LZ4 declined to compress; data holds raw bytes */
 } RewindFrame;
 
+/* Default snapshot-memory budget. Bounds the worst case (incompressible
+ * states) at the cost of a shorter rewind window when snapshots run large. */
+#define REWIND_DEFAULT_MAX_BYTES ((size_t)256 * 1024 * 1024)
+
 typedef struct {
     RewindFrame* slots;
     uint32_t     capacity;       /* number of slots */
@@ -26,11 +30,14 @@ typedef struct {
     uint8_t*     lz4_scratch;    /* LZ4 compress destination */
     uint32_t     lz4_scratch_cap;
     uint64_t     frame_counter;  /* monotonic, ticks every frame regardless of record */
-    size_t       bytes_used;     /* sum of slot.size for valid slots */
+    size_t       bytes_used;     /* heap bytes allocated for slot payloads (sum of slot.cap) */
+    size_t       max_bytes;      /* eviction budget for bytes_used; 0 = unlimited */
     bool         active;         /* in reverse-playback */
 } RewindBuffer;
 
-bool     rewind_init(RewindBuffer* rb, uint32_t capacity_frames);
+/* max_bytes caps snapshot payload memory; oldest frames are evicted (and
+ * their allocations freed) to stay under it. 0 disables the cap. */
+bool     rewind_init(RewindBuffer* rb, uint32_t capacity_frames, size_t max_bytes);
 void     rewind_shutdown(RewindBuffer* rb);
 void     rewind_record_frame(RewindBuffer* rb, GBA* gba);
 bool     rewind_begin(RewindBuffer* rb);

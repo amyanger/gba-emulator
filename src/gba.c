@@ -45,9 +45,10 @@ void gba_init(GBA* gba) {
     gba->frame_complete = false;
 
 #ifdef ENABLE_REWIND
-    /* 60-second window at 30 snapshots/sec = 1800 slots. Failure is non-fatal —
-     * rewind_init logs a warning and the rewind APIs become safe no-ops. */
-    rewind_init(&gba->rewind, 1800);
+    /* 60-second window at 30 snapshots/sec = 1800 slots, capped by a byte
+     * budget (the window shortens if snapshots run large). Failure is
+     * non-fatal — rewind_init logs a warning and the APIs become no-ops. */
+    rewind_init(&gba->rewind, 1800, REWIND_DEFAULT_MAX_BYTES);
 #endif
 
     LOG_INFO("GBA system initialized");

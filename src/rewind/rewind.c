@@ -8,7 +8,7 @@
 /* A typical state is ~400 KB; allow generous headroom. */
 #define REWIND_SCRATCH_CAP (1u * 1024u * 1024u)
 
-bool rewind_init(RewindBuffer* rb, uint32_t capacity_frames) {
+bool rewind_init(RewindBuffer* rb, uint32_t capacity_frames, size_t max_bytes) {
     if (!rb || capacity_frames == 0) return false;
     memset(rb, 0, sizeof(*rb));
 
@@ -39,7 +39,18 @@ bool rewind_init(RewindBuffer* rb, uint32_t capacity_frames) {
     }
 
     rb->capacity = capacity_frames;
+    rb->max_bytes = max_bytes;
     return true;
+}
+
+/* Drop the oldest valid frame and return its allocation to the OS. */
+static void evict_oldest(RewindBuffer* rb) {
+    uint32_t idx = (rb->head + rb->capacity - rb->count) % rb->capacity;
+    RewindFrame* slot = &rb->slots[idx];
+    rb->bytes_used -= slot->cap;
+    free(slot->data);
+    memset(slot, 0, sizeof(*slot));
+    rb->count--;
 }
 
 void rewind_shutdown(RewindBuffer* rb) {
@@ -105,11 +116,10 @@ void rewind_record_frame(RewindBuffer* rb, GBA* gba) {
         payload_size = (uint32_t)c_len;
     }
 
-    /* Place into slot at head, evicting whatever is there. */
+    /* Place into slot at head, overwriting the oldest frame when full. Grow
+     * the allocation before touching any accounting so a failed realloc
+     * leaves the buffer consistent. */
     RewindFrame* slot = &rb->slots[rb->head];
-    if (rb->count == rb->capacity) {
-        rb->bytes_used -= slot->size;  /* evicting */
-    }
     if (slot->cap < payload_size) {
         uint8_t* nbuf = (uint8_t*)realloc(slot->data, payload_size);
         if (!nbuf) {
@@ -117,6 +127,7 @@ void rewind_record_frame(RewindBuffer* rb, GBA* gba) {
             free(raw);
             return;
         }
+        rb->bytes_used += payload_size - slot->cap;
         slot->data = nbuf;
         slot->cap  = payload_size;
     }
@@ -126,11 +137,18 @@ void rewind_record_frame(RewindBuffer* rb, GBA* gba) {
     slot->frame        = this_frame;
     slot->uncompressed = uncompressed;
 
-    rb->bytes_used += payload_size;
     rb->head = (rb->head + 1u) % rb->capacity;
     if (rb->count < rb->capacity) rb->count++;
 
     free(raw);
+
+    /* Enforce the byte budget by dropping oldest frames. The frame just
+     * recorded always survives, so the budget is soft by one snapshot. */
+    if (rb->max_bytes != 0) {
+        while (rb->bytes_used > rb->max_bytes && rb->count > 1) {
+            evict_oldest(rb);
+        }
+    }
 }
 
 bool rewind_begin(RewindBuffer* rb) {
@@ -148,7 +166,6 @@ bool rewind_step(RewindBuffer* rb, GBA* gba) {
     rb->head = (rb->head + rb->capacity - 1u) % rb->capacity;
     rb->count--;
     RewindFrame* slot = &rb->slots[rb->head];
-    rb->bytes_used -= slot->size;
 
     /* Decompress (or copy) into scratch. */
     if (slot->raw_size > rb->scratch_cap) {
@@ -181,6 +198,13 @@ bool rewind_step(RewindBuffer* rb, GBA* gba) {
         rb->active = false;
         return false;
     }
+
+    /* Return the popped slot's allocation so bytes_used only ever counts
+     * live frames; stale allocations would otherwise starve the byte budget
+     * after a deep rewind. */
+    rb->bytes_used -= slot->cap;
+    free(slot->data);
+    memset(slot, 0, sizeof(*slot));
     return true;
 }
 
@@ -195,11 +219,9 @@ void rewind_clear(RewindBuffer* rb) {
     rb->count = 0;
     rb->bytes_used = 0;
     rb->active = false;
-    /* Keep slot allocations for reuse — only reset metadata. */
+    /* Free slot allocations so bytes_used stays an honest measure of heap use. */
     for (uint32_t i = 0; i < rb->capacity; i++) {
-        rb->slots[i].size = 0;
-        rb->slots[i].raw_size = 0;
-        rb->slots[i].frame = 0;
-        rb->slots[i].uncompressed = false;
+        free(rb->slots[i].data);
+        memset(&rb->slots[i], 0, sizeof(rb->slots[i]));
     }
 }

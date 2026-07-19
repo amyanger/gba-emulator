@@ -24,7 +24,7 @@ TEST(lz4_roundtrip_smoke) {
 
 TEST(rewind_init_shutdown_clean) {
     RewindBuffer rb;
-    bool ok = rewind_init(&rb, 1800);
+    bool ok = rewind_init(&rb, 1800, 0);
     ASSERT_TRUE(ok);
     ASSERT_EQ(rewind_depth(&rb), 0);
     rewind_shutdown(&rb);
@@ -34,7 +34,7 @@ TEST(rewind_init_shutdown_clean) {
 
 TEST(rewind_record_increments_count) {
     RewindBuffer rb;
-    rewind_init(&rb, 8);
+    rewind_init(&rb, 8, 0);
     GBA gba;
     gba_init(&gba);
 
@@ -50,7 +50,7 @@ TEST(rewind_record_increments_count) {
 
 TEST(rewind_ring_wraps_at_capacity) {
     RewindBuffer rb;
-    rewind_init(&rb, 4);
+    rewind_init(&rb, 4, 0);
     GBA gba;
     gba_init(&gba);
 
@@ -67,7 +67,7 @@ TEST(rewind_ring_wraps_at_capacity) {
 
 TEST(rewind_step_restores_prior_state) {
     RewindBuffer rb;
-    rewind_init(&rb, 16);
+    rewind_init(&rb, 16, 0);
     GBA gba;
     gba_init(&gba);
 
@@ -110,7 +110,7 @@ TEST(rewind_step_restores_prior_state) {
 
 TEST(rewind_handles_incompressible_payload) {
     RewindBuffer rb;
-    rewind_init(&rb, 4);
+    rewind_init(&rb, 4, 0);
     GBA gba;
     gba_init(&gba);
 
@@ -137,7 +137,7 @@ TEST(rewind_handles_incompressible_payload) {
 
 TEST(rewind_recovers_from_corrupt_slot) {
     RewindBuffer rb;
-    rewind_init(&rb, 4);
+    rewind_init(&rb, 4, 0);
     GBA gba;
     gba_init(&gba);
 
@@ -158,7 +158,7 @@ TEST(rewind_recovers_from_corrupt_slot) {
 
 TEST(rewind_clear_resets_buffer) {
     RewindBuffer rb;
-    rewind_init(&rb, 4);
+    rewind_init(&rb, 4, 0);
     GBA gba;
     gba_init(&gba);
 
@@ -182,6 +182,130 @@ TEST(rewind_clear_resets_buffer) {
     rewind_shutdown(&rb);
 }
 
+/* Fill EWRAM with high-entropy bytes so LZ4 can't compress and every
+ * snapshot's payload is close to the raw state size. */
+static void fill_ewram_entropy(GBA* gba, uint32_t seed) {
+    uint32_t s = seed;
+    for (size_t i = 0; i < sizeof(gba->bus.ewram); i++) {
+        s = s * 1103515245u + 12345u;
+        gba->bus.ewram[i] = (uint8_t)(s >> 16);
+    }
+}
+
+TEST(rewind_bytes_used_tracks_slot_allocations) {
+    RewindBuffer rb;
+    rewind_init(&rb, 4, 0);  /* unlimited budget */
+    GBA gba;
+    gba_init(&gba);
+
+    /* Four big incompressible snapshots grow every slot's allocation. */
+    fill_ewram_entropy(&gba, 0x1234u);
+    for (int i = 0; i < 8; i++) {
+        rewind_record_frame(&rb, &gba);
+    }
+    ASSERT_EQ(rewind_depth(&rb), 4);
+
+    /* Four small snapshots (zeroed EWRAM compresses hard) overwrite the ring.
+     * The big allocations are retained for reuse and must stay counted. */
+    memset(gba.bus.ewram, 0, sizeof(gba.bus.ewram));
+    for (int i = 0; i < 8; i++) {
+        rewind_record_frame(&rb, &gba);
+    }
+
+    size_t caps = 0;
+    for (uint32_t i = 0; i < rb.capacity; i++) {
+        caps += rb.slots[i].cap;
+    }
+    ASSERT_EQ(rewind_bytes_used(&rb), caps);
+
+    gba_destroy(&gba);
+    rewind_shutdown(&rb);
+}
+
+TEST(rewind_evicts_oldest_when_over_byte_budget) {
+    RewindBuffer rb;
+    GBA gba;
+    gba_init(&gba);
+    fill_ewram_entropy(&gba, 0x5678u);
+
+    /* Measure one snapshot's allocated footprint. */
+    rewind_init(&rb, 64, 0);
+    rewind_record_frame(&rb, &gba);
+    size_t one = rewind_bytes_used(&rb);
+    ASSERT_TRUE(one > 0);
+    rewind_shutdown(&rb);
+
+    /* Budget for ~2.5 snapshots; record 4. Oldest must be evicted. */
+    rewind_init(&rb, 64, one * 2 + one / 2);
+    for (int i = 0; i < 8; i++) {
+        gba.bus.ewram[0] = (uint8_t)(0x10 + i);  /* marker per call */
+        rewind_record_frame(&rb, &gba);
+    }
+    ASSERT_TRUE(rewind_bytes_used(&rb) <= rb.max_bytes);
+    ASSERT_TRUE(rewind_depth(&rb) >= 1);
+    ASSERT_TRUE(rewind_depth(&rb) < 4);
+
+    /* The newest snapshot (marker from call i=6) must survive eviction. */
+    ASSERT_TRUE(rewind_begin(&rb));
+    gba.bus.ewram[0] = 0xEE;
+    ASSERT_TRUE(rewind_step(&rb, &gba));
+    ASSERT_EQ(gba.bus.ewram[0], 0x16);
+    rewind_end(&rb);
+
+    gba_destroy(&gba);
+    rewind_shutdown(&rb);
+}
+
+TEST(rewind_step_releases_slot_memory) {
+    RewindBuffer rb;
+    rewind_init(&rb, 8, 0);
+    GBA gba;
+    gba_init(&gba);
+    fill_ewram_entropy(&gba, 0xDEF0u);
+
+    for (int i = 0; i < 4; i++) {
+        rewind_record_frame(&rb, &gba);  /* 2 recorded */
+    }
+    size_t before = rewind_bytes_used(&rb);
+    ASSERT_TRUE(before > 0);
+
+    /* Popped frames must return their memory, or a deep rewind near the
+     * byte budget leaves stale allocations that starve later recording. */
+    ASSERT_TRUE(rewind_begin(&rb));
+    ASSERT_TRUE(rewind_step(&rb, &gba));
+    ASSERT_TRUE(rewind_bytes_used(&rb) < before);
+    ASSERT_TRUE(rewind_step(&rb, &gba));
+    ASSERT_EQ(rewind_bytes_used(&rb), 0);
+    rewind_end(&rb);
+
+    gba_destroy(&gba);
+    rewind_shutdown(&rb);
+}
+
+TEST(rewind_keeps_newest_frame_when_budget_tiny) {
+    RewindBuffer rb;
+    rewind_init(&rb, 8, 1);  /* budget smaller than any snapshot */
+    GBA gba;
+    gba_init(&gba);
+    fill_ewram_entropy(&gba, 0x9ABCu);
+
+    /* Every record evicts the previous frame but must keep the newest. */
+    for (int i = 0; i < 4; i++) {
+        gba.bus.ewram[0] = (uint8_t)(0x20 + i);
+        rewind_record_frame(&rb, &gba);
+    }
+    ASSERT_EQ(rewind_depth(&rb), 1);
+
+    ASSERT_TRUE(rewind_begin(&rb));
+    gba.bus.ewram[0] = 0xEE;
+    ASSERT_TRUE(rewind_step(&rb, &gba));
+    ASSERT_EQ(gba.bus.ewram[0], 0x22);  /* marker from call i=2, the last even */
+    rewind_end(&rb);
+
+    gba_destroy(&gba);
+    rewind_shutdown(&rb);
+}
+
 void run_rewind_tests(void) {
     TEST_SUITE("rewind");
     RUN_TEST(lz4_roundtrip_smoke);
@@ -192,6 +316,10 @@ void run_rewind_tests(void) {
     RUN_TEST(rewind_handles_incompressible_payload);
     RUN_TEST(rewind_recovers_from_corrupt_slot);
     RUN_TEST(rewind_clear_resets_buffer);
+    RUN_TEST(rewind_bytes_used_tracks_slot_allocations);
+    RUN_TEST(rewind_evicts_oldest_when_over_byte_budget);
+    RUN_TEST(rewind_step_releases_slot_memory);
+    RUN_TEST(rewind_keeps_newest_frame_when_budget_tiny);
 }
 
 #else /* !ENABLE_REWIND */
