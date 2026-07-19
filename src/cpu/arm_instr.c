@@ -183,7 +183,9 @@ static int arm_block_transfer(ARM7TDMI* cpu, uint32_t instr) {
             /* LDM: load from memory into register */
             uint32_t val = bus_read32(cpu->bus, addr & ~3u);
             if (i == REG_PC) {
-                cpu->regs[REG_PC] = val & ~3u;
+                /* Alignment applied after the S-bit CPSR restore below —
+                 * the mask depends on the FINAL state's Thumb bit. */
+                cpu->regs[REG_PC] = val;
                 pc_loaded = true;
             } else {
                 cpu->regs[i] = val;
@@ -239,8 +241,11 @@ static int arm_block_transfer(ARM7TDMI* cpu, uint32_t instr) {
         }
     }
 
-    /* Flush pipeline if PC was loaded */
+    /* Flush pipeline if PC was loaded.  Align per the final state: after
+     * an LDM {..,PC}^ exception return the restored CPSR may be Thumb,
+     * where only bit 0 is cleared. */
     if (pc_loaded) {
+        cpu->regs[REG_PC] &= BIT(cpu->cpsr, CPSR_T) ? ~1u : ~3u;
         cpu_flush_pipeline(cpu);
     }
 
@@ -834,7 +839,11 @@ static int arm_data_processing(ARM7TDMI* cpu, uint32_t instr) {
                     cpu->cpsr = *spsr;
                 }
             }
-            cpu->regs[REG_PC] &= ~3u;
+            /* Align PC per the FINAL state: an exception return (S=1) may
+             * have just restored Thumb, where only bit 0 is forced clear.
+             * Masking ~3 on a Thumb return lands 2 bytes early whenever
+             * the interrupted instruction was not word-aligned. */
+            cpu->regs[REG_PC] &= BIT(cpu->cpsr, CPSR_T) ? ~1u : ~3u;
             cpu_flush_pipeline(cpu);
         }
     }

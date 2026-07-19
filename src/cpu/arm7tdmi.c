@@ -164,6 +164,20 @@ bool cpu_check_irq(ARM7TDMI* cpu) {
 void cpu_handle_irq(ARM7TDMI* cpu) {
     uint32_t old_cpsr = cpu->cpsr;
 
+    /* The BIOS IRQ handler returns with SUBS PC, LR, #4, so LR_irq must
+     * be resume_addr + 4.  With a valid pipeline PC runs ahead of the
+     * next instruction (+4 Thumb, +8 ARM).  Right after a flush (taken
+     * branch) PC IS the next instruction — using the steady-state offset
+     * there returns 4 bytes BEFORE the branch target, executing the tail
+     * of whatever precedes it (Emerald menu crash: VCount IRQ after a
+     * Thumb BL popped a garbage "return address" and wedged at CPSR=0). */
+    uint32_t resume_addr;
+    if (cpu->pipeline_valid) {
+        resume_addr = cpu->regs[REG_PC] - (BIT(old_cpsr, CPSR_T) ? 4u : 8u);
+    } else {
+        resume_addr = cpu->regs[REG_PC];
+    }
+
     /* Switch to IRQ mode (banks SP/LR) */
     cpu_switch_mode(cpu, CPU_MODE_IRQ);
 
@@ -171,14 +185,7 @@ void cpu_handle_irq(ARM7TDMI* cpu) {
      * Must happen AFTER mode switch so SPSR_irq slot is accessible. */
     cpu->spsr[3] = old_cpsr;
 
-    /* The BIOS IRQ handler returns with SUBS PC, LR, #4, so hardware
-     * sets LR_irq = next_instr + 4.  Between steps PC = next_instr + 8
-     * in ARM state but next_instr + 4 in Thumb, so the offset differs. */
-    if (BIT(old_cpsr, CPSR_T)) {
-        cpu->regs[REG_LR] = cpu->regs[REG_PC];
-    } else {
-        cpu->regs[REG_LR] = cpu->regs[REG_PC] - 4;
-    }
+    cpu->regs[REG_LR] = resume_addr + 4;
 
     /* Disable IRQs to prevent re-entry */
     cpu->cpsr |= (1u << CPSR_I);

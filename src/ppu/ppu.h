@@ -55,8 +55,10 @@ struct PPU {
     // (GFX mode 1) — forces alpha blending in the effects pass
     bool obj_semitransparent[SCREEN_WIDTH];
 
-    // Per-pixel flag set by windowing: false = color effects disabled for this pixel
-    bool win_blend_enable[SCREEN_WIDTH];
+    // Resolved per-pixel window mask for the current scanline.
+    // Bits 0-3 = BG0-BG3 enable, bit 4 = OBJ enable, bit 5 = color effects.
+    // All bits set (0x3F) when no window is enabled in DISPCNT.
+    uint8_t win_mask[SCREEN_WIDTH];
 
     // Memory pointers (point into bus memory)
     uint8_t* palette_ram;
@@ -67,6 +69,22 @@ struct PPU {
     uint32_t cycle_counter;
 };
 typedef struct PPU PPU;
+
+// Push a rendered pixel onto the scanline, demoting the current top pixel to
+// the second slot so the blend pass can reach it. Layer IDs: 0-3 = BG0-BG3,
+// 4 = OBJ. The backdrop (5) is the initial fill and never pushed here.
+// Writes are dropped when the layer is disabled for this pixel's window
+// region, so a masked layer never displaces the pixel beneath it.
+// Returns true if the pixel was written.
+static inline bool ppu_push_pixel(PPU* ppu, uint32_t x, uint16_t color,
+                                  uint8_t layer) {
+    if (!BIT(ppu->win_mask[x], layer)) return false;
+    ppu->second_pixel[x] = ppu->scanline_buffer[x];
+    ppu->second_layer[x] = ppu->top_layer[x];
+    ppu->scanline_buffer[x] = color;
+    ppu->top_layer[x] = layer;
+    return true;
+}
 
 void ppu_init(PPU* ppu);
 void ppu_render_scanline(PPU* ppu);
@@ -91,7 +109,7 @@ void ppu_build_obj_window(PPU* ppu);
 
 // Effects (effects.c)
 void ppu_apply_mosaic_scanline(PPU* ppu);
-void ppu_apply_windowing_scanline(PPU* ppu);
+void ppu_build_window_mask(PPU* ppu);
 void ppu_apply_blend_scanline(PPU* ppu);
 
 #endif // PPU_H

@@ -100,6 +100,7 @@ TEST(irq_entry_saves_cpsr_into_spsr_irq) {
     cpu_switch_mode(cpu, CPU_MODE_SYS);
     cpu->cpsr = CPU_MODE_SYS; /* SYS, ARM state, IRQs+FIQs enabled */
     cpu->regs[REG_PC] = 0x08001234;
+    cpu->pipeline_valid = true; /* steady state: PC runs ahead of next instr */
 
     cpu_handle_irq(cpu);
 
@@ -131,11 +132,102 @@ TEST(irq_entry_thumb_state_lr) {
     cpu_switch_mode(cpu, CPU_MODE_SYS);
     cpu->cpsr = CPU_MODE_SYS | (1u << CPSR_T); /* SYS, Thumb state */
     cpu->regs[REG_PC] = 0x08001234;
+    cpu->pipeline_valid = true; /* steady state: PC runs ahead of next instr */
 
     cpu_handle_irq(cpu);
 
     ASSERT_EQ_HEX(cpu->regs[REG_LR], 0x08001234);
     ASSERT_EQ(BIT(cpu->cpsr, CPSR_T), 0); /* handler runs in ARM state */
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x00000018);
+    free(gba);
+}
+
+TEST(irq_after_flush_thumb_lr_targets_branch_destination) {
+    /* Right after a taken branch the pipeline is flushed and PC holds the
+     * branch target itself (not target+4).  An IRQ landing in that window
+     * must set LR_irq = target + 4 so SUBS PC, LR, #4 resumes AT the
+     * target.  Using the steady-state formula here returns 4 bytes BEFORE
+     * the target, executing the tail of whatever function precedes it —
+     * this is exactly how Pokemon Emerald's menu transition crashed to a
+     * CPSR=0 wedge at the exception vectors (VCount IRQ after a Thumb BL). */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    cpu_switch_mode(cpu, CPU_MODE_SYS);
+    cpu->cpsr = CPU_MODE_SYS | (1u << CPSR_T); /* SYS, Thumb state */
+    cpu->regs[REG_PC] = 0x08002AB4;  /* branch target, pipeline flushed */
+    cpu->pipeline_valid = false;
+
+    cpu_handle_irq(cpu);
+
+    ASSERT_EQ_HEX(cpu->regs[REG_LR], 0x08002AB8); /* target + 4 */
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x00000018);
+    free(gba);
+}
+
+TEST(subs_pc_lr_exception_return_keeps_thumb_halfword_address) {
+    /* SUBS PC, LR, #4 executes in ARM (IRQ) mode and restores CPSR from
+     * SPSR.  When SPSR.T is set the return target is a Thumb address and
+     * must only be halfword-aligned (& ~1).  Masking with the ARM
+     * alignment (& ~3) instead returns 2 bytes early whenever the
+     * interrupted Thumb instruction was not word-aligned — in Emerald
+     * this re-executed a PUSH, shifted SP by 16 bytes, and left the
+     * intro's tilemap-fill loop reading garbage locals forever. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    /* IRQ mode, ARM state, as inside the BIOS IRQ trampoline */
+    cpu_switch_mode(cpu, CPU_MODE_IRQ);
+    cpu->cpsr = CPU_MODE_IRQ | (1u << CPSR_I);
+    cpu->spsr[3] = CPU_MODE_SYS | (1u << CPSR_T); /* interrupted Thumb code */
+    cpu->regs[REG_LR] = 0x08002AF2;  /* resume target 0x08002AEE (bit 1 set) */
+    cpu->pipeline_valid = true;
+
+    arm_execute(cpu, 0xE25EF004); /* SUBS PC, LR, #4 */
+
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x08002AEE); /* NOT 0x08002AEC */
+    ASSERT_EQ(BIT(cpu->cpsr, CPSR_T), 1);
+    ASSERT_EQ_HEX(cpu_get_mode(cpu), CPU_MODE_SYS);
+    free(gba);
+}
+
+TEST(ldm_pc_hat_exception_return_keeps_thumb_halfword_address) {
+    /* Same rule for the other exception-return form, LDMFD SP!, {PC}^:
+     * the loaded PC must be masked per the RESTORED CPSR's T bit. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    cpu_switch_mode(cpu, CPU_MODE_IRQ);
+    cpu->cpsr = CPU_MODE_IRQ | (1u << CPSR_I);
+    cpu->spsr[3] = CPU_MODE_SYS | (1u << CPSR_T);
+    cpu->pipeline_valid = true;
+
+    /* Place the Thumb return address on the IRQ stack (IWRAM) */
+    cpu->regs[REG_SP] = 0x03007F90;
+    bus_write32(cpu->bus, 0x03007F90, 0x08002AEE);
+
+    arm_execute(cpu, 0xE8FD8000); /* LDMFD SP!, {PC}^ */
+
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x08002AEE);
+    ASSERT_EQ(BIT(cpu->cpsr, CPSR_T), 1);
+    ASSERT_EQ_HEX(cpu_get_mode(cpu), CPU_MODE_SYS);
+    free(gba);
+}
+
+TEST(irq_after_flush_arm_lr_targets_branch_destination) {
+    /* Same window in ARM state: flushed pipeline means PC = target, and
+     * LR_irq must still be target + 4 (not PC - 4 = target - 4). */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    cpu_switch_mode(cpu, CPU_MODE_SYS);
+    cpu->cpsr = CPU_MODE_SYS; /* SYS, ARM state */
+    cpu->regs[REG_PC] = 0x08004000;  /* branch target, pipeline flushed */
+    cpu->pipeline_valid = false;
+
+    cpu_handle_irq(cpu);
+
+    ASSERT_EQ_HEX(cpu->regs[REG_LR], 0x08004004); /* target + 4 */
     ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x00000018);
     free(gba);
 }
@@ -416,6 +508,10 @@ void run_cpu_tests(void) {
     RUN_TEST(cmp_in_user_mode_updates_flags);
     RUN_TEST(irq_entry_saves_cpsr_into_spsr_irq);
     RUN_TEST(irq_entry_thumb_state_lr);
+    RUN_TEST(irq_after_flush_thumb_lr_targets_branch_destination);
+    RUN_TEST(irq_after_flush_arm_lr_targets_branch_destination);
+    RUN_TEST(subs_pc_lr_exception_return_keeps_thumb_halfword_address);
+    RUN_TEST(ldm_pc_hat_exception_return_keeps_thumb_halfword_address);
     RUN_TEST(halt_wakes_on_ie_and_if_even_with_ime_off);
     RUN_TEST(halt_stays_halted_when_irq_not_enabled_in_ie);
     RUN_TEST(swi_div_int_min_by_minus_one_no_crash);
