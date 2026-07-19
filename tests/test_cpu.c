@@ -165,6 +165,81 @@ TEST(irq_after_flush_thumb_lr_targets_branch_destination) {
     free(gba);
 }
 
+TEST(ldr_writeback_with_rd_equal_rn_keeps_loaded_value) {
+    /* LDR with base writeback where Rd == Rn: the loaded value wins and
+     * the writeback is discarded (same rule LDM already applies when Rn
+     * is in the register list).  jsmolka arm.gba t360 stores 0x20, then
+     * does `ldr r0, [r0, #4]!` and expects r0 == 0x20, not the address. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    bus_write32(cpu->bus, 0x03000140, 0x20);
+    cpu->regs[0] = 0x0300013C;
+    arm_execute(cpu, 0xE5B00004); /* ldr r0, [r0, #4]!  (pre-index, W=1) */
+    ASSERT_EQ_HEX(cpu->regs[0], 0x20);
+
+    bus_write32(cpu->bus, 0x03000150, 0x77);
+    cpu->regs[1] = 0x03000150;
+    arm_execute(cpu, 0xE4911004); /* ldr r1, [r1], #4  (post-index) */
+    ASSERT_EQ_HEX(cpu->regs[1], 0x77);
+
+    /* Same rule on the halfword path — jsmolka arm.gba t412 */
+    bus_write32(cpu->bus, 0x03000160, 0x20);
+    cpu->regs[2] = 0x0300015C;
+    arm_execute(cpu, 0xE1F220B4); /* ldrh r2, [r2, #4]!  (pre-index, W=1) */
+    ASSERT_EQ_HEX(cpu->regs[2], 0x20);
+
+    free(gba);
+}
+
+TEST(cmp_pc_p_variant_restores_cpsr_from_spsr) {
+    /* TST/TEQ/CMP/CMN with Rd=R15 (the ARM2-era "P" variants, still
+     * honored on ARM7TDMI): no result is written, but CPSR is restored
+     * from SPSR — an in-place mode change.  jsmolka arm.gba t234 ("Bad
+     * CMP/CMN/TST/TEQ change the mode") does exactly this to drop from
+     * FIQ back to SYS and then checks the register bank switched. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    /* SYS mode: r8_usr = 0x20 */
+    cpu_switch_mode(cpu, CPU_MODE_SYS);
+    cpu->cpsr = CPU_MODE_SYS;
+    cpu->regs[8] = 0x20;
+
+    /* Enter FIQ (banks r8), set r8_fiq, point SPSR_fiq back at SYS */
+    cpu_switch_mode(cpu, CPU_MODE_FIQ);
+    cpu->cpsr = CPU_MODE_FIQ;
+    cpu->regs[8] = 0x40;
+    cpu->spsr[0] = CPU_MODE_SYS; /* index 0 = FIQ */
+
+    arm_execute(cpu, 0xE15FF000); /* CMP PC, R0 with Rd=PC ("CMPP") */
+
+    ASSERT_EQ_HEX(cpu_get_mode(cpu), CPU_MODE_SYS);
+    ASSERT_EQ_HEX(cpu->cpsr, CPU_MODE_SYS);
+    ASSERT_EQ_HEX(cpu->regs[8], 0x20); /* USER bank visible again */
+    free(gba);
+}
+
+TEST(cmp_pc_p_variant_does_not_flush_pipeline) {
+    /* jsmolka arm.gba t235: the P-variant compares must NOT branch or
+     * flush — no result is written to PC, execution continues with the
+     * instructions already in the pipeline. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    cpu_switch_mode(cpu, CPU_MODE_FIQ);
+    cpu->cpsr = CPU_MODE_FIQ;
+    cpu->spsr[0] = CPU_MODE_SYS;
+    cpu->regs[REG_PC] = 0x08000CEC;
+    cpu->pipeline_valid = true;
+
+    arm_execute(cpu, 0xE15FF000);
+
+    ASSERT_TRUE(cpu->pipeline_valid);              /* no flush */
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x08000CEC);  /* PC untouched */
+    free(gba);
+}
+
 TEST(subs_pc_lr_exception_return_keeps_thumb_halfword_address) {
     /* SUBS PC, LR, #4 executes in ARM (IRQ) mode and restores CPSR from
      * SPSR.  When SPSR.T is set the return target is a Thumb address and
@@ -512,6 +587,9 @@ void run_cpu_tests(void) {
     RUN_TEST(irq_after_flush_arm_lr_targets_branch_destination);
     RUN_TEST(subs_pc_lr_exception_return_keeps_thumb_halfword_address);
     RUN_TEST(ldm_pc_hat_exception_return_keeps_thumb_halfword_address);
+    RUN_TEST(cmp_pc_p_variant_restores_cpsr_from_spsr);
+    RUN_TEST(cmp_pc_p_variant_does_not_flush_pipeline);
+    RUN_TEST(ldr_writeback_with_rd_equal_rn_keeps_loaded_value);
     RUN_TEST(halt_wakes_on_ie_and_if_even_with_ime_off);
     RUN_TEST(halt_stays_halted_when_irq_not_enabled_in_ie);
     RUN_TEST(swi_div_int_min_by_minus_one_no_crash);

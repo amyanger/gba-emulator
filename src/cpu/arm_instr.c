@@ -339,13 +339,17 @@ static int arm_single_transfer(ARM7TDMI* cpu, uint32_t instr) {
         cycles = 2; /* 1N + 1N */
     }
 
-    /* Post-index: compute address after transfer */
-    if (!pre) {
-        /* Post-index always writes back */
-        cpu->regs[rn] = up ? base + offset : base - offset;
-    } else if (writeback) {
-        /* Pre-index with W=1: writeback */
-        cpu->regs[rn] = addr;
+    /* Base writeback.  For LDR with Rd == Rn the loaded value wins and
+     * the writeback is discarded (ARM7TDMI; same rule LDM applies when
+     * Rn is in the register list).  jsmolka arm.gba t360. */
+    if (!(load && rd == rn)) {
+        if (!pre) {
+            /* Post-index always writes back */
+            cpu->regs[rn] = up ? base + offset : base - offset;
+        } else if (writeback) {
+            /* Pre-index with W=1: writeback */
+            cpu->regs[rn] = addr;
+        }
     }
 
     return cycles;
@@ -556,13 +560,16 @@ static int arm_halfword_transfer(ARM7TDMI* cpu, uint32_t instr) {
         cycles = 2;
     }
 
-    /* Writeback */
-    if (!pre) {
-        /* Post-index: always writeback */
-        uint32_t wb_addr = up ? base + offset : base - offset;
-        cpu->regs[rn] = wb_addr;
-    } else if (writeback) {
-        cpu->regs[rn] = addr;
+    /* Writeback.  As with LDR/LDM, a load with Rd == Rn keeps the loaded
+     * value — the writeback is discarded (jsmolka arm.gba t412). */
+    if (!(load && rd == rn)) {
+        if (!pre) {
+            /* Post-index: always writeback */
+            uint32_t wb_addr = up ? base + offset : base - offset;
+            cpu->regs[rn] = wb_addr;
+        } else if (writeback) {
+            cpu->regs[rn] = addr;
+        }
     }
 
     return cycles;
@@ -820,6 +827,24 @@ static int arm_data_processing(ARM7TDMI* cpu, uint32_t instr) {
         set_nz_flags(cpu, result);
         set_c_flag(cpu, shifter_carry);
         /* V unchanged for logical ops */
+    }
+
+    /* TST/TEQ/CMP/CMN with Rd=R15: the ARM2-era "P" variants (TEQP etc.),
+     * still honored on ARM7TDMI.  No result is written, but CPSR is
+     * restored from SPSR — an in-place mode change.  The flags computed
+     * above are replaced wholesale.  Per jsmolka arm.gba t234/t235 the
+     * mode DOES change and the pipeline is NOT flushed.  No SPSR exists
+     * in USR/SYS; behave as a plain compare there. */
+    if (!write_result && rd == REG_PC) {
+        uint32_t* spsr = cpu_get_spsr(cpu);
+        if (spsr) {
+            CPUMode old_m = cpu_get_mode(cpu);
+            CPUMode new_m = (CPUMode)(*spsr & 0x1F);
+            if (old_m != new_m) {
+                cpu_switch_mode(cpu, new_m);
+            }
+            cpu->cpsr = *spsr;
+        }
     }
 
     /* Write result to Rd */
