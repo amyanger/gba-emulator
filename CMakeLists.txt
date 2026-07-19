@@ -13,6 +13,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # its driver doesn't understand GCC/Clang flags.
 if(MSVC)
     add_compile_options(/W4 /wd4100 /wd4244 /wd4267 /wd4146 /wd4310)
+    # MSVC deprecates standard C functions (fopen, strncpy, ...) as C4996,
+    # which /WX turns into hard errors. The portable functions are intended.
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 else()
     add_compile_options(-Wall -Wextra -Wpedantic -Wno-unused-parameter)
     # Suppress Clang's pedantic warning about `, ##__VA_ARGS__` in the LOG

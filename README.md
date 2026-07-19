@@ -1,7 +1,7 @@
 # GBA Emulator
 
 [![CI](https://github.com/amyanger/gba-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/amyanger/gba-emulator/actions/workflows/ci.yml)
-[![Release](https://github.com/amyanger/gba-emulator/actions/workflows/release.yml/badge.svg)](https://github.com/amyanger/gba-emulator/actions/workflows/release.yml)
+[![Release](https://github.com/amyanger/gba-emulator/actions/workflows/release.yml/badge.svg?event=push)](https://github.com/amyanger/gba-emulator/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/amyanger/gba-emulator?label=release)](https://github.com/amyanger/gba-emulator/releases/latest)
 
 A Game Boy Advance emulator written from scratch in C, featuring **Hardware X-Ray Mode** — a real-time visualization of what the GBA hardware is actually doing while a game runs.
