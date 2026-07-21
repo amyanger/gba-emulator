@@ -133,6 +133,11 @@ void cartridge_destroy(Cartridge* cart);
 void cartridge_detect_save_type(Cartridge* cart);
 uint8_t cartridge_read8(Cartridge* cart, uint32_t addr);
 void cartridge_write8(Cartridge* cart, uint32_t addr, uint8_t val);
+
+/* Halfword write to the GamePak ROM bus (GPIO / EEPROM). The ROM bus is
+ * 16-bit — byte writes are ignored on hardware, so this is the only write
+ * entry for the 0x08-0x0D region. */
+void cartridge_write16(Cartridge* cart, uint32_t addr, uint16_t val);
 void cartridge_save_to_file(Cartridge* cart);
 void cartridge_load_save_file(Cartridge* cart);
 

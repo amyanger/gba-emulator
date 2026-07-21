@@ -173,27 +173,27 @@ uint8_t cartridge_read8(Cartridge* cart, uint32_t addr) {
     return 0;
 }
 
+void cartridge_write16(Cartridge* cart, uint32_t addr, uint16_t val) {
+    if (addr < 0x08000000 || addr >= 0x0E000000) return;
+    if (eeprom_addr_in_range(cart, addr)) {
+        /* Each halfword carries one protocol bit in its LSB. */
+        eeprom_write_bit(&cart->eeprom, (uint8_t)(val & 1));
+        if (cart->eeprom.dirty) {
+            cart->save_dirty = true;
+            cart->eeprom.dirty = false;
+        }
+        return;
+    }
+    uint32_t offset = addr & 0x01FFFFFF;
+    if (offset >= 0xC4 && offset <= 0xC8) {
+        gpio_write(cart, offset & ~1u, val);
+    }
+}
+
 void cartridge_write8(Cartridge* cart, uint32_t addr, uint8_t val) {
     if (addr >= 0x08000000 && addr < 0x0E000000) {
-        if (eeprom_addr_in_range(cart, addr)) {
-            /* Only the low byte carries the protocol bit; high byte is a no-op. */
-            if (addr & 1) return;
-            eeprom_write_bit(&cart->eeprom, val & 1);
-            if (cart->eeprom.dirty) {
-                cart->save_dirty = true;
-                cart->eeprom.dirty = false;
-            }
-            return;
-        }
-        uint32_t offset = addr & 0x01FFFFFF;
-        if (offset >= 0xC4 && offset <= 0xC9) {
-            uint32_t reg = offset & ~1u;
-            uint16_t hw = gpio_read(cart, reg);
-            uint16_t updated = (offset & 1)
-                ? (uint16_t)((hw & 0x00FF) | ((uint16_t)val << 8))
-                : (uint16_t)((hw & 0xFF00) | val);
-            gpio_write(cart, reg, updated);
-        }
+        /* The GamePak ROM bus is 16-bit: byte writes are ignored (GBATEK),
+         * so GPIO and EEPROM are only reachable via cartridge_write16. */
         return;
     }
     if (addr >= 0x0E000000 && addr < 0x10000000) {

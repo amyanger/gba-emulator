@@ -1394,6 +1394,12 @@ static void bus_write8_raw(Bus* bus, uint32_t addr, uint8_t val) {
     case 0x07:
         /* 8-bit writes to OAM are ignored */
         break;
+    case 0x08: case 0x09:
+    case 0x0A: case 0x0B:
+    case 0x0C: case 0x0D:
+        /* GamePak ROM bus is 16-bit; STRB to it is ignored (GBATEK), so
+         * byte writes never reach GPIO or EEPROM. */
+        break;
     case 0x0E: case 0x0F:
         if (bus->cart) {
             cartridge_write8(bus->cart, addr, val);
@@ -1434,6 +1440,13 @@ void bus_write16(Bus* bus, uint32_t addr, uint16_t val) {
         bus->oam[off + 1] = (uint8_t)(val >> 8);
         return;
     }
+    case 0x08: case 0x09:
+    case 0x0A: case 0x0B:
+    case 0x0C: case 0x0D: /* GamePak ROM bus: GPIO (RTC) / EEPROM */
+        if (bus->cart) {
+            cartridge_write16(bus->cart, addr, val);
+        }
+        return;
     default:
         bus_write8_raw(bus, addr, (uint8_t)(val & 0xFF));
         bus_write8_raw(bus, addr + 1, (uint8_t)(val >> 8));
@@ -1482,6 +1495,16 @@ void bus_write32(Bus* bus, uint32_t addr, uint32_t val) {
         }
         return;
     }
+    case 0x08: case 0x09:
+    case 0x0A: case 0x0B:
+    case 0x0C: case 0x0D:
+        /* The 16-bit GamePak bus performs a 32-bit store as two sequential
+         * halfword writes, low half first. */
+        if (bus->cart) {
+            cartridge_write16(bus->cart, addr, (uint16_t)val);
+            cartridge_write16(bus->cart, addr + 2, (uint16_t)(val >> 16));
+        }
+        return;
     default:
         bus_write8_raw(bus, addr, (uint8_t)(val & 0xFF));
         bus_write8_raw(bus, addr + 1, (uint8_t)((val >> 8) & 0xFF));

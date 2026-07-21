@@ -42,9 +42,9 @@ TEST(gpio_read_enabled_returns_register) {
     c.rom = rom;
     c.rom_size = sizeof(rom);
     /* Enable read-back, set direction to all-output so we can write-then-read data. */
-    cartridge_write8(&c, 0x080000C8, 0x01);
-    cartridge_write8(&c, 0x080000C6, 0x0F);
-    cartridge_write8(&c, 0x080000C4, 0x05); /* SCK=1, SIO=0, CS=1 */
+    cartridge_write16(&c, 0x080000C8, 0x01);
+    cartridge_write16(&c, 0x080000C6, 0x0F);
+    cartridge_write16(&c, 0x080000C4, 0x05); /* SCK=1, SIO=0, CS=1 */
     ASSERT_EQ_HEX(cartridge_read8(&c, 0x080000C4), 0x05);
     ASSERT_EQ_HEX(cartridge_read8(&c, 0x080000C8), 0x01);
     c.rom = NULL;
@@ -54,7 +54,7 @@ TEST(gpio_write_always_routes) {
     /* Writes are never gated by read_enable - game can poke control without
      * having first enabled reads. */
     Cartridge c = make_cart();
-    cartridge_write8(&c, 0x080000C8, 0x01);
+    cartridge_write16(&c, 0x080000C8, 0x01);
     ASSERT_EQ(c.gpio.control & 1, 1);
 }
 
@@ -227,12 +227,12 @@ TEST(rtc_e2e_datetime_read_via_cartridge) {
     c.rtc.status_reg = 0x40;
 
     /* read_enable = 1, direction = all output (SCK/SIO/CS driven by GBA) */
-    cartridge_write8(&c, 0x080000C8, 0x01);
-    cartridge_write8(&c, 0x080000C6, 0x07); /* SCK+SIO+CS outputs */
+    cartridge_write16(&c, 0x080000C8, 0x01);
+    cartridge_write16(&c, 0x080000C6, 0x07); /* SCK+SIO+CS outputs */
 
-    /* Helper: one pin update per call — each cartridge_write8 triggers one
+    /* Helper: one pin update per call — each cartridge_write16 triggers one
      * edge-detect pass inside gpio_write. */
-    #define PIN(cs, sck, sio) cartridge_write8(&c, 0x080000C4, \
+    #define PIN(cs, sck, sio) cartridge_write16(&c, 0x080000C4, \
         (uint8_t)(((cs) << 2) | ((sio) << 1) | (sck)))
 
     /* CS rising edge while SCK=0. */
@@ -247,7 +247,7 @@ TEST(rtc_e2e_datetime_read_via_cartridge) {
     }
 
     /* Now read 7 bytes. SIO must be switched to input so the RTC can drive it. */
-    cartridge_write8(&c, 0x080000C6, 0x05); /* SCK+CS output, SIO input */
+    cartridge_write16(&c, 0x080000C6, 0x05); /* SCK+CS output, SIO input */
     uint8_t buf[7];
     for (int i = 0; i < 7; i++) {
         buf[i] = 0;
@@ -346,6 +346,75 @@ TEST(rtc_savestate_midtransaction) {
     rtc_set_time_source(NULL);
 }
 
+/* --- Bus dispatch: the GamePak ROM bus is 16-bit (GBATEK: STRB ignored) --- */
+
+#include "gba.h"
+#include "memory/bus.h"
+#include "cartridge/eeprom.h"
+
+TEST(gpio_writes_dispatch_through_bus_write16) {
+    GBA gba;
+    gba_init(&gba);
+
+    bus_write16(&gba.bus, 0x080000C8, 0x0001); /* control: enable read-back */
+    bus_write16(&gba.bus, 0x080000C6, 0x0007); /* SCK+SIO+CS as outputs */
+    bus_write16(&gba.bus, 0x080000C4, 0x0005); /* SCK=1, CS=1 */
+
+    ASSERT_EQ_HEX(bus_read16(&gba.bus, 0x080000C8), 0x0001);
+    ASSERT_EQ_HEX(bus_read16(&gba.bus, 0x080000C6), 0x0007);
+    ASSERT_EQ_HEX(bus_read16(&gba.bus, 0x080000C4), 0x0005);
+
+    gba_destroy(&gba);
+}
+
+TEST(gpio_bus_write32_hits_both_registers) {
+    GBA gba;
+    gba_init(&gba);
+
+    bus_write16(&gba.bus, 0x080000C8, 0x0001); /* enable read-back */
+    bus_write16(&gba.bus, 0x080000C6, 0x0007); /* SCK+SIO+CS as outputs */
+
+    /* One word store at 0xC4 covers data (low half) and direction (high
+     * half); the 16-bit GamePak bus performs it low half first, so the data
+     * value must latch under the OLD direction before direction updates. */
+    bus_write32(&gba.bus, 0x080000C4, (0x000Fu << 16) | 0x0005u);
+
+    ASSERT_EQ_HEX(bus_read16(&gba.bus, 0x080000C4), 0x0005);
+    ASSERT_EQ_HEX(bus_read16(&gba.bus, 0x080000C6), 0x000F);
+
+    gba_destroy(&gba);
+}
+
+TEST(gpio_byte_writes_to_rom_bus_ignored) {
+    GBA gba;
+    gba_init(&gba);
+
+    bus_write16(&gba.bus, 0x080000C8, 0x0001);
+    bus_write16(&gba.bus, 0x080000C6, 0x0007);
+
+    /* GBATEK: ROM-bus writes are 16/32-bit only; STRB opcodes are ignored. */
+    bus_write8(&gba.bus, 0x080000C6, 0x0F);
+    ASSERT_EQ_HEX(bus_read16(&gba.bus, 0x080000C6), 0x0007);
+
+    gba_destroy(&gba);
+}
+
+TEST(eeprom_writes_dispatch_through_bus_write16) {
+    GBA gba;
+    gba_init(&gba);
+    gba.cart.save_type = SAVE_EEPROM;
+
+    eeprom_dma_begin(&gba.cart.eeprom, 9);
+    ASSERT_EQ(gba.cart.eeprom.state, EEPROM_RX_CMD);
+
+    /* Command bits "11" (read) arrive as the LSB of two halfword writes. */
+    bus_write16(&gba.bus, 0x0D000000, 0x0001);
+    bus_write16(&gba.bus, 0x0D000002, 0x0001);
+    ASSERT_EQ(gba.cart.eeprom.state, EEPROM_RX_ADDR_R);
+
+    gba_destroy(&gba);
+}
+
 void run_rtc_tests(void) {
     printf("\nRTC tests:\n");
     RUN_TEST(gpio_power_on_defaults);
@@ -362,4 +431,8 @@ void run_rtc_tests(void) {
     RUN_TEST(rtc_sav_trailer_roundtrip);
     RUN_TEST(rtc_sav_legacy_no_trailer);
     RUN_TEST(rtc_savestate_midtransaction);
+    RUN_TEST(gpio_writes_dispatch_through_bus_write16);
+    RUN_TEST(gpio_bus_write32_hits_both_registers);
+    RUN_TEST(gpio_byte_writes_to_rom_bus_ignored);
+    RUN_TEST(eeprom_writes_dispatch_through_bus_write16);
 }
