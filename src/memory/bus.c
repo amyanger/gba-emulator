@@ -1071,6 +1071,10 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         if (bus->input) {
             bus->input->keycnt = (bus->input->keycnt & 0x00FF)
                                | ((uint16_t)val << 8);
+            /* Halfword/word writes land here last, so the check sees the
+             * complete KEYCNT. A lone low-byte write is caught by the
+             * per-frame sample in gba_run_frame. */
+            bus_check_keypad_irq(bus);
         }
         return;
 
@@ -1238,6 +1242,12 @@ int bus_drain_pending(Bus* bus) {
     int c = bus->pending_cycles;
     bus->pending_cycles = 0;
     return c;
+}
+
+void bus_check_keypad_irq(Bus* bus) {
+    if (bus->input && bus->interrupts && input_irq_condition(bus->input)) {
+        interrupt_request(bus->interrupts, IRQ_KEYPAD);
+    }
 }
 
 void bus_post_load(Bus* bus) {

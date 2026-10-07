@@ -15,6 +15,8 @@
 #define KEY_R      (1 << 8)
 #define KEY_L      (1 << 9)
 
+#define IRQ_KEYPAD (1 << 12)
+
 struct InputState {
     uint16_t keyinput; // 0x04000130 — active LOW
     uint16_t keycnt;   // 0x04000132 — interrupt control
@@ -24,5 +26,7 @@ typedef struct InputState InputState;
 void input_init(InputState* input);
 void input_press(InputState* input, uint16_t key);
 void input_release(InputState* input, uint16_t key);
+// True when KEYCNT has IRQ enabled and its OR/AND key condition holds.
+bool input_irq_condition(const InputState* input);
 
 #endif // INPUT_H

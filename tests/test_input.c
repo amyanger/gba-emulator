@@ -59,10 +59,72 @@ TEST(input_press_and_release_idempotent) {
     ASSERT_EQ(in.keyinput & KEY_A, KEY_A);
 }
 
+/* ---- KEYCNT interrupt condition ----------------------------------- */
+
+#define KEYCNT_IRQ_EN (1 << 14)
+#define KEYCNT_AND    (1 << 15)
+
+TEST(keypad_irq_or_fires_for_selected_key) {
+    InputState in;
+    input_init(&in);
+    in.keycnt = KEYCNT_IRQ_EN | KEY_A | KEY_B;
+    ASSERT_TRUE(!input_irq_condition(&in)); /* nothing pressed */
+    input_press(&in, KEY_B);
+    ASSERT_TRUE(input_irq_condition(&in));
+}
+
+TEST(keypad_irq_or_ignores_unselected_key) {
+    InputState in;
+    input_init(&in);
+    in.keycnt = KEYCNT_IRQ_EN | KEY_A;
+    input_press(&in, KEY_START);
+    ASSERT_TRUE(!input_irq_condition(&in));
+}
+
+TEST(keypad_irq_and_needs_all_selected_keys) {
+    InputState in;
+    input_init(&in);
+    in.keycnt = KEYCNT_IRQ_EN | KEYCNT_AND | KEY_A | KEY_B | KEY_SELECT;
+    input_press(&in, KEY_A);
+    input_press(&in, KEY_B);
+    ASSERT_TRUE(!input_irq_condition(&in));
+    input_press(&in, KEY_SELECT);
+    ASSERT_TRUE(input_irq_condition(&in));
+    /* Extra unselected keys don't break the match. */
+    input_press(&in, KEY_L);
+    ASSERT_TRUE(input_irq_condition(&in));
+}
+
+TEST(keypad_irq_disabled_without_bit14) {
+    InputState in;
+    input_init(&in);
+    input_press(&in, KEY_A);
+    in.keycnt = KEY_A;
+    ASSERT_TRUE(!input_irq_condition(&in));
+    in.keycnt = KEYCNT_AND | KEY_A;
+    ASSERT_TRUE(!input_irq_condition(&in));
+}
+
+TEST(keypad_irq_no_selected_keys_never_fires) {
+    InputState in;
+    input_init(&in);
+    in.keycnt = KEYCNT_IRQ_EN | KEYCNT_AND; /* AND over an empty set */
+    ASSERT_TRUE(!input_irq_condition(&in));
+    input_press(&in, KEY_A);
+    ASSERT_TRUE(!input_irq_condition(&in));
+    in.keycnt = KEYCNT_IRQ_EN;
+    ASSERT_TRUE(!input_irq_condition(&in));
+}
+
 void run_input_tests(void) {
     TEST_SUITE("input");
     RUN_TEST(input_init_releases_all_keys);
     RUN_TEST(input_press_clears_active_low_bit);
     RUN_TEST(input_release_sets_active_low_bit);
     RUN_TEST(input_press_and_release_idempotent);
+    RUN_TEST(keypad_irq_or_fires_for_selected_key);
+    RUN_TEST(keypad_irq_or_ignores_unselected_key);
+    RUN_TEST(keypad_irq_and_needs_all_selected_keys);
+    RUN_TEST(keypad_irq_disabled_without_bit14);
+    RUN_TEST(keypad_irq_no_selected_keys_never_fires);
 }

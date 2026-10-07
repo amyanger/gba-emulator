@@ -103,4 +103,8 @@ int bus_drain_pending(Bus* bus);
  * decoded fields aren't, so they need rebuilding. */
 void bus_post_load(Bus* bus);
 
+// Raise IRQ_KEYPAD if KEYCNT's condition holds for the current KEYINPUT.
+// Level-sampled: called on KEYCNT writes and once per frame from gba.c.
+void bus_check_keypad_irq(Bus* bus);
+
 #endif // BUS_H

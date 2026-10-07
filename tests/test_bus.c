@@ -353,6 +353,56 @@ TEST(sound_master_off_preserves_wave_ram) {
     }
 }
 
+/* ---- Keypad IRQ (KEYCNT 0x04000132, IF bit 12) -------------------- */
+
+TEST(keycnt_write_with_key_held_sets_if_bit12) {
+    GBA* gba = make_gba();
+    input_press(&gba->input, KEY_A);
+    ASSERT_EQ(gba->interrupts.irf & IRQ_KEYPAD, 0);
+    bus_write16(&gba->bus, 0x04000132, (1 << 14) | KEY_A);
+    ASSERT_EQ_HEX(gba->interrupts.irf & IRQ_KEYPAD, IRQ_KEYPAD);
+}
+
+TEST(keycnt_write_without_irq_enable_does_not_fire) {
+    GBA* gba = make_gba();
+    input_press(&gba->input, KEY_A);
+    bus_write16(&gba->bus, 0x04000132, KEY_A);
+    ASSERT_EQ(gba->interrupts.irf & IRQ_KEYPAD, 0);
+}
+
+TEST(keycnt_halfword_write_checks_full_value) {
+    /* KEYCNT was OR mode on A. Rewriting it as AND(A|B) with only A held
+     * must not fire from the intermediate low-byte state. */
+    GBA* gba = make_gba();
+    bus_write16(&gba->bus, 0x04000132, (1 << 14) | KEY_A);
+    input_press(&gba->input, KEY_A);
+    bus_write16(&gba->bus, 0x04000132, (1 << 15) | (1 << 14) | KEY_A | KEY_B);
+    ASSERT_EQ(gba->interrupts.irf & IRQ_KEYPAD, 0);
+}
+
+TEST(keypad_irq_sampled_each_frame) {
+    GBA* gba = make_gba();
+    bus_write16(&gba->bus, 0x04000132, (1 << 14) | KEY_START);
+    gba_run_frame(gba);
+    ASSERT_EQ(gba->interrupts.irf & IRQ_KEYPAD, 0);
+
+    input_press(&gba->input, KEY_START);
+    gba_run_frame(gba);
+    ASSERT_EQ_HEX(gba->interrupts.irf & IRQ_KEYPAD, IRQ_KEYPAD);
+
+    /* Level-sampled: acknowledged while still held, it fires again. */
+    bus_write16(&gba->bus, 0x04000202, IRQ_KEYPAD);
+    ASSERT_EQ(gba->interrupts.irf & IRQ_KEYPAD, 0);
+    gba_run_frame(gba);
+    ASSERT_EQ_HEX(gba->interrupts.irf & IRQ_KEYPAD, IRQ_KEYPAD);
+
+    /* Released: no new request after acknowledge. */
+    input_release(&gba->input, KEY_START);
+    bus_write16(&gba->bus, 0x04000202, IRQ_KEYPAD);
+    gba_run_frame(gba);
+    ASSERT_EQ(gba->interrupts.irf & IRQ_KEYPAD, 0);
+}
+
 void run_bus_tests(void) {
     TEST_SUITE("bus");
     RUN_TEST(ewram_write_read);
@@ -380,4 +430,8 @@ void run_bus_tests(void) {
     RUN_TEST(waitcnt_prefetch_off_keeps_s_timing);
     RUN_TEST(open_bus_returns_latched_word_byte_at_offset);
     RUN_TEST(sound_master_off_preserves_wave_ram);
+    RUN_TEST(keycnt_write_with_key_held_sets_if_bit12);
+    RUN_TEST(keycnt_write_without_irq_enable_does_not_fire);
+    RUN_TEST(keycnt_halfword_write_checks_full_value);
+    RUN_TEST(keypad_irq_sampled_each_frame);
 }

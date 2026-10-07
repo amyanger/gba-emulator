@@ -120,6 +120,10 @@ void gba_run_scanline(GBA* gba) {
 void gba_run_frame(GBA* gba) {
     gba->frame_complete = false;
 
+    /* Sample the keypad IRQ condition at frame start, like mGBA's
+     * GBAFrameStarted. Host key events arrive between frames. */
+    bus_check_keypad_irq(&gba->bus);
+
     for (int line = 0; line < TOTAL_LINES; line++) {
         gba_run_scanline(gba);
     }
