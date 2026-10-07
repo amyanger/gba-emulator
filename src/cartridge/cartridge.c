@@ -323,6 +323,10 @@ void cartridge_save_tick(Cartridge* cart, time_t now) {
     if (cart->save_type == SAVE_NONE) return;
     if (now - cart->last_save_flush < CARTRIDGE_AUTOSAVE_DEBOUNCE_SECONDS) return;
     cartridge_save_to_file(cart);
+    /* Record the attempt even on failure (save_dirty stays set), so a full
+     * disk or read-only directory retries at the debounce interval rather
+     * than every frame. */
+    cart->last_save_flush = now;
 }
 
 void cartridge_load_save_file(Cartridge* cart) {

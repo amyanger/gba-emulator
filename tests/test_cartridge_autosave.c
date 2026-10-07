@@ -227,6 +227,27 @@ TEST(save_overwrites_existing_save) {
     remove(path);
 }
 
+TEST(autosave_failed_flush_waits_for_debounce) {
+    Cartridge cart;
+    /* Parent directory doesn't exist, so opening the .tmp file fails. */
+    cart_init_for_test(&cart, "no_such_dir_autosave/x.sav");
+    cart.save_dirty = true;
+
+    cartridge_save_tick(&cart, (time_t)1000000);
+    ASSERT_TRUE(cart.save_dirty);
+    ASSERT_EQ((int64_t)cart.last_save_flush, (int64_t)1000000);
+
+    /* Next frame: inside the debounce window, so no retry. */
+    cartridge_save_tick(&cart, (time_t)1000001);
+    ASSERT_EQ((int64_t)cart.last_save_flush, (int64_t)1000000);
+
+    /* Debounce elapsed: retried (and failed again), still dirty. */
+    cartridge_save_tick(&cart, (time_t)(1000000 + CARTRIDGE_AUTOSAVE_DEBOUNCE_SECONDS));
+    ASSERT_TRUE(cart.save_dirty);
+    ASSERT_EQ((int64_t)cart.last_save_flush,
+              (int64_t)(1000000 + CARTRIDGE_AUTOSAVE_DEBOUNCE_SECONDS));
+}
+
 void run_cartridge_autosave_tests(void) {
     TEST_SUITE("cartridge_autosave");
     RUN_TEST(autosave_tick_no_op_when_clean);
@@ -235,6 +256,7 @@ void run_cartridge_autosave_tests(void) {
     RUN_TEST(autosave_atomic_no_tmp_leftover);
     RUN_TEST(autosave_write_marks_save_dirty);
     RUN_TEST(autosave_skips_when_save_type_none);
+    RUN_TEST(autosave_failed_flush_waits_for_debounce);
     RUN_TEST(save_path_truncation_equal_to_rom_path);
     RUN_TEST(save_path_truncation_shortened);
     RUN_TEST(save_path_too_long_rom_path);

@@ -124,7 +124,7 @@ struct Cartridge {
 
     // Autosave bookkeeping
     bool   save_dirty;       // set by cartridge_write8 when save region changes
-    time_t last_save_flush;  // wall clock of most recent successful flush
+    time_t last_save_flush;  // wall clock of most recent flush attempt
 };
 typedef struct Cartridge Cartridge;
 
