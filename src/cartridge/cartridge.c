@@ -4,6 +4,15 @@
 #include "gpio.h"
 #include "rtc.h"
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <io.h>
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
 #define RTC_TRAILER_MAGIC "GRTC"
 #define RTC_TRAILER_VERSION 1u
 #define RTC_TRAILER_SIZE 16
@@ -18,7 +27,7 @@ static size_t payload_size_for(const Cartridge* cart) {
     }
 }
 
-static void write_rtc_trailer(FILE* f, const Cartridge* cart) {
+static bool write_rtc_trailer(FILE* f, const Cartridge* cart) {
     uint8_t trailer[RTC_TRAILER_SIZE];
     memcpy(trailer, RTC_TRAILER_MAGIC, 4);
     uint32_t v = RTC_TRAILER_VERSION;
@@ -28,7 +37,29 @@ static void write_rtc_trailer(FILE* f, const Cartridge* cart) {
     trailer[7] = (uint8_t)(v >> 24);
     uint64_t u = (uint64_t)cart->rtc.offset_secs;
     for (int i = 0; i < 8; i++) trailer[8 + i] = (uint8_t)(u >> (i * 8));
-    fwrite(trailer, 1, RTC_TRAILER_SIZE, f);
+    return fwrite(trailer, 1, RTC_TRAILER_SIZE, f) == RTC_TRAILER_SIZE;
+}
+
+/* Push buffered data to disk so a full disk or I/O error surfaces here,
+ * before the rename can replace the previous good save. */
+static bool flush_to_disk(FILE* f) {
+    if (fflush(f) != 0) return false;
+#ifdef _WIN32
+    return _commit(_fileno(f)) == 0;
+#else
+    return fsync(fileno(f)) == 0;
+#endif
+}
+
+/* Atomically replace dst with src. MSVC rename() fails when dst exists, which
+ * silently dropped every battery save after the first; MoveFileEx replaces in
+ * one step, so the old save survives until the new one is in place. */
+static bool replace_file(const char* src, const char* dst) {
+#ifdef _WIN32
+    return MoveFileExA(src, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+    return rename(src, dst) == 0;
+#endif
 }
 
 bool cartridge_load(Cartridge* cart, const char* path) {
@@ -82,7 +113,13 @@ bool cartridge_load(Cartridge* cart, const char* path) {
 
     // Save file sits next to the ROM (append .sav). Absolute-path-correct
     // regardless of the emulator's CWD, and matches the savestate convention.
-    snprintf(cart->save_path, sizeof(cart->save_path), "%s.sav", path);
+    // A truncated path could equal the ROM path itself, so on overflow
+    // battery saves are disabled for this run (empty save_path).
+    int n = snprintf(cart->save_path, sizeof(cart->save_path), "%s.sav", path);
+    if (n < 0 || (size_t)n >= sizeof(cart->save_path)) {
+        LOG_ERROR("ROM path too long for save file; saving disabled: %s", path);
+        cart->save_path[0] = '\0';
+    }
 
     // Initialize save hardware
     if (cart->save_type == SAVE_FLASH128 || cart->save_type == SAVE_FLASH64) {
@@ -218,6 +255,7 @@ void cartridge_write8(Cartridge* cart, uint32_t addr, uint8_t val) {
 
 void cartridge_save_to_file(Cartridge* cart) {
     if (cart->save_type == SAVE_NONE) return;
+    if (cart->save_path[0] == '\0') return;
 
     /* Write to a temp file then rename. POSIX rename() is atomic, so a
      * crash mid-write leaves the previous .sav intact rather than truncated. */
@@ -253,16 +291,23 @@ void cartridge_save_to_file(Cartridge* cart) {
         break;
     }
 
-    if (expected > 0 && written == expected) write_rtc_trailer(f, cart);
-    fclose(f);
-
-    if (expected > 0 && written != expected) {
+    bool ok = expected > 0 && written == expected;
+    if (!ok) {
         LOG_WARN("Save write incomplete: expected %zu, wrote %zu", expected, written);
+    } else if (!write_rtc_trailer(f, cart) || !flush_to_disk(f)) {
+        LOG_ERROR("Failed to write save file %s", tmp_path);
+        ok = false;
+    }
+    if (fclose(f) != 0 && ok) {
+        LOG_ERROR("Failed to close save file %s", tmp_path);
+        ok = false;
+    }
+    if (!ok) {
         remove(tmp_path);
         return;
     }
 
-    if (rename(tmp_path, cart->save_path) != 0) {
+    if (!replace_file(tmp_path, cart->save_path)) {
         LOG_ERROR("Failed to commit save file %s", cart->save_path);
         remove(tmp_path);
         return;
@@ -282,6 +327,7 @@ void cartridge_save_tick(Cartridge* cart, time_t now) {
 
 void cartridge_load_save_file(Cartridge* cart) {
     if (cart->save_type == SAVE_NONE) return;
+    if (cart->save_path[0] == '\0') return;
 
     FILE* f = fopen(cart->save_path, "rb");
     if (!f) return; // No save file yet, that's fine

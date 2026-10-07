@@ -102,6 +102,126 @@ TEST(autosave_skips_when_save_type_none) {
     ASSERT_EQ(file_size(cart.save_path), -1);
 }
 
+/* Build a relative path of exactly `len` chars by padding with "./" so no
+ * directories need to be created. Ends in a ROM file name. */
+static void build_padded_path(char* buf, size_t len) {
+    const char* name = (len % 2 == 0) ? "cartlong_rom.gba" : "cartlong_rom1.gba";
+    size_t name_len = strlen(name);
+    size_t pos = 0;
+    while (pos + name_len < len) {
+        buf[pos++] = '.';
+        buf[pos++] = '/';
+    }
+    memcpy(buf + pos, name, name_len + 1);
+}
+
+#define LONG_ROM_SIZE 0x200
+
+static void write_sram_rom(const char* path, uint8_t* rom) {
+    for (uint32_t i = 0; i < LONG_ROM_SIZE; i++) rom[i] = (uint8_t)(i * 7);
+    memcpy(&rom[0x100], "SRAM_V113", 9);
+    FILE* fp = fopen(path, "wb");
+    if (fp) {
+        fwrite(rom, 1, LONG_ROM_SIZE, fp);
+        fclose(fp);
+    }
+}
+
+/* A ROM path whose "%s.sav" truncates must never be saved over, and must
+ * never produce a save at a truncated sibling path. */
+static void check_long_rom_path(size_t len) {
+    char path[300];
+    build_padded_path(path, len);
+    ASSERT_EQ(strlen(path), len);
+
+    uint8_t rom[LONG_ROM_SIZE];
+    write_sram_rom(path, rom);
+
+    /* Possible truncated save targets: "<rom>.sav" cut to 255 chars. */
+    char truncated[256];
+    snprintf(truncated, sizeof(truncated), "%s.sav", path);
+    if (strcmp(truncated, path) != 0) remove(truncated);
+
+    Cartridge cart;
+    memset(&cart, 0, sizeof(cart));
+    ASSERT_TRUE(cartridge_load(&cart, path));
+    ASSERT_EQ(cart.save_type, SAVE_SRAM);
+
+    cart.sram[0] = 0x5A;
+    cart.save_dirty = true;
+    cartridge_save_to_file(&cart);
+    cartridge_destroy(&cart);
+
+    ASSERT_EQ(file_size(path), LONG_ROM_SIZE);
+    uint8_t after[LONG_ROM_SIZE];
+    FILE* fp = fopen(path, "rb");
+    ASSERT_TRUE(fp != NULL);
+    size_t got = fread(after, 1, LONG_ROM_SIZE, fp);
+    fclose(fp);
+    ASSERT_EQ(got, LONG_ROM_SIZE);
+    ASSERT_MEM_EQ(after, rom, LONG_ROM_SIZE);
+    if (strcmp(truncated, path) != 0) ASSERT_EQ(file_size(truncated), -1);
+
+    remove(path);
+}
+
+TEST(save_path_truncation_equal_to_rom_path) {
+    check_long_rom_path(255);
+}
+
+TEST(save_path_truncation_shortened) {
+    check_long_rom_path(253);
+}
+
+TEST(save_path_too_long_rom_path) {
+    check_long_rom_path(270);
+}
+
+TEST(save_roundtrip_with_rtc_trailer) {
+    const char* path = "test_autosave_roundtrip.sav";
+    Cartridge a;
+    cart_init_for_test(&a, path);
+    remove(path);
+    for (uint32_t i = 0; i < 0x20000; i++) a.flash.data[i] = (uint8_t)(i ^ (i >> 8));
+    a.rtc.offset_secs = -3600;
+    a.save_dirty = true;
+    cartridge_save_to_file(&a);
+    ASSERT_TRUE(!a.save_dirty);
+    ASSERT_EQ(file_size(path), 0x20000 + 16);
+
+    Cartridge b;
+    cart_init_for_test(&b, path);
+    cartridge_load_save_file(&b);
+    ASSERT_MEM_EQ(b.flash.data, a.flash.data, 0x20000);
+    ASSERT_EQ(b.rtc.offset_secs, -3600);
+    remove(path);
+}
+
+/* The second save must replace the first. MSVC rename() refuses to overwrite
+ * an existing file, so this is the case that broke every save after the
+ * first on Windows. */
+TEST(save_overwrites_existing_save) {
+    const char* path = "test_autosave_overwrite.sav";
+    Cartridge a;
+    cart_init_for_test(&a, path);
+    remove(path);
+    a.flash.data[0] = 0x11;
+    a.save_dirty = true;
+    cartridge_save_to_file(&a);
+    ASSERT_TRUE(!a.save_dirty);
+
+    a.flash.data[0] = 0x22;
+    a.save_dirty = true;
+    cartridge_save_to_file(&a);
+    ASSERT_TRUE(!a.save_dirty);
+
+    Cartridge b;
+    cart_init_for_test(&b, path);
+    cartridge_load_save_file(&b);
+    ASSERT_EQ(b.flash.data[0], 0x22);
+    remove(path);
+}
+
 void run_cartridge_autosave_tests(void) {
     TEST_SUITE("cartridge_autosave");
     RUN_TEST(autosave_tick_no_op_when_clean);
@@ -110,4 +230,9 @@ void run_cartridge_autosave_tests(void) {
     RUN_TEST(autosave_atomic_no_tmp_leftover);
     RUN_TEST(autosave_write_marks_save_dirty);
     RUN_TEST(autosave_skips_when_save_type_none);
+    RUN_TEST(save_path_truncation_equal_to_rom_path);
+    RUN_TEST(save_path_truncation_shortened);
+    RUN_TEST(save_path_too_long_rom_path);
+    RUN_TEST(save_roundtrip_with_rtc_trailer);
+    RUN_TEST(save_overwrites_existing_save);
 }
