@@ -71,6 +71,14 @@ static uint8_t obj_fetch_texel(const PPU* ppu, bool mapping_1d, bool color_8bpp,
     return (pixel_col & 1) ? (byte >> 4) : (byte & 0x0F);
 }
 
+// GBATEK "LCD OBJ - OAM Attributes", attr2 tile number: in BG modes 3-5 the
+// lower 16K of OBJ VRAM belongs to the bitmap, so "only tile numbers 512-1023
+// may be used ... attempts to use tiles 0-511 are ignored (not displayed)".
+// Matches mGBA, which skips the whole sprite on the base tile number.
+static bool obj_tile_hidden_in_bitmap_mode(const PPU* ppu, uint16_t base_tile) {
+    return (ppu->dispcnt & 0x7) >= 3 && base_tile < 512;
+}
+
 // Read PA/PB/PC/PD (8.8 fixed) for the affine group in attr1 bits 13-9.
 // Group N's parameters live at OAM offsets N*32 + 6/14/22/30.
 static void obj_read_affine_params(const PPU* ppu, uint16_t attr1,
@@ -196,6 +204,8 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
             base_tile &= ~(uint16_t)1;
         }
 
+        if (obj_tile_hidden_in_bitmap_mode(ppu, base_tile)) continue;
+
         // Palette number: attr2 bits 15-12 (only used in 4bpp mode)
         uint8_t pal_num = BITS(attr2, 15, 12);
 
@@ -318,6 +328,7 @@ void ppu_build_obj_window(PPU* ppu) {
         bool color_8bpp = BIT(attr0, 13);
         uint16_t base_tile = BITS(attr2, 9, 0);
         if (color_8bpp) base_tile &= ~(uint16_t)1;
+        if (obj_tile_hidden_in_bitmap_mode(ppu, base_tile)) continue;
 
         bool h_flip = !affine && BIT(attr1, 12);
         bool v_flip = !affine && BIT(attr1, 13);

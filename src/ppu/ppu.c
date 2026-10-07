@@ -92,16 +92,20 @@ void ppu_render_scanline(PPU* ppu) {
         }
         break;
     case 3:
-        ppu_render_mode3(ppu);
-        if (BIT(ppu->dispcnt, 12)) ppu_render_sprites(ppu);
-        break;
     case 4:
-        ppu_render_mode4(ppu);
-        if (BIT(ppu->dispcnt, 12)) ppu_render_sprites(ppu);
-        break;
     case 5:
-        ppu_render_mode5(ppu);
-        if (BIT(ppu->dispcnt, 12)) ppu_render_sprites(ppu);
+        // Bitmap modes: BG2 is the only BG and keeps its BG2CNT priority,
+        // so sprites interleave with it exactly as in modes 1/2.
+        for (int prio = 3; prio >= 0; prio--) {
+            if (BIT(ppu->dispcnt, 10) && (ppu->bg_cnt[2] & 3) == prio) {
+                if (mode == 3) ppu_render_mode3(ppu);
+                else if (mode == 4) ppu_render_mode4(ppu);
+                else ppu_render_mode5(ppu);
+            }
+            if (BIT(ppu->dispcnt, 12)) {
+                ppu_render_sprites_at_priority(ppu, prio);
+            }
+        }
         break;
     }
 

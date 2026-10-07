@@ -578,18 +578,19 @@ TEST(semi_transparent_sprite_forces_alpha_blend) {
         ppu->vram[x * 2 + 1] = 0x00;
     }
 
-    /* OBJ tile 1 solid color 1; OBJ palette color 1 = white. */
+    /* OBJ tile 512 solid color 1 (bitmap modes only display tiles
+     * 512-1023); OBJ palette color 1 = white. */
     for (int i = 0; i < 32; i++) {
-        ppu->vram[0x10000 + 32 + i] = 0x11;
+        ppu->vram[0x14000 + i] = 0x11;
     }
     ppu->palette_ram[0x200 + 2] = 0xFF;
     ppu->palette_ram[0x200 + 3] = 0x7F;
 
     /* OAM entry 0: regular sprite, GFX mode 1 (attr0 bit 10), 8x8,
-     * x=10, tile 1. */
+     * x=10, tile 512. */
     uint16_t attr0 = 0 | (1u << 10);
     uint16_t attr1 = 10;
-    uint16_t attr2 = 1;
+    uint16_t attr2 = 512;
     ppu->oam[0] = (uint8_t)attr0; ppu->oam[1] = (uint8_t)(attr0 >> 8);
     ppu->oam[2] = (uint8_t)attr1; ppu->oam[3] = (uint8_t)(attr1 >> 8);
     ppu->oam[4] = (uint8_t)attr2; ppu->oam[5] = (uint8_t)(attr2 >> 8);
@@ -609,6 +610,89 @@ TEST(semi_transparent_sprite_forces_alpha_blend) {
     ASSERT_EQ_HEX(ppu->framebuffer[9], 0x001F);
 
     free(gba);
+}
+
+/* Bitmap-mode layer priority.  BG2 keeps its BG2CNT priority in modes 3-5
+ * and sprites interleave with it (GBATEK "LCD I/O BG Control", "LCD OBJ -
+ * OAM Attributes": an OBJ wins ties with a BG of equal priority).
+ * Line 0 of BG2 is filled edge to edge and the affine params are identity,
+ * so the result does not depend on how the bitmap is sampled. */
+#define BITMAP_BG_COLOR  0x001F  /* red  */
+#define BITMAP_OBJ_COLOR 0x7FE0  /* cyan */
+
+static void setup_bitmap_priority(PPU* ppu, uint8_t mode, int bg_prio,
+                                  int obj_prio, uint16_t obj_tile) {
+    ppu->vcount = 0;
+    ppu->dispcnt = (uint16_t)(mode | (1u << 6) | (1u << 10) | (1u << 12));
+    ppu->bg_cnt[2] = (uint16_t)bg_prio;
+    ppu->bg_pa[0] = 0x100; ppu->bg_pb[0] = 0;
+    ppu->bg_pc[0] = 0;     ppu->bg_pd[0] = 0x100;
+    ppu->bg_ref_x[0] = 0;  ppu->bg_ref_y[0] = 0;
+
+    if (mode == 4) {
+        /* Nonzero index so the test is independent of index-0 handling. */
+        ppu->palette_ram[5 * 2]     = (uint8_t)(BITMAP_BG_COLOR & 0xFF);
+        ppu->palette_ram[5 * 2 + 1] = (uint8_t)(BITMAP_BG_COLOR >> 8);
+        for (uint32_t x = 0; x < SCREEN_WIDTH; x++) ppu->vram[x] = 5;
+    } else {
+        for (uint32_t x = 0; x < SCREEN_WIDTH; x++) {
+            ppu->vram[x * 2]      = (uint8_t)(BITMAP_BG_COLOR & 0xFF);
+            ppu->vram[x * 2 + 1u] = (uint8_t)(BITMAP_BG_COLOR >> 8);
+        }
+    }
+
+    /* Solid 4bpp tile filled with color 1, at OBJ tile `obj_tile`. */
+    for (uint32_t i = 0; i < 32; i++) {
+        ppu->vram[0x10000u + (uint32_t)obj_tile * 32u + i] = 0x11;
+    }
+    ppu->palette_ram[0x200 + 2] = (uint8_t)(BITMAP_OBJ_COLOR & 0xFF);
+    ppu->palette_ram[0x200 + 3] = (uint8_t)(BITMAP_OBJ_COLOR >> 8);
+
+    /* OAM entry 0: 8x8 at (0,0).  Park every other entry offscreen. */
+    for (uint32_t i = 1; i < 128; i++) ppu->oam[i * 8u] = 160;
+    ppu->oam[0] = 0x00; ppu->oam[1] = 0x00;
+    ppu->oam[2] = 0x00; ppu->oam[3] = 0x00;
+    const uint16_t attr2 = (uint16_t)(obj_tile | ((uint32_t)obj_prio << 10));
+    ppu->oam[4] = (uint8_t)(attr2 & 0xFF);
+    ppu->oam[5] = (uint8_t)(attr2 >> 8);
+}
+
+static uint16_t render_bitmap_priority(uint8_t mode, int bg_prio, int obj_prio,
+                                       uint16_t obj_tile) {
+    GBA* gba = make_gba();
+    setup_bitmap_priority(&gba->ppu, mode, bg_prio, obj_prio, obj_tile);
+    ppu_render_scanline(&gba->ppu);
+    const uint16_t px = gba->ppu.framebuffer[4];
+    free(gba);
+    return px;
+}
+
+TEST(mode3_sprite_behind_higher_priority_bg2) {
+    ASSERT_EQ_HEX(render_bitmap_priority(3, 0, 1, 512), BITMAP_BG_COLOR);
+    ASSERT_EQ_HEX(render_bitmap_priority(3, 2, 3, 512), BITMAP_BG_COLOR);
+}
+
+TEST(mode3_sprite_over_equal_or_lower_priority_bg2) {
+    ASSERT_EQ_HEX(render_bitmap_priority(3, 1, 1, 512), BITMAP_OBJ_COLOR);
+    ASSERT_EQ_HEX(render_bitmap_priority(3, 3, 0, 512), BITMAP_OBJ_COLOR);
+}
+
+TEST(mode4_sprite_behind_higher_priority_bg2) {
+    ASSERT_EQ_HEX(render_bitmap_priority(4, 0, 1, 512), BITMAP_BG_COLOR);
+    ASSERT_EQ_HEX(render_bitmap_priority(4, 2, 3, 512), BITMAP_BG_COLOR);
+}
+
+TEST(mode4_sprite_over_equal_or_lower_priority_bg2) {
+    ASSERT_EQ_HEX(render_bitmap_priority(4, 1, 1, 512), BITMAP_OBJ_COLOR);
+    ASSERT_EQ_HEX(render_bitmap_priority(4, 3, 0, 512), BITMAP_OBJ_COLOR);
+}
+
+TEST(bitmap_mode_hides_sprite_tiles_below_512) {
+    /* GBATEK: in BG modes 3-5 OBJ tiles 0-511 overlap the bitmap and
+     * "are ignored (not displayed)".  Tile 511 has solid data in VRAM
+     * at 0x13FE0 but must not show.  BG2 priority 3 so it would be on top. */
+    ASSERT_EQ_HEX(render_bitmap_priority(3, 3, 0, 511), BITMAP_BG_COLOR);
+    ASSERT_EQ_HEX(render_bitmap_priority(3, 3, 0, 1),   BITMAP_BG_COLOR);
 }
 
 /* Suite registration (called from test_runner.c). */
@@ -639,4 +723,9 @@ void run_ppu_tests(void) {
     RUN_TEST(affine_sprite_identity_renders);
     RUN_TEST(affine_sprite_double_size_centers_texture);
     RUN_TEST(semi_transparent_sprite_forces_alpha_blend);
+    RUN_TEST(mode3_sprite_behind_higher_priority_bg2);
+    RUN_TEST(mode3_sprite_over_equal_or_lower_priority_bg2);
+    RUN_TEST(mode4_sprite_behind_higher_priority_bg2);
+    RUN_TEST(mode4_sprite_over_equal_or_lower_priority_bg2);
+    RUN_TEST(bitmap_mode_hides_sprite_tiles_below_512);
 }
