@@ -89,9 +89,31 @@ TEST(link_peer_exchange_timeout_when_peer_silent) {
     link_peer_shutdown(a);
 }
 
+// Writing to a socket whose peer has closed raises SIGPIPE by default, which
+// would kill the surviving emulator. The exchange must instead fail cleanly
+// and mark the peer disconnected.
+TEST(link_peer_exchange_fails_when_peer_closed) {
+    int fds[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, fds) != 0) {
+        printf("SKIP (socketpair unavailable)\n");
+        return;
+    }
+    LinkPeer* a = link_peer_create();
+    link_peer_test_inject_fd(a, fds[0]);
+    close(fds[1]);
+
+    uint16_t recv = 0xDEAD;
+    bool ok = link_peer_exchange(a, 0xCAFE, &recv);
+    ASSERT_TRUE(!ok);
+    ASSERT_TRUE(!link_peer_is_connected(a));
+
+    link_peer_shutdown(a);
+}
+
 void run_sio_link_tests(void) {
     printf("\nSIO Link tests:\n");
     RUN_TEST(link_peer_create_returns_unconnected);
     RUN_TEST(link_peer_exchange_round_trip);
     RUN_TEST(link_peer_exchange_timeout_when_peer_silent);
+    RUN_TEST(link_peer_exchange_fails_when_peer_closed);
 }

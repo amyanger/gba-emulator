@@ -72,6 +72,24 @@ static void set_socket_timeouts(int fd) {
     (void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 }
 
+// Writing to a socket whose peer has closed raises SIGPIPE by default, which
+// would kill the surviving emulator before it can flush its battery save.
+// macOS/BSD suppress it per socket with SO_NOSIGPIPE; Linux has no such
+// option and uses MSG_NOSIGNAL on each send instead (see write_full).
+static void configure_conn_fd(int fd) {
+    set_socket_timeouts(fd);
+#ifdef SO_NOSIGPIPE
+    int one = 1;
+    (void)setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#endif
+}
+
+#ifdef MSG_NOSIGNAL
+#define LINK_SEND_FLAGS MSG_NOSIGNAL
+#else
+#define LINK_SEND_FLAGS 0
+#endif
+
 LinkPeer* link_peer_create(void) {
     LinkPeer* peer = calloc(1, sizeof(LinkPeer));
     if (!peer) return NULL;
@@ -94,7 +112,7 @@ void link_peer_test_inject_fd(LinkPeer* peer, int fd) {
     peer->connected = true;
     // Mirror the production listen/connect paths so timeout-based tests
     // exercise the same I/O behavior the emulator sees in practice.
-    set_socket_timeouts(fd);
+    configure_conn_fd(fd);
 }
 
 bool link_peer_listen(LinkPeer* peer, const char* path) {
@@ -131,7 +149,7 @@ bool link_peer_listen(LinkPeer* peer, const char* path) {
     }
     peer->conn_fd = conn;
     peer->connected = true;
-    set_socket_timeouts(peer->conn_fd);
+    configure_conn_fd(peer->conn_fd);
     return true;
 }
 
@@ -153,19 +171,19 @@ bool link_peer_connect(LinkPeer* peer, const char* path) {
     peer->connected = true;
     // Client side: don't touch socket_path — the listener owns the file,
     // and this peer must not unlink it on shutdown.
-    set_socket_timeouts(peer->conn_fd);
+    configure_conn_fd(peer->conn_fd);
     return true;
 }
 
 // Loop until the full payload is written, retrying on EINTR. EAGAIN/
-// EWOULDBLOCK (i.e. the SO_SNDTIMEO timeout fired) and any other error
-// return false — the caller will surface this as "peer unresponsive" by
-// marking the peer disconnected. We deliberately do NOT retry on timeout:
+// EWOULDBLOCK (i.e. the SO_SNDTIMEO timeout fired), EPIPE (peer closed) and
+// any other error return false; the caller surfaces this by marking the peer
+// disconnected. We deliberately do NOT retry on timeout:
 // a timeout is exactly the signal we want to propagate.
 static bool write_full(int fd, const void* buf, size_t n) {
     const uint8_t* p = (const uint8_t*)buf;
     while (n > 0) {
-        ssize_t w = write(fd, p, n);
+        ssize_t w = send(fd, p, n, LINK_SEND_FLAGS);
         if (w < 0) {
             if (errno == EINTR) continue;
             return false; // EAGAIN/EWOULDBLOCK on timeout; treat as failure.
