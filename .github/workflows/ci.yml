@@ -95,3 +95,10 @@ jobs:
 
       - name: Check golden frames (jsmolka memory)
         run: tools/check_golden.sh build/gba_emulator /tmp/gba-test-roms/jsmolka_memory.gba tests/golden/jsmolka_memory.hash
+
+      # tonc demos
+      - name: Check golden frames (tonc demos)
+        run: |
+          for demo in m3_demo pageflip win_demo dma_demo m7_ex oacombo prio_demo; do
+            tools/check_golden.sh build/gba_emulator /tmp/gba-test-roms/tonc_${demo}.gba tests/golden/tonc_${demo}.hash
+          done
