@@ -117,14 +117,13 @@ static void build_padded_path(char* buf, size_t len) {
 
 #define LONG_ROM_SIZE 0x200
 
-static void write_sram_rom(const char* path, uint8_t* rom) {
+static bool write_sram_rom(const char* path, uint8_t* rom) {
     for (uint32_t i = 0; i < LONG_ROM_SIZE; i++) rom[i] = (uint8_t)(i * 7);
     memcpy(&rom[0x100], "SRAM_V113", 9);
     FILE* fp = fopen(path, "wb");
-    if (fp) {
-        fwrite(rom, 1, LONG_ROM_SIZE, fp);
-        fclose(fp);
-    }
+    if (!fp) return false;
+    size_t n = fwrite(rom, 1, LONG_ROM_SIZE, fp);
+    return fclose(fp) == 0 && n == LONG_ROM_SIZE;
 }
 
 /* A ROM path whose "%s.sav" truncates must never be saved over, and must
@@ -135,11 +134,17 @@ static void check_long_rom_path(size_t len) {
     ASSERT_EQ(strlen(path), len);
 
     uint8_t rom[LONG_ROM_SIZE];
-    write_sram_rom(path, rom);
+    if (!write_sram_rom(path, rom)) {
+        /* Windows without long-path support caps the resolved path at
+         * MAX_PATH (260), so these paths can't be created from a deep CWD. */
+        printf("SKIP (cannot create %zu-char path)\n", len);
+        return;
+    }
 
     /* Possible truncated save targets: "<rom>.sav" cut to 255 chars. */
     char truncated[256];
-    snprintf(truncated, sizeof(truncated), "%s.sav", path);
+    int n = snprintf(truncated, sizeof(truncated), "%s.sav", path);
+    ASSERT_TRUE(n >= (int)sizeof(truncated));
     if (strcmp(truncated, path) != 0) remove(truncated);
 
     Cartridge cart;
