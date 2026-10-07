@@ -502,20 +502,38 @@ static void save_sio_chunk(WriteBuffer* wb, SIO* sio) {
 /* -------------------------------------------------------------------------- */
 /*  Chunk loaders — read payload from cursor into subsystem structs           */
 /* -------------------------------------------------------------------------- */
+/* The body CRC only catches accidental damage; a crafted file recomputes it.
+ * So every field later used as an array index, shift amount or switch value
+ * is read into a local and range-checked before it is stored. A loader that
+ * returns false has stored nothing out of range, and the load is rejected. */
+
+static bool cpu_mode_valid(uint32_t mode) {
+    switch (mode) {
+    case CPU_MODE_USR: case CPU_MODE_FIQ: case CPU_MODE_IRQ: case CPU_MODE_SVC:
+    case CPU_MODE_ABT: case CPU_MODE_UND: case CPU_MODE_SYS:
+        return true;
+    default:
+        return false;
+    }
+}
+
 static void load_gba_chunk(const uint8_t** cur, GBA* gba) {
     gba->total_cycles = read_u64(cur);
     gba->frame_complete = read_u8(cur) != 0;
 }
 
-static void load_cpu_chunk(const uint8_t** cur, ARM7TDMI* cpu) {
+static bool load_cpu_chunk(const uint8_t** cur, ARM7TDMI* cpu) {
     for (int i = 0; i < 16; i++) cpu->regs[i] = read_u32(cur);
-    cpu->cpsr = read_u32(cur);
+    uint32_t cpsr = read_u32(cur);
+    if (!cpu_mode_valid(cpsr & 0x1F)) return false;
+    cpu->cpsr = cpsr;
     for (int i = 0; i < 5; i++) cpu->spsr[i] = read_u32(cur);
     for (int i = 0; i < 22; i++) cpu->banked[i] = read_u32(cur);
     for (int i = 0; i < 2; i++) cpu->pipeline[i] = read_u32(cur);
     cpu->pipeline_valid = read_u8(cur) != 0;
     cpu->halted = read_u8(cur) != 0;
     cpu->cycles_executed = (int)read_u32(cur);
+    return true;
 }
 
 static void load_bram_chunk(const uint8_t** cur, Bus* bus) {
@@ -531,7 +549,7 @@ static void load_bram_chunk(const uint8_t** cur, Bus* bus) {
     bus_post_load(bus);
 }
 
-static void load_dma_chunk(const uint8_t** cur, DMAController* dma) {
+static bool load_dma_chunk(const uint8_t** cur, DMAController* dma) {
     for (int ch = 0; ch < 4; ch++) {
         DMAChannel* c = &dma->channels[ch];
         c->source = read_u32(cur);
@@ -540,21 +558,31 @@ static void load_dma_chunk(const uint8_t** cur, DMAController* dma) {
         c->dest_latch = read_u32(cur);
         c->count = read_u16(cur);
         c->control = read_u16(cur);
-        c->dest_adjust = (int8_t)read_u8(cur);
-        c->src_adjust = (int8_t)read_u8(cur);
+        uint8_t dest_adjust = read_u8(cur);
+        uint8_t src_adjust = read_u8(cur);
+        if (dest_adjust > 3 || src_adjust > 3) return false;
+        c->dest_adjust = (int8_t)dest_adjust;
+        c->src_adjust = (int8_t)src_adjust;
         c->repeat = read_u8(cur) != 0;
         c->transfer_32 = read_u8(cur) != 0;
-        c->timing = read_u8(cur);
+        uint8_t timing = read_u8(cur);
+        if (timing > 3) return false;
+        c->timing = timing;
         c->irq_on_done = read_u8(cur) != 0;
         c->enabled = read_u8(cur) != 0;
     }
-    dma->active_channel = (int8_t)read_u8(cur);
+    int8_t active_channel = (int8_t)read_u8(cur);
+    if (active_channel < -1 || active_channel > 3) return false;
+    dma->active_channel = active_channel;
+    return true;
 }
 
-static void load_ppu_chunk(const uint8_t** cur, PPU* ppu) {
+static bool load_ppu_chunk(const uint8_t** cur, PPU* ppu) {
     ppu->dispcnt = read_u16(cur);
     ppu->dispstat = read_u16(cur);
-    ppu->vcount = read_u16(cur);
+    uint16_t vcount = read_u16(cur);
+    if (vcount >= TOTAL_LINES) return false;
+    ppu->vcount = vcount;
     for (int i = 0; i < 4; i++) ppu->bg_cnt[i] = read_u16(cur);
     for (int i = 0; i < 4; i++) ppu->bg_hofs[i] = read_u16(cur);
     for (int i = 0; i < 4; i++) ppu->bg_vofs[i] = read_u16(cur);
@@ -575,43 +603,58 @@ static void load_ppu_chunk(const uint8_t** cur, PPU* ppu) {
     ppu->bldy = read_u16(cur);
     ppu->mosaic = read_u16(cur);
     ppu->cycle_counter = read_u32(cur);
+    return true;
 }
 
-static void load_square_channel(const uint8_t** cur, SquareChannel* ch) {
+static bool load_square_channel(const uint8_t** cur, SquareChannel* ch) {
     ch->enabled = read_u8(cur) != 0;
     ch->length_counter = read_u16(cur);
     ch->length_enable = read_u8(cur) != 0;
     ch->frequency = read_u16(cur);
     ch->freq_timer = read_u32(cur);
-    ch->duty_cycle = read_u8(cur);
-    ch->duty_pos = read_u8(cur);
+    /* duty_cycle/duty_pos index duty_table[4][8]. */
+    uint8_t duty_cycle = read_u8(cur);
+    uint8_t duty_pos = read_u8(cur);
+    if (duty_cycle > 3 || duty_pos > 7) return false;
+    ch->duty_cycle = duty_cycle;
+    ch->duty_pos = duty_pos;
     ch->volume = read_u8(cur);
     ch->vol_period = read_u8(cur);
     ch->vol_dir = read_u8(cur) != 0;
     ch->vol_timer = read_u8(cur);
     ch->sweep_period = read_u8(cur);
     ch->sweep_dir = read_u8(cur) != 0;
-    ch->sweep_shift = read_u8(cur);
+    uint8_t sweep_shift = read_u8(cur);
+    if (sweep_shift > 7) return false;
+    ch->sweep_shift = sweep_shift;
     ch->sweep_timer = read_u8(cur);
     ch->sweep_freq = read_u16(cur);
     ch->sweep_enabled = read_u8(cur) != 0;
+    return true;
 }
 
-static void load_wave_channel(const uint8_t** cur, WaveChannel* ch) {
+static bool load_wave_channel(const uint8_t** cur, WaveChannel* ch) {
     ch->enabled = read_u8(cur) != 0;
     ch->length_counter = read_u16(cur);
     ch->length_enable = read_u8(cur) != 0;
     ch->frequency = read_u16(cur);
     ch->freq_timer = read_u32(cur);
     read_bytes(cur, ch->wave_ram, 16);
-    ch->wave_pos = read_u8(cur);
-    ch->volume_code = read_u8(cur);
+    /* wave_pos indexes the 32 4-bit samples packed into the 16-byte wave_ram. */
+    uint8_t wave_pos = read_u8(cur);
+    uint8_t volume_code = read_u8(cur);
+    if (wave_pos > 31 || volume_code > 3) return false;
+    ch->wave_pos = wave_pos;
+    ch->volume_code = volume_code;
     ch->bank_mode = read_u8(cur) != 0;
-    ch->bank_select = read_u8(cur);
+    uint8_t bank_select = read_u8(cur);
+    if (bank_select > 1) return false;
+    ch->bank_select = bank_select;
     ch->force_volume = read_u8(cur) != 0;
+    return true;
 }
 
-static void load_noise_channel(const uint8_t** cur, NoiseChannel* ch) {
+static bool load_noise_channel(const uint8_t** cur, NoiseChannel* ch) {
     ch->enabled = read_u8(cur) != 0;
     ch->length_counter = read_u16(cur);
     ch->length_enable = read_u8(cur) != 0;
@@ -621,27 +664,40 @@ static void load_noise_channel(const uint8_t** cur, NoiseChannel* ch) {
     ch->vol_timer = read_u8(cur);
     ch->lfsr = read_u16(cur);
     ch->width_mode = read_u8(cur) != 0;
-    ch->divisor_code = read_u8(cur);
-    ch->shift = read_u8(cur);
+    uint8_t divisor_code = read_u8(cur);
+    uint8_t shift = read_u8(cur);
+    if (divisor_code > 7 || shift > 15) return false;
+    ch->divisor_code = divisor_code;
+    ch->shift = shift;
     ch->freq_timer = read_u32(cur);
+    return true;
 }
 
-static void load_fifo(const uint8_t** cur, FIFO* fifo) {
+static bool load_fifo(const uint8_t** cur, FIFO* fifo) {
     read_bytes(cur, fifo->buffer, FIFO_SIZE);
-    fifo->read_idx = read_u8(cur);
-    fifo->write_idx = read_u8(cur);
-    fifo->count = read_u8(cur);
-    fifo->timer_id = read_u8(cur);
+    uint8_t read_idx = read_u8(cur);
+    uint8_t write_idx = read_u8(cur);
+    uint8_t count = read_u8(cur);
+    uint8_t timer_id = read_u8(cur);
+    if (read_idx >= FIFO_SIZE || write_idx >= FIFO_SIZE || count > FIFO_SIZE ||
+        timer_id > 1) {
+        return false;
+    }
+    fifo->read_idx = read_idx;
+    fifo->write_idx = write_idx;
+    fifo->count = count;
+    fifo->timer_id = timer_id;
     fifo->last_sample = (int8_t)read_u8(cur);
+    return true;
 }
 
-static void load_apu_chunk(const uint8_t** cur, APU* apu) {
-    load_square_channel(cur, &apu->ch1);
-    load_square_channel(cur, &apu->ch2);
-    load_wave_channel(cur, &apu->ch3);
-    load_noise_channel(cur, &apu->ch4);
-    load_fifo(cur, &apu->fifo_a);
-    load_fifo(cur, &apu->fifo_b);
+static bool load_apu_chunk(const uint8_t** cur, APU* apu) {
+    if (!load_square_channel(cur, &apu->ch1)) return false;
+    if (!load_square_channel(cur, &apu->ch2)) return false;
+    if (!load_wave_channel(cur, &apu->ch3)) return false;
+    if (!load_noise_channel(cur, &apu->ch4)) return false;
+    if (!load_fifo(cur, &apu->fifo_a)) return false;
+    if (!load_fifo(cur, &apu->fifo_b)) return false;
 
     apu->fifo_a_latch = (int8_t)read_u8(cur);
     apu->fifo_b_latch = (int8_t)read_u8(cur);
@@ -649,26 +705,38 @@ static void load_apu_chunk(const uint8_t** cur, APU* apu) {
     apu->soundcnt_h = read_u16(cur);
     apu->soundcnt_x = read_u16(cur);
     apu->soundbias = read_u16(cur);
-    apu->frame_seq_step = read_u8(cur);
+    uint8_t frame_seq_step = read_u8(cur);
+    if (frame_seq_step > 7) return false;
+    apu->frame_seq_step = frame_seq_step;
     apu->frame_seq_timer = read_u32(cur);
     apu->sample_timer = read_u32(cur);
-    apu->sample_period = read_u32(cur);
+    /* Zero would spin apu_tick's "while (timer >= period)" loop forever. */
+    uint32_t sample_period = read_u32(cur);
+    if (sample_period == 0) return false;
+    apu->sample_period = sample_period;
     apu->prev_left = (int16_t)read_u16(cur);
     apu->prev_right = (int16_t)read_u16(cur);
+    return true;
 }
 
-static void load_tmr_chunk(const uint8_t** cur, Timer timers[4]) {
+static bool load_tmr_chunk(const uint8_t** cur, Timer timers[4]) {
     for (int i = 0; i < 4; i++) {
         Timer* t = &timers[i];
         t->counter = read_u16(cur);
         t->reload = read_u16(cur);
         t->control = read_u16(cur);
-        t->prescaler = read_u16(cur);
+        /* A divisor in timer_tick; must be one of the hardware prescalers. */
+        uint16_t prescaler = read_u16(cur);
+        if (prescaler != 1 && prescaler != 64 && prescaler != 256 && prescaler != 1024) {
+            return false;
+        }
+        t->prescaler = prescaler;
         t->cascade = read_u8(cur) != 0;
         t->irq_enable = read_u8(cur) != 0;
         t->enabled = read_u8(cur) != 0;
         t->prescaler_counter = read_u32(cur);
     }
+    return true;
 }
 
 static void load_irq_chunk(const uint8_t** cur, InterruptController* ic) {
@@ -677,11 +745,18 @@ static void load_irq_chunk(const uint8_t** cur, InterruptController* ic) {
     ic->irf = read_u16(cur);
 }
 
-static void load_cart_chunk(const uint8_t** cur, Cartridge* cart) {
-    cart->save_type = (SaveType)read_u8(cur);
+static bool load_cart_chunk(const uint8_t** cur, Cartridge* cart) {
+    uint8_t save_type = read_u8(cur);
+    if (save_type > SAVE_EEPROM) return false;
+    cart->save_type = (SaveType)save_type;
     read_bytes(cur, cart->flash.data, 0x20000);
-    cart->flash.state = (FlashState)read_u8(cur);
-    cart->flash.bank = read_u8(cur);
+    /* flash.bank selects a 64K half of flash.data; only 128K chips bank. */
+    uint8_t flash_state = read_u8(cur);
+    uint8_t flash_bank = read_u8(cur);
+    uint8_t max_bank = (save_type == SAVE_FLASH128) ? 1 : 0;
+    if (flash_state > FLASH_BANKSWITCH || flash_bank > max_bank) return false;
+    cart->flash.state = (FlashState)flash_state;
+    cart->flash.bank = flash_bank;
     cart->flash.manufacturer = read_u8(cur);
     cart->flash.device = read_u8(cur);
     read_bytes(cur, cart->sram, 0x8000);
@@ -692,13 +767,24 @@ static void load_cart_chunk(const uint8_t** cur, Cartridge* cart) {
     cart->gpio.control = read_u16(cur);
 
     /* RTC protocol state (22 bytes) */
-    cart->rtc.phase = (RTCPhase)read_u8(cur);
+    uint8_t rtc_phase = read_u8(cur);
     cart->rtc.cmd_byte = read_u8(cur);
-    cart->rtc.cmd_bits = read_u8(cur);
+    uint8_t cmd_bits = read_u8(cur);
     read_bytes(cur, cart->rtc.payload, 8);
-    cart->rtc.payload_len = read_u8(cur);
-    cart->rtc.payload_byte = read_u8(cur);
-    cart->rtc.payload_bit = read_u8(cur);
+    /* payload_byte indexes payload[8] while < payload_len; payload_bit is a shift. */
+    uint8_t payload_len = read_u8(cur);
+    uint8_t payload_byte = read_u8(cur);
+    uint8_t payload_bit = read_u8(cur);
+    if (rtc_phase > RTC_PHASE_STALL || cmd_bits > 8 ||
+        (size_t)payload_len > sizeof(cart->rtc.payload) || payload_byte > payload_len ||
+        payload_bit > 7) {
+        return false;
+    }
+    cart->rtc.phase = (RTCPhase)rtc_phase;
+    cart->rtc.cmd_bits = cmd_bits;
+    cart->rtc.payload_len = payload_len;
+    cart->rtc.payload_byte = payload_byte;
+    cart->rtc.payload_bit = payload_bit;
     cart->rtc.status_reg = read_u8(cur);
     cart->rtc.offset_secs = (int64_t)read_u64(cur);
 
@@ -710,14 +796,24 @@ static void load_cart_chunk(const uint8_t** cur, Cartridge* cart) {
 
     /* EEPROM data + protocol state. */
     read_bytes(cur, cart->eeprom.data, EEPROM_MAX_SIZE);
-    cart->eeprom.addr_bits = read_u8(cur);
-    cart->eeprom.state = (EEPROMState)read_u8(cur);
+    uint8_t addr_bits = read_u8(cur);
+    uint8_t eeprom_state = read_u8(cur);
+    if ((addr_bits != 0 && addr_bits != 6 && addr_bits != 14) || eeprom_state > EEPROM_READY) {
+        return false;
+    }
+    cart->eeprom.addr_bits = addr_bits;
+    cart->eeprom.state = (EEPROMState)eeprom_state;
     cart->eeprom.addr = read_u16(cur);
     cart->eeprom.rx_count = read_u16(cur);
     cart->eeprom.expected_dma = read_u16(cur);
     cart->eeprom.shift = read_u64(cur);
-    cart->eeprom.tx_count = read_u16(cur);
+    /* eeprom_read_bit shifts by 63 - (tx_count - 4) while in TX_DATA,
+     * which leaves that state once tx_count reaches 68. */
+    uint16_t tx_count = read_u16(cur);
+    if (tx_count > 68 || (eeprom_state == EEPROM_TX_DATA && tx_count == 68)) return false;
+    cart->eeprom.tx_count = tx_count;
     cart->eeprom.dirty = read_u8(cur) != 0;
+    return true;
 }
 
 static void load_inpt_chunk(const uint8_t** cur, InputState* input) {
@@ -725,7 +821,7 @@ static void load_inpt_chunk(const uint8_t** cur, InputState* input) {
     input->keycnt = read_u16(cur);
 }
 
-static void load_sio_chunk(const uint8_t** cur, SIO* sio) {
+static bool load_sio_chunk(const uint8_t** cur, SIO* sio) {
     /* Pointer fields (interrupts, peer) are NOT in the byte stream — they
      * are re-attached by the caller after this function returns. */
     for (int i = 0; i < 4; i++) sio->siomulti[i] = read_u16(cur);
@@ -733,10 +829,13 @@ static void load_sio_chunk(const uint8_t** cur, SIO* sio) {
     sio->siomlt_send = read_u16(cur);
     sio->rcnt = read_u16(cur);
     sio->siodata32 = read_u32(cur);
-    sio->mode = (SioMode)read_u8(cur);
+    uint8_t mode = read_u8(cur);
+    if (mode > SIO_MODE_UART) return false;
+    sio->mode = (SioMode)mode;
     sio->serial_mode_enabled = read_u8(cur) != 0;
     sio->transfer_active = read_u8(cur) != 0;
     sio->transfer_cycles_remaining = (int32_t)read_u32(cur);
+    return true;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1049,7 +1148,7 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
     const uint8_t* cur = buf + header_size;
     const uint8_t* end = buf + size;
 
-    while (cur + 8 <= end) {
+    while (end - cur >= 8) {
         uint32_t chunk_id = (uint32_t)cur[0]
                           | ((uint32_t)cur[1] << 8)
                           | ((uint32_t)cur[2] << 16)
@@ -1060,7 +1159,7 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
                             | ((uint32_t)cur[7] << 24);
         cur += 8;
 
-        if (cur + chunk_size > end) {
+        if (chunk_size > (size_t)(end - cur)) {
             LOG_ERROR("Save state: chunk 0x%08X truncated (need %u, have %td)",
                       chunk_id, chunk_size, end - cur);
             return SS_ERR_TRUNCATED;
@@ -1077,23 +1176,29 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
         }
 
         const uint8_t* chunk_data = cur;
+        bool valid = true;
 
         switch (chunk_id) {
-        case CHUNK_GBA:  load_gba_chunk(&chunk_data, gba);              break;
-        case CHUNK_CPU:  load_cpu_chunk(&chunk_data, &gba->cpu);        break;
-        case CHUNK_BRAM: load_bram_chunk(&chunk_data, &gba->bus);       break;
-        case CHUNK_DMA:  load_dma_chunk(&chunk_data, &gba->dma);        break;
-        case CHUNK_PPU:  load_ppu_chunk(&chunk_data, &gba->ppu);        break;
-        case CHUNK_APU:  load_apu_chunk(&chunk_data, &gba->apu);        break;
-        case CHUNK_TMR:  load_tmr_chunk(&chunk_data, gba->timers);      break;
-        case CHUNK_IRQ:  load_irq_chunk(&chunk_data, &gba->interrupts); break;
-        case CHUNK_CART: load_cart_chunk(&chunk_data, &gba->cart);       break;
-        case CHUNK_INPT: load_inpt_chunk(&chunk_data, &gba->input);     break;
-        case CHUNK_SIO:  load_sio_chunk(&chunk_data, &gba->sio);        break;
+        case CHUNK_GBA:  load_gba_chunk(&chunk_data, gba);                      break;
+        case CHUNK_CPU:  valid = load_cpu_chunk(&chunk_data, &gba->cpu);        break;
+        case CHUNK_BRAM: load_bram_chunk(&chunk_data, &gba->bus);               break;
+        case CHUNK_DMA:  valid = load_dma_chunk(&chunk_data, &gba->dma);        break;
+        case CHUNK_PPU:  valid = load_ppu_chunk(&chunk_data, &gba->ppu);        break;
+        case CHUNK_APU:  valid = load_apu_chunk(&chunk_data, &gba->apu);        break;
+        case CHUNK_TMR:  valid = load_tmr_chunk(&chunk_data, gba->timers);      break;
+        case CHUNK_IRQ:  load_irq_chunk(&chunk_data, &gba->interrupts);         break;
+        case CHUNK_CART: valid = load_cart_chunk(&chunk_data, &gba->cart);      break;
+        case CHUNK_INPT: load_inpt_chunk(&chunk_data, &gba->input);             break;
+        case CHUNK_SIO:  valid = load_sio_chunk(&chunk_data, &gba->sio);        break;
         default:
             LOG_WARN("Save state: skipping unknown chunk 0x%08X (%u bytes)",
                      chunk_id, chunk_size);
             break;
+        }
+
+        if (!valid) {
+            LOG_ERROR("Save state: chunk 0x%08X has an out-of-range field", chunk_id);
+            return SS_ERR_CORRUPT;
         }
 
         /* A known chunk's loader must consume exactly the declared size —

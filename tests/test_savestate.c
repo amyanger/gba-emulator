@@ -349,6 +349,213 @@ TEST(savestate_load_rejects_lying_chunk_size) {
     gba_destroy(&gba);
 }
 
+/* --- Hostile field values ---------------------------------------------------
+ * The body CRC is no defense against a crafted file (an attacker recomputes
+ * it), so every restored index/shift/enum field must be range-checked. Each
+ * case below patches payload bytes of a valid state, re-seals the CRC, and
+ * expects the load to be rejected. */
+
+typedef struct {
+    uint32_t chunk;
+    size_t   off;   /* offset within the chunk payload */
+    uint8_t  val;
+} SsPatch;
+
+/* Cart chunk payload offsets (see save_cart_chunk). */
+#define CART_OFF_FLASH_STATE  (1 + 0x20000)
+#define CART_OFF_FLASH_BANK   (CART_OFF_FLASH_STATE + 1)
+#define CART_OFF_RTC          (CART_OFF_FLASH_BANK + 3 + 0x8000 + 6)
+#define CART_OFF_EEPROM_META  (CART_OFF_RTC + 23 + EEPROM_MAX_SIZE)
+/* APU chunk payload offsets (see save_apu_chunk). */
+#define APU_OFF_CH2           SQUARE_CH_SIZE
+#define APU_OFF_WAVE          (2 * SQUARE_CH_SIZE)
+#define APU_OFF_NOISE         (APU_OFF_WAVE + WAVE_CH_SIZE)
+#define APU_OFF_FIFO_A        (APU_OFF_NOISE + NOISE_CH_SIZE)
+#define APU_OFF_FIFO_B        (APU_OFF_FIFO_A + FIFO_CH_SIZE)
+#define APU_OFF_TAIL          (APU_OFF_FIFO_B + FIFO_CH_SIZE)
+
+static GBA ss_patch_target;
+
+/* Copy 'src', apply the patches, re-seal the body CRC, and load the result
+ * into ss_patch_target, which is left initialized for the caller to inspect
+ * and gba_destroy(). */
+static SaveStateResult load_patched(const uint8_t* src, size_t size,
+                                    const SsPatch* patches, size_t count) {
+    uint8_t* buf = (uint8_t*)malloc(size);
+    if (!buf) return SS_ERR_FILE_READ;
+    memcpy(buf, src, size);
+
+    for (size_t i = 0; i < count; i++) {
+        size_t pos = HEADER_SIZE;
+        while (pos + 8 <= size) {
+            uint32_t cid = (uint32_t)buf[pos] | ((uint32_t)buf[pos + 1] << 8)
+                         | ((uint32_t)buf[pos + 2] << 16) | ((uint32_t)buf[pos + 3] << 24);
+            uint32_t csz = (uint32_t)buf[pos + 4] | ((uint32_t)buf[pos + 5] << 8)
+                         | ((uint32_t)buf[pos + 6] << 16) | ((uint32_t)buf[pos + 7] << 24);
+            if (cid == patches[i].chunk && patches[i].off < csz) {
+                buf[pos + 8 + patches[i].off] = patches[i].val;
+                break;
+            }
+            pos += 8 + csz;
+        }
+    }
+
+    uint32_t crc = crc32(buf + HEADER_SIZE, size - HEADER_SIZE);
+    buf[12] = (uint8_t)(crc);
+    buf[13] = (uint8_t)(crc >> 8);
+    buf[14] = (uint8_t)(crc >> 16);
+    buf[15] = (uint8_t)(crc >> 24);
+
+    gba_init(&ss_patch_target);
+    SaveStateResult r = savestate_load_from_buffer(&ss_patch_target, buf, size);
+    free(buf);
+    return r;
+}
+
+/* load_patched() plus teardown, for callers that only need the result. */
+static SaveStateResult load_patched_result(const uint8_t* src, size_t size,
+                                           const SsPatch* patches, size_t count) {
+    SaveStateResult r = load_patched(src, size, patches, count);
+    gba_destroy(&ss_patch_target);
+    return r;
+}
+
+typedef struct {
+    const char* name;
+    SsPatch     p[2];
+    size_t      n;
+} SsBadCase;
+
+static const SsBadCase ss_bad_cases[] = {
+    { "cpsr mode 0",            {{ CHUNK_CPU, 64, 0x00 }}, 1 },
+    { "cpsr mode 0x14",         {{ CHUNK_CPU, 64, 0x14 }}, 1 },
+    { "dma dest_adjust 4",      {{ CHUNK_DMA, 20, 4 }}, 1 },
+    { "dma src_adjust 4",       {{ CHUNK_DMA, 21, 4 }}, 1 },
+    { "dma timing 4",           {{ CHUNK_DMA, 24, 4 }}, 1 },
+    { "dma active_channel 4",   {{ CHUNK_DMA, 108, 4 }}, 1 },
+    { "ppu vcount 228",         {{ CHUNK_PPU, 4, 228 }}, 1 },
+    { "ch1 duty_cycle 4",       {{ CHUNK_APU, 10, 4 }}, 1 },
+    { "ch1 duty_cycle 250",     {{ CHUNK_APU, 10, 250 }}, 1 },
+    { "ch2 duty_pos 8",         {{ CHUNK_APU, APU_OFF_CH2 + 11, 8 }}, 1 },
+    { "ch1 sweep_shift 8",      {{ CHUNK_APU, 18, 8 }}, 1 },
+    { "wave wave_pos 32",       {{ CHUNK_APU, APU_OFF_WAVE + 26, 32 }}, 1 },
+    { "wave volume_code 4",     {{ CHUNK_APU, APU_OFF_WAVE + 27, 4 }}, 1 },
+    { "wave bank_select 2",     {{ CHUNK_APU, APU_OFF_WAVE + 29, 2 }}, 1 },
+    { "noise shift 16",         {{ CHUNK_APU, APU_OFF_NOISE + 12, 16 }}, 1 },
+    { "fifo_a read_idx 32",     {{ CHUNK_APU, APU_OFF_FIFO_A + 32, 32 }}, 1 },
+    { "fifo_a write_idx 250",   {{ CHUNK_APU, APU_OFF_FIFO_A + 33, 250 }}, 1 },
+    { "fifo_a count 33",        {{ CHUNK_APU, APU_OFF_FIFO_A + 34, 33 }}, 1 },
+    { "fifo_b timer_id 2",      {{ CHUNK_APU, APU_OFF_FIFO_B + 35, 2 }}, 1 },
+    { "fifo_b write_idx 32",    {{ CHUNK_APU, APU_OFF_FIFO_B + 33, 32 }}, 1 },
+    { "apu frame_seq_step 8",   {{ CHUNK_APU, APU_OFF_TAIL + 10, 8 }}, 1 },
+    { "apu sample_period 0",    {{ CHUNK_APU, APU_OFF_TAIL + 20, 0 }}, 1 },
+    { "timer0 prescaler 0",     {{ CHUNK_TMR, 6, 0 }}, 1 },
+    { "timer3 prescaler 3",     {{ CHUNK_TMR, 3 * 15 + 6, 3 }}, 1 },
+    { "save_type 5",            {{ CHUNK_CART, 0, 5 }}, 1 },
+    { "flash state 9",          {{ CHUNK_CART, CART_OFF_FLASH_STATE, 9 }}, 1 },
+    { "flash128 bank 0x40",     {{ CHUNK_CART, 0, SAVE_FLASH128 },
+                                 { CHUNK_CART, CART_OFF_FLASH_BANK, 0x40 }}, 2 },
+    { "flash64 bank 1",         {{ CHUNK_CART, 0, SAVE_FLASH64 },
+                                 { CHUNK_CART, CART_OFF_FLASH_BANK, 1 }}, 2 },
+    { "rtc phase 5",            {{ CHUNK_CART, CART_OFF_RTC + 0, 5 }}, 1 },
+    { "rtc cmd_bits 9",         {{ CHUNK_CART, CART_OFF_RTC + 2, 9 }}, 1 },
+    { "rtc payload_len 9",      {{ CHUNK_CART, CART_OFF_RTC + 11, 9 }}, 1 },
+    { "rtc payload_byte > len", {{ CHUNK_CART, CART_OFF_RTC + 11, 3 },
+                                 { CHUNK_CART, CART_OFF_RTC + 12, 4 }}, 2 },
+    { "rtc payload_bit 8",      {{ CHUNK_CART, CART_OFF_RTC + 13, 8 }}, 1 },
+    { "eeprom addr_bits 7",     {{ CHUNK_CART, CART_OFF_EEPROM_META + 0, 7 }}, 1 },
+    { "eeprom state 7",         {{ CHUNK_CART, CART_OFF_EEPROM_META + 1, 7 }}, 1 },
+    { "eeprom tx_count 69",     {{ CHUNK_CART, CART_OFF_EEPROM_META + 16, 69 }}, 1 },
+    { "eeprom tx 68 in TX",     {{ CHUNK_CART, CART_OFF_EEPROM_META + 1, EEPROM_TX_DATA },
+                                 { CHUNK_CART, CART_OFF_EEPROM_META + 16, 68 }}, 2 },
+    { "sio mode 4",             {{ CHUNK_SIO, 18, 4 }}, 1 },
+};
+
+TEST(savestate_load_rejects_out_of_range_fields) {
+    GBA gba;
+    gba_init(&gba);
+    uint8_t* buf = NULL;
+    size_t size = 0;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &buf, &size));
+
+    /* Sanity: the unpatched buffer loads. */
+    ASSERT_EQ(SS_OK, load_patched_result(buf, size, NULL, 0));
+
+    const char* first_bad = "";
+    for (size_t i = 0; i < sizeof(ss_bad_cases) / sizeof(ss_bad_cases[0]); i++) {
+        const SsBadCase* c = &ss_bad_cases[i];
+        if (load_patched_result(buf, size, c->p, c->n) != SS_ERR_CORRUPT) {
+            first_bad = c->name;
+            break;
+        }
+    }
+    free(buf);
+    gba_destroy(&gba);
+    ASSERT_STR_EQ(first_bad, "");
+}
+
+TEST(savestate_rejected_flash_bank_is_not_applied) {
+    /* The audit's OOB-write repro: bank 0x40 must never reach flash_write. */
+    GBA gba;
+    gba_init(&gba);
+    uint8_t* buf = NULL;
+    size_t size = 0;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &buf, &size));
+
+    SsPatch p[2] = {
+        { CHUNK_CART, 0, SAVE_FLASH128 },
+        { CHUNK_CART, CART_OFF_FLASH_BANK, 0x40 },
+    };
+    SaveStateResult r = load_patched(buf, size, p, 2);
+    uint8_t bank = ss_patch_target.cart.flash.bank;
+    gba_destroy(&ss_patch_target);
+    free(buf);
+    gba_destroy(&gba);
+    ASSERT_EQ(r, SS_ERR_CORRUPT);
+    ASSERT_TRUE(bank <= 1);
+}
+
+TEST(savestate_accepts_in_range_edge_values) {
+    /* Legitimate edge values must keep loading. */
+    GBA gba;
+    gba_init(&gba);
+    uint8_t* buf = NULL;
+    size_t size = 0;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &buf, &size));
+
+    SsPatch flash128_bank1[2] = {
+        { CHUNK_CART, 0, SAVE_FLASH128 },
+        { CHUNK_CART, CART_OFF_FLASH_BANK, 1 },
+    };
+    SsPatch fifo_full[3] = {
+        { CHUNK_APU, APU_OFF_FIFO_A + 32, 31 },
+        { CHUNK_APU, APU_OFF_FIFO_A + 33, 31 },
+        { CHUNK_APU, APU_OFF_FIFO_A + 34, 32 },
+    };
+    SsPatch rtc_tail[3] = {
+        { CHUNK_CART, CART_OFF_RTC + 11, 7 },
+        { CHUNK_CART, CART_OFF_RTC + 12, 7 },
+        { CHUNK_CART, CART_OFF_RTC + 2, 8 },
+    };
+    SsPatch eeprom_done[2] = {
+        { CHUNK_CART, CART_OFF_EEPROM_META + 1, EEPROM_IDLE },
+        { CHUNK_CART, CART_OFF_EEPROM_META + 16, 68 },
+    };
+    SsPatch dma_idle[1] = { { CHUNK_DMA, 108, 0xFF } }; /* active_channel -1 */
+    SaveStateResult r1 = load_patched_result(buf, size, flash128_bank1, 2);
+    SaveStateResult r2 = load_patched_result(buf, size, fifo_full, 3);
+    SaveStateResult r3 = load_patched_result(buf, size, rtc_tail, 3);
+    SaveStateResult r4 = load_patched_result(buf, size, eeprom_done, 2);
+    SaveStateResult r5 = load_patched_result(buf, size, dma_idle, 1);
+    free(buf);
+    gba_destroy(&gba);
+    ASSERT_EQ(r1, SS_OK);
+    ASSERT_EQ(r2, SS_OK);
+    ASSERT_EQ(r3, SS_OK);
+    ASSERT_EQ(r4, SS_OK);
+    ASSERT_EQ(r5, SS_OK);
+}
+
 #ifndef _WIN32 /* pins POSIX rename() semantics; mkstemp/chmod are unavailable on MSVC */
 TEST(savestate_save_is_atomic_replace) {
     /* savestate_save must write via a temp file + rename() so a torn
@@ -456,6 +663,9 @@ void run_savestate_tests(void) {
     RUN_TEST(savestate_label_filters_control_chars);
     RUN_TEST(savestate_peek_label_reads_without_full_load);
     RUN_TEST(savestate_load_rejects_lying_chunk_size);
+    RUN_TEST(savestate_load_rejects_out_of_range_fields);
+    RUN_TEST(savestate_rejected_flash_bank_is_not_applied);
+    RUN_TEST(savestate_accepts_in_range_edge_values);
 #ifndef _WIN32
     RUN_TEST(savestate_save_is_atomic_replace);
 #endif
