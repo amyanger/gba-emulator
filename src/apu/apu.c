@@ -159,9 +159,9 @@ static void apu_mix_sample(APU* apu) {
 
     /* FIFO volume: bit 2 = FIFO A (0=50%, 1=100%), bit 3 = FIFO B.
      * Scale int8 samples to signed 10-bit range to match PSG output:
-     * 100% = shift left 2, 50% = shift left 1. */
-    fifo_a <<= BIT(cnt_h, 2) ? 2 : 1;
-    fifo_b <<= BIT(cnt_h, 3) ? 2 : 1;
+     * 100% = x4, 50% = x2. */
+    fifo_a *= BIT(cnt_h, 2) ? 4 : 2;
+    fifo_b *= BIT(cnt_h, 3) ? 4 : 2;
 
     /* FIFO routing */
     if (BIT(cnt_h, 9))  left += fifo_a;   /* FIFO A to left */

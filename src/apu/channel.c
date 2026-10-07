@@ -173,10 +173,10 @@ void noise_channel_tick(NoiseChannel* ch, int cycles) {
 
     ch->freq_timer += (uint32_t)cycles;
 
-    /* Calculate period from divisor code and shift */
-    static const uint32_t divisors[8] = { 8, 16, 32, 48, 64, 80, 96, 112 };
+    /* Period in CPU cycles: 524288 Hz / r / 2^(s+1) with r=0 as 0.5,
+     * i.e. the GB divisors (8, 16, 32, ...) times 4. */
+    static const uint32_t divisors[8] = { 32, 64, 128, 192, 256, 320, 384, 448 };
     uint32_t period = divisors[ch->divisor_code & 7] << ch->shift;
-    if (period == 0) period = 8;
 
     while (ch->freq_timer >= period) {
         ch->freq_timer -= period;

@@ -86,9 +86,57 @@ TEST(square_retrigger_reloads_envelope_volume) {
     free(gba);
 }
 
+TEST(noise_period_uses_gba_cycles) {
+    /* GBATEK: noise freq = 524288 Hz / r / 2^(s+1), r=0 treated as 0.5.
+     * In 16.78 MHz CPU cycles that is a period of (64 * r) << s, or
+     * 32 << s for r=0. */
+    static const struct { uint8_t r, s; uint32_t period; } cases[] = {
+        { 1, 0, 64 }, { 0, 0, 32 }, { 3, 2, 768 }, { 7, 1, 896 },
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        NoiseChannel ch;
+        memset(&ch, 0, sizeof(ch));
+        ch.enabled = true;
+        ch.divisor_code = cases[i].r;
+        ch.shift = cases[i].s;
+        ch.lfsr = 0x7FFF;
+
+        noise_channel_tick(&ch, (int)cases[i].period - 1);
+        ASSERT_EQ(ch.lfsr, 0x7FFF);
+        noise_channel_tick(&ch, 1);
+        ASSERT_EQ(ch.lfsr, 0x3FFF); /* exactly one LFSR step */
+    }
+}
+
+TEST(fifo_negative_samples_mix_correctly) {
+    /* Negative int8 FIFO samples are scaled by 4 (100%) or 2 (50%). */
+    GBA* gba = make_gba();
+    APU* apu = &gba->apu;
+
+    apu->soundcnt_x = 0x80;
+    apu->soundcnt_l = 0;
+    /* FIFO A 100% to left, FIFO B 50% to right. */
+    apu->soundcnt_h = (uint16_t)((1u << 2) | (1u << 9) | (1u << 12));
+    apu->fifo_a_latch = -32;
+    apu->fifo_b_latch = -1;
+
+    uint32_t before = apu->write_pos;
+    apu_tick(apu, (int)apu->sample_period);
+    ASSERT_EQ(apu->write_pos, (before + 1) % SAMPLE_BUFFER_SIZE);
+
+    /* left: -32*4 = -128, *32 = -4096; right: -1*2 = -2, *32 = -64.
+     * The IIR filter starting from 0 then yields 3/4 of each. */
+    ASSERT_EQ(apu->sample_buffer[before * 2], -3072);
+    ASSERT_EQ(apu->sample_buffer[before * 2 + 1], -48);
+
+    free(gba);
+}
+
 void run_apu_tests(void) {
     TEST_SUITE("apu");
     RUN_TEST(fifo_full_write_drops_incoming_word);
     RUN_TEST(apu_master_disable_still_emits_silence);
     RUN_TEST(square_retrigger_reloads_envelope_volume);
+    RUN_TEST(noise_period_uses_gba_cycles);
+    RUN_TEST(fifo_negative_samples_mix_correctly);
 }
