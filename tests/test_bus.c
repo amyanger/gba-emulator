@@ -138,10 +138,15 @@ TEST(bus_dispatches_rcnt_writes_to_sio) {
 
 /* ---- WAITCNT-driven memory access timing ----
  *
- * The bus charges (table_value - 1) cycles into pending_cycles per access,
- * matching GBATEK's per-region timing on top of the implicit 1-cycle baseline
- * already counted by instruction handlers. These tests use a bare Bus to
- * isolate timing math from full-system wiring. */
+ * The bus charges (total - 1) cycles into pending_cycles per access, on top
+ * of the implicit 1-cycle baseline already counted by instruction handlers.
+ * These tests use a bare Bus to isolate timing math from full-system wiring.
+ *
+ * GBATEK "GBA System Control", WAITCNT: the 4,3,2,8 / 2,1 / 4,1 / 8,1 values
+ * are waitstates, and "the actual access time is 1 clock cycle PLUS the
+ * number of waitstates". GBATEK "GBA Memory Map" lists the default totals:
+ * GamePak ROM 5/5/8 cycles (8/16/32-bit), GamePak SRAM 5. A 32-bit ROM
+ * access is two 16-bit accesses, the second always sequential (N+S). */
 
 static void prime(Bus* bus) {
     /* A few accesses to known-quiet regions to set last_access_addr without
@@ -150,23 +155,34 @@ static void prime(Bus* bus) {
     (void)bus_drain_pending(bus);
 }
 
-TEST(waitcnt_default_rom_n_is_4) {
+TEST(waitcnt_default_rom_n_is_5) {
     Bus* bus = calloc(1, sizeof(Bus));
     bus_init(bus);
-    /* WAITCNT=0 → WS0 N=4 cycles. ROM region 0x08000000.
+    /* WAITCNT=0 -> WS0 N = 1 + 4 waits = 5 cycles. ROM region 0x08000000.
      * After init, last_access_addr=0 so this is non-sequential. */
     (void)bus_read16(bus, 0x08000000);
-    /* Charged extras = 4 - 1 = 3 */
-    ASSERT_EQ(bus_drain_pending(bus), 3);
+    /* Charged extras = 5 - 1 = 4 */
+    ASSERT_EQ(bus_drain_pending(bus), 4);
     free(bus);
 }
 
 TEST(waitcnt_default_rom_32bit_n_plus_s) {
     Bus* bus = calloc(1, sizeof(Bus));
     bus_init(bus);
-    /* WAITCNT=0 → WS0 N=4, S=2. 32-bit access non-seq = 4 + 2 = 6 cycles.
-     * Charged extras = 6 - 1 = 5 */
+    /* WAITCNT=0 -> WS0 N=5, S=3. 32-bit non-seq = 5 + 3 = 8 cycles, matching
+     * GBATEK's "GamePak ROM 5/5/8". Charged extras = 8 - 1 = 7 */
     (void)bus_read32(bus, 0x08000000);
+    ASSERT_EQ(bus_drain_pending(bus), 7);
+    free(bus);
+}
+
+TEST(waitcnt_default_rom_32bit_sequential_s_plus_s) {
+    Bus* bus = calloc(1, sizeof(Bus));
+    bus_init(bus);
+    (void)bus_read32(bus, 0x08000000);
+    (void)bus_drain_pending(bus);
+    /* Sequential 32-bit, prefetch off: S+S = 3 + 3 = 6, extras = 5 */
+    (void)bus_read32(bus, 0x08000004);
     ASSERT_EQ(bus_drain_pending(bus), 5);
     free(bus);
 }
@@ -178,33 +194,31 @@ TEST(waitcnt_sequential_rom_uses_s) {
     (void)bus_read16(bus, 0x08000000);
     (void)bus_drain_pending(bus);
     (void)bus_read16(bus, 0x08000002);
-    /* WS0 S=2, extras = 2 - 1 = 1 */
-    ASSERT_EQ(bus_drain_pending(bus), 1);
+    /* WS0 S = 1 + 2 waits = 3, extras = 3 - 1 = 2 */
+    ASSERT_EQ(bus_drain_pending(bus), 2);
     free(bus);
 }
 
 TEST(waitcnt_write_updates_parsed_state) {
     Bus* bus = calloc(1, sizeof(Bus));
     bus_init(bus);
-    /* WAITCNT=0x4014: WS0 N=2(0->4...wait let me work this out)
-     *   bits 0-1   SRAM N: 00 -> 4
-     *   bits 2-3   WS0 N : 01 -> 3
-     *   bit  4     WS0 S : 1  -> 1
-     *   bits 5-6   WS1 N : 00 -> 4
-     *   bit  7     WS1 S : 0  -> 4
-     *   bits 8-9   WS2 N : 00 -> 4
-     *   bit  10    WS2 S : 1  -> 1
-     *   bit  14    prefetch: 1
-     * Encoded: bit2-3=01 -> 0x04, bit4=1 -> 0x10, bit10=1 -> 0x400,
-     *          bit14=1 -> 0x4000 → 0x4414. */
+    /* WAITCNT=0x4414 (fields hold totals = 1 + waitstates):
+     *   bits 0-1   SRAM N: 00 -> 4 waits -> 5
+     *   bits 2-3   WS0 N : 01 -> 3 waits -> 4
+     *   bit  4     WS0 S : 1  -> 1 wait  -> 2
+     *   bits 5-6   WS1 N : 00 -> 4 waits -> 5
+     *   bit  7     WS1 S : 0  -> 4 waits -> 5
+     *   bits 8-9   WS2 N : 00 -> 4 waits -> 5
+     *   bit  10    WS2 S : 1  -> 1 wait  -> 2
+     *   bit  14    prefetch: 1 */
     bus_write16(bus, 0x04000204, 0x4414);
-    ASSERT_EQ(bus->wait_state.sram_n, 4);
-    ASSERT_EQ(bus->wait_state.ws0_n, 3);
-    ASSERT_EQ(bus->wait_state.ws0_s, 1);
-    ASSERT_EQ(bus->wait_state.ws1_n, 4);
-    ASSERT_EQ(bus->wait_state.ws1_s, 4);
-    ASSERT_EQ(bus->wait_state.ws2_n, 4);
-    ASSERT_EQ(bus->wait_state.ws2_s, 1);
+    ASSERT_EQ(bus->wait_state.sram_n, 5);
+    ASSERT_EQ(bus->wait_state.ws0_n, 4);
+    ASSERT_EQ(bus->wait_state.ws0_s, 2);
+    ASSERT_EQ(bus->wait_state.ws1_n, 5);
+    ASSERT_EQ(bus->wait_state.ws1_s, 5);
+    ASSERT_EQ(bus->wait_state.ws2_n, 5);
+    ASSERT_EQ(bus->wait_state.ws2_s, 2);
     ASSERT_EQ(bus->wait_state.prefetch_enabled, true);
     free(bus);
 }
@@ -212,12 +226,37 @@ TEST(waitcnt_write_updates_parsed_state) {
 TEST(waitcnt_fast_rom_after_reconfigure) {
     Bus* bus = calloc(1, sizeof(Bus));
     bus_init(bus);
-    /* Configure WS0 N=3 (bits 2-3=10), S=1 (bit 4=1). Encoded: 0x18. */
+    /* WS0 N=2 waits (bits 2-3=10), S=1 wait (bit 4=1). Encoded: 0x18. */
     bus_write16(bus, 0x04000204, 0x0018);
     bus_drain_pending(bus); /* drop the I/O write's own charge */
     (void)bus_read16(bus, 0x08000000);
-    /* N=2, extras = 2 - 1 = 1 */
+    /* N = 1 + 2 = 3, extras = 2 */
+    ASSERT_EQ(bus_drain_pending(bus), 2);
+    /* Sequential: S = 1 + 1 = 2, extras = 1 */
+    (void)bus_read16(bus, 0x08000002);
     ASSERT_EQ(bus_drain_pending(bus), 1);
+    free(bus);
+}
+
+TEST(waitcnt_cart_setting_4317) {
+    Bus* bus = calloc(1, sizeof(Bus));
+    bus_init(bus);
+    /* GBATEK: typical carts use WAITCNT=4317h: "WS0/ROM=3,1 clks; SRAM=8
+     * clks; WS2/EEPROM: 8,8 clks; prefetch enabled" (all waitstates).
+     * Write the low bits only (prefetch off) so S timing is visible. */
+    bus_write16(bus, 0x04000204, 0x0317);
+    bus_drain_pending(bus);
+    ASSERT_EQ(bus->wait_state.sram_n, 9);
+    ASSERT_EQ(bus->wait_state.ws0_n, 4);
+    ASSERT_EQ(bus->wait_state.ws0_s, 2);
+    ASSERT_EQ(bus->wait_state.ws2_n, 9);
+    ASSERT_EQ(bus->wait_state.ws2_s, 9);
+    /* WS0 32-bit non-seq: N+S = 4 + 2 = 6, extras = 5 */
+    (void)bus_read32(bus, 0x08000000);
+    ASSERT_EQ(bus_drain_pending(bus), 5);
+    /* SRAM: 1 + 8 waits = 9, extras = 8 */
+    (void)bus_read8(bus, 0x0E000000);
+    ASSERT_EQ(bus_drain_pending(bus), 8);
     free(bus);
 }
 
@@ -251,11 +290,12 @@ TEST(waitcnt_prefetch_makes_sequential_rom_one_cycle) {
     bus_write16(bus, 0x04000204, 0x4000);
     bus_drain_pending(bus); /* drop the I/O write's own charge */
 
-    /* First ROM access is non-sequential — pays full N=4. Extras=3. */
+    /* First ROM access is non-sequential, pays full N=5. Extras=4. */
     (void)bus_read16(bus, 0x08000000);
-    ASSERT_EQ(bus_drain_pending(bus), 3);
+    ASSERT_EQ(bus_drain_pending(bus), 4);
 
-    /* Sequential ROM access now hits the prefetch FIFO: 1 cycle, extras=0. */
+    /* Sequential ROM access hits the prefetch buffer: GBATEK says 0 waits,
+     * so 1 cycle total, extras=0. */
     (void)bus_read16(bus, 0x08000002);
     ASSERT_EQ(bus_drain_pending(bus), 0);
     (void)bus_read16(bus, 0x08000004);
@@ -269,13 +309,13 @@ TEST(waitcnt_prefetch_does_not_affect_non_sequential) {
     bus_write16(bus, 0x04000204, 0x4000); /* prefetch on, default N/S */
     bus_drain_pending(bus);
 
-    /* First non-seq access: full N=4, extras=3. */
+    /* First non-seq access: full N=5, extras=4. */
     (void)bus_read16(bus, 0x08000000);
-    ASSERT_EQ(bus_drain_pending(bus), 3);
+    ASSERT_EQ(bus_drain_pending(bus), 4);
 
-    /* Jump to a different ROM address — non-sequential, still full N. */
+    /* Jump to a different ROM address: non-sequential, still full N. */
     (void)bus_read16(bus, 0x08001000);
-    ASSERT_EQ(bus_drain_pending(bus), 3);
+    ASSERT_EQ(bus_drain_pending(bus), 4);
     free(bus);
 }
 
@@ -285,9 +325,9 @@ TEST(waitcnt_prefetch_32bit_sequential_uses_two_s) {
     bus_write16(bus, 0x04000204, 0x4000);
     bus_drain_pending(bus);
 
-    /* Prime with a non-seq access first so the next is sequential. */
+    /* Non-seq 32-bit with prefetch on: N+S = 5 + 3 = 8, extras=7. */
     (void)bus_read32(bus, 0x08000000);
-    bus_drain_pending(bus);
+    ASSERT_EQ(bus_drain_pending(bus), 7);
 
     /* 32-bit sequential ROM with prefetch: S+S = 1+1 = 2 cycles, extras=1. */
     (void)bus_read32(bus, 0x08000004);
@@ -298,14 +338,14 @@ TEST(waitcnt_prefetch_32bit_sequential_uses_two_s) {
 TEST(waitcnt_prefetch_off_keeps_s_timing) {
     Bus* bus = calloc(1, sizeof(Bus));
     bus_init(bus);
-    /* Default WAITCNT=0 has prefetch off, S=2 for WS0. */
+    /* Default WAITCNT=0 has prefetch off, S=3 for WS0. */
     ASSERT_EQ(bus->wait_state.prefetch_enabled, false);
 
     (void)bus_read16(bus, 0x08000000);
     bus_drain_pending(bus);
-    /* Sequential ROM still pays S=2, extras=1. */
+    /* Sequential ROM still pays S=3, extras=2. */
     (void)bus_read16(bus, 0x08000002);
-    ASSERT_EQ(bus_drain_pending(bus), 1);
+    ASSERT_EQ(bus_drain_pending(bus), 2);
     free(bus);
 }
 
@@ -329,12 +369,13 @@ TEST(waitcnt_sram_is_n_only) {
     Bus* bus = calloc(1, sizeof(Bus));
     bus_init(bus);
     prime(bus);
-    /* SRAM N=4 (default). 8-bit bus, no S timing. Extras = 3. */
+    /* SRAM default: 1 + 4 waits = 5 (GBATEK memory map "GamePak SRAM 5").
+     * 8-bit bus, no S timing. Extras = 4. */
     (void)bus_read8(bus, 0x0E000000);
-    ASSERT_EQ(bus_drain_pending(bus), 3);
+    ASSERT_EQ(bus_drain_pending(bus), 4);
     /* Sequential access still costs N (no S table for SRAM). */
     (void)bus_read8(bus, 0x0E000001);
-    ASSERT_EQ(bus_drain_pending(bus), 3);
+    ASSERT_EQ(bus_drain_pending(bus), 4);
     free(bus);
 }
 
@@ -416,11 +457,13 @@ void run_bus_tests(void) {
     RUN_TEST(vram_mirror);
     RUN_TEST(bus_dispatches_siocnt_writes_to_sio);
     RUN_TEST(bus_dispatches_rcnt_writes_to_sio);
-    RUN_TEST(waitcnt_default_rom_n_is_4);
+    RUN_TEST(waitcnt_default_rom_n_is_5);
     RUN_TEST(waitcnt_default_rom_32bit_n_plus_s);
+    RUN_TEST(waitcnt_default_rom_32bit_sequential_s_plus_s);
     RUN_TEST(waitcnt_sequential_rom_uses_s);
     RUN_TEST(waitcnt_write_updates_parsed_state);
     RUN_TEST(waitcnt_fast_rom_after_reconfigure);
+    RUN_TEST(waitcnt_cart_setting_4317);
     RUN_TEST(waitcnt_iwram_is_one_cycle);
     RUN_TEST(waitcnt_ewram_charges_extras);
     RUN_TEST(waitcnt_sram_is_n_only);

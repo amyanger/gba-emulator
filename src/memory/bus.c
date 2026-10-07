@@ -1164,10 +1164,14 @@ static uint32_t decode_region(uint32_t addr) {
  * 1-cycle baseline per access, so we accumulate (table_value - 1) into
  * bus->pending_cycles. The CPU and DMA drain that after each unit of work,
  * yielding totals that match the GBATEK cycle counts. */
-static const uint8_t WS_N_TABLE[4]  = {4, 3, 2, 8};
-static const uint8_t WS0_S_TABLE[2] = {2, 1};
-static const uint8_t WS1_S_TABLE[2] = {4, 1};
-static const uint8_t WS2_S_TABLE[2] = {8, 1};
+/* GBATEK WAITCNT lists wait states (N: 4,3,2,8; S: 2/1, 4/1, 8/1); the
+ * actual access time is 1 cycle plus that many waitstates. These tables hold
+ * the resulting totals, so default WAITCNT=0 gives ROM 5N/3S and SRAM 5,
+ * matching GBATEK's memory map (GamePak ROM 5/5/8, SRAM 5). */
+static const uint8_t WS_N_TABLE[4]  = {5, 4, 3, 9};
+static const uint8_t WS0_S_TABLE[2] = {3, 2};
+static const uint8_t WS1_S_TABLE[2] = {5, 2};
+static const uint8_t WS2_S_TABLE[2] = {9, 2};
 
 static void bus_update_waitcnt(Bus* bus, uint16_t val) {
     bus->wait_state.raw              = val;

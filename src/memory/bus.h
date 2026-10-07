@@ -23,7 +23,8 @@ typedef struct SIO SIO;
 #define VRAM_SIZE 0x18000   // 96KB
 #define OAM_SIZE 0x400      // 1KB
 
-/* WAITCNT-derived per-region cycle counts (in CPU clocks).
+/* WAITCNT-derived per-region total access cycles (1 + waitstates, in CPU
+ * clocks).
  * sram_n is the SRAM non-sequential count (SRAM has no S timing — it's an
  * 8-bit bus, every access is N).  ws*_n / ws*_s are the ROM wait-state pair
  * for each of the three Game Pak mirror regions (0x08-0x09, 0x0A-0x0B,
