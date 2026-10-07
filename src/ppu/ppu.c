@@ -6,6 +6,14 @@
 
 void ppu_init(PPU* ppu) {
     memset(ppu, 0, sizeof(PPU));
+    // BG2/BG3 affine matrices reset to identity (PA = PD = 0x100, 1.0 in
+    // 8.8 fixed point), as the BIOS leaves them and as mGBA's GBAIOInit
+    // does. All-zero values would make every affine/bitmap pixel sample
+    // texel (0,0).
+    ppu->bg_pa[0] = 0x100;
+    ppu->bg_pd[0] = 0x100;
+    ppu->bg_pa[1] = 0x100;
+    ppu->bg_pd[1] = 0x100;
     // Note: palette_ram/vram/oam pointers are zeroed here.
     // gba_init() must assign them AFTER calling ppu_init().
 }

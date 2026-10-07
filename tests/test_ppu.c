@@ -612,6 +612,150 @@ TEST(semi_transparent_sprite_forces_alpha_blend) {
     free(gba);
 }
 
+/* ---- Bitmap modes 3-5: BG2 affine sampling and transparency ------- */
+
+static void put16(uint8_t* mem, uint32_t addr, uint16_t v) {
+    mem[addr] = (uint8_t)(v & 0xFF);
+    mem[addr + 1] = (uint8_t)(v >> 8);
+}
+
+/* Mode 3 row 0 gets a per-column ramp so shifts are detectable. */
+static void fill_mode3_ramp(PPU* ppu) {
+    for (uint32_t y = 0; y < SCREEN_HEIGHT; y++) {
+        for (uint32_t x = 0; x < SCREEN_WIDTH; x++) {
+            put16(ppu->vram, (y * SCREEN_WIDTH + x) * 2u,
+                  (uint16_t)((x + y * 7u) & 0x7FFF));
+        }
+    }
+}
+
+TEST(bitmap_reset_matrix_is_identity) {
+    GBA* gba = make_gba();
+    ASSERT_EQ(gba->ppu.bg_pa[0], 0x100);
+    ASSERT_EQ(gba->ppu.bg_pd[0], 0x100);
+    ASSERT_EQ(gba->ppu.bg_pb[0], 0);
+    ASSERT_EQ(gba->ppu.bg_pc[0], 0);
+    free(gba);
+}
+
+TEST(mode3_identity_matches_direct_read) {
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+    ppu->dispcnt = 3 | (1u << 10);
+    fill_mode3_ramp(ppu);
+
+    /* Render lines 0..2 the way the frame loop does: ref += PB/PD. */
+    for (uint16_t line = 0; line < 3; line++) {
+        ppu->vcount = line;
+        ppu_render_scanline(ppu);
+    }
+    for (uint32_t y = 0; y < 3; y++) {
+        for (uint32_t x = 0; x < SCREEN_WIDTH; x += 37) {
+            ASSERT_EQ_HEX(ppu->framebuffer[y * SCREEN_WIDTH + x],
+                          (uint16_t)((x + y * 7u) & 0x7FFF));
+        }
+        ASSERT_EQ_HEX(ppu->framebuffer[y * SCREEN_WIDTH + 239],
+                      (uint16_t)((239u + y * 7u) & 0x7FFF));
+    }
+    free(gba);
+}
+
+TEST(mode3_ref_x_offset_shifts_image_and_clips) {
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+    ppu->dispcnt = 3 | (1u << 10);
+    ppu->palette_ram[0] = 0x00;  /* backdrop = 0x7C00 */
+    ppu->palette_ram[1] = 0x7C;
+    fill_mode3_ramp(ppu);
+    ppu->vcount = 0;
+    ppu->bg_ref_x[0] = 10 << 8;
+
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[0], 10);
+    ASSERT_EQ_HEX(ppu->framebuffer[100], 110);
+    ASSERT_EQ_HEX(ppu->framebuffer[229], 239);
+    /* Texture x 240+ is outside the bitmap: transparent, backdrop shows. */
+    ASSERT_EQ_HEX(ppu->framebuffer[230], 0x7C00);
+    ASSERT_EQ_HEX(ppu->framebuffer[239], 0x7C00);
+    free(gba);
+}
+
+TEST(mode3_out_of_bounds_texture_is_transparent) {
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+    ppu->dispcnt = 3 | (1u << 10);
+    ppu->palette_ram[0] = 0x00;
+    ppu->palette_ram[1] = 0x7C;
+    fill_mode3_ramp(ppu);
+    ppu->vcount = 0;
+
+    /* Negative x: first 5 pixels are left of the bitmap. */
+    ppu->bg_ref_x[0] = -(5 << 8);
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[0], 0x7C00);
+    ASSERT_EQ_HEX(ppu->framebuffer[4], 0x7C00);
+    ASSERT_EQ_HEX(ppu->framebuffer[5], 0);
+    ASSERT_EQ_HEX(ppu->framebuffer[6], 1);
+
+    /* Texture y past the bottom: whole line transparent, no wraparound
+     * even with the BGCNT overflow bit set. */
+    ppu->bg_cnt[2] = 1u << 13;
+    ppu->bg_ref_x[0] = 0;
+    ppu->bg_ref_y[0] = 160 << 8;
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[0], 0x7C00);
+    ASSERT_EQ_HEX(ppu->framebuffer[120], 0x7C00);
+    free(gba);
+}
+
+TEST(mode4_index0_is_transparent) {
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+    ppu->dispcnt = 4 | (1u << 10);
+    ppu->vcount = 0;
+    put16(ppu->palette_ram, 0, 0x7C00);   /* backdrop: blue */
+    put16(ppu->palette_ram, 2, 0x001F);   /* index 1: red */
+    ppu->vram[0] = 0;
+    ppu->vram[1] = 1;
+
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[0], 0x7C00);
+    ASSERT_EQ(ppu->top_layer[0], 5);      /* backdrop, not BG2 */
+    ASSERT_EQ_HEX(ppu->framebuffer[1], 0x001F);
+    ASSERT_EQ(ppu->top_layer[1], 2);
+    free(gba);
+}
+
+TEST(mode5_scaled_samples_and_draws_past_x160) {
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+    ppu->dispcnt = 5 | (1u << 10);
+    ppu->vcount = 0;
+    put16(ppu->palette_ram, 0, 0x7C00);
+    for (uint32_t x = 0; x < 160; x++) {
+        put16(ppu->vram, x * 2u, (uint16_t)(x + 1u));
+    }
+    /* PA = 0.5: each texel covers two screen pixels, so all 240 screen
+     * pixels map to texture x 0..119 and stay in bounds. */
+    ppu->bg_pa[0] = 0x80;
+
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[0], 1);
+    ASSERT_EQ_HEX(ppu->framebuffer[1], 1);
+    ASSERT_EQ_HEX(ppu->framebuffer[2], 2);
+    ASSERT_EQ_HEX(ppu->framebuffer[200], 101);
+    ASSERT_EQ_HEX(ppu->framebuffer[239], 120);
+    ASSERT_EQ(ppu->top_layer[239], 2);
+
+    /* Identity: texture x >= 160 is outside the mode 5 bitmap. */
+    ppu->bg_pa[0] = 0x100;
+    ppu->bg_ref_y[0] = 0;  /* undo the per-line PD step from the last render */
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[159], 160);
+    ASSERT_EQ_HEX(ppu->framebuffer[160], 0x7C00);
+    free(gba);
+}
+
 /* Bitmap-mode layer priority.  BG2 keeps its BG2CNT priority in modes 3-5
  * and sprites interleave with it (GBATEK "LCD I/O BG Control", "LCD OBJ -
  * OAM Attributes": an OBJ wins ties with a BG of equal priority).
@@ -723,6 +867,12 @@ void run_ppu_tests(void) {
     RUN_TEST(affine_sprite_identity_renders);
     RUN_TEST(affine_sprite_double_size_centers_texture);
     RUN_TEST(semi_transparent_sprite_forces_alpha_blend);
+    RUN_TEST(bitmap_reset_matrix_is_identity);
+    RUN_TEST(mode3_identity_matches_direct_read);
+    RUN_TEST(mode3_ref_x_offset_shifts_image_and_clips);
+    RUN_TEST(mode3_out_of_bounds_texture_is_transparent);
+    RUN_TEST(mode4_index0_is_transparent);
+    RUN_TEST(mode5_scaled_samples_and_draws_past_x160);
     RUN_TEST(mode3_sprite_behind_higher_priority_bg2);
     RUN_TEST(mode3_sprite_over_equal_or_lower_priority_bg2);
     RUN_TEST(mode4_sprite_behind_higher_priority_bg2);
