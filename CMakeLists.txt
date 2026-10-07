@@ -102,6 +102,7 @@ set(SOURCES
     src/frontend/overlay_draw.c
     src/headless/fb_hash.c
     src/headless/headless.c
+    src/headless/input_script.c
 )
 
 # X-Ray source files (only compiled when ENABLE_XRAY is ON)
@@ -181,6 +182,7 @@ set(LIB_SOURCES
     src/trace/trace.c
     src/headless/fb_hash.c
     src/headless/headless.c
+    src/headless/input_script.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
     src/frontend/slot_picker.c
@@ -214,6 +216,7 @@ set(TEST_SOURCES
     tests/test_eeprom.c
     tests/test_practice.c
     tests/test_fb_hash.c
+    tests/test_input_script.c
 )
 
 # Several tests rely on POSIX-only APIs (unistd.h, pthreads, AF_UNIX

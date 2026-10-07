@@ -216,6 +216,22 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--frames <n>` | Run exactly `n` frames then exit. Required with `--headless`. |
 | `--hash-out <file>` | Write per-frame `<N> <FNV1a-hex>` lines. Defaults to stdout. |
 | `--screenshot-out <file>` | After the run, save the final framebuffer as PNG. |
+| `--input-script <file>` | Replay scripted keypad input. Headless only. Format below. |
+
+An input script has one event per line, `<frame> <press|release> <KEY>`,
+where `<frame>` is the 0-based frame index (same as in `--hash-out`) and
+`KEY` is one of `A B SELECT START RIGHT LEFT UP DOWN R L`. An event
+applies before its frame runs. Frames must not decrease from one line to
+the next. `#` starts a comment and blank lines are ignored. A malformed
+line aborts the run with an error. Example:
+
+```
+# open the second menu entry
+30 press DOWN
+32 release DOWN
+36 press A
+38 release A
+```
 
 Headless mode is incompatible with `--link-master` / `--link-client`
 (they would block the dispatch waiting for a peer).

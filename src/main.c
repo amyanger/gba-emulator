@@ -43,6 +43,7 @@ static void print_usage(const char* prog) {
     printf("  --frames <n>           Headless: number of frames to run\n");
     printf("  --hash-out <file>      Headless: write per-frame framebuffer hashes\n");
     printf("  --screenshot-out <f>   Headless: write final-frame screenshot to file\n");
+    printf("  --input-script <file>  Headless: scripted keypad input (see README)\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
@@ -73,6 +74,7 @@ int main(int argc, char* argv[]) {
     int headless_frames = 0;
     const char* hash_out_path = NULL;
     const char* screenshot_out_path = NULL;
+    const char* input_script_path = NULL;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -106,6 +108,8 @@ int main(int argc, char* argv[]) {
             hash_out_path = argv[++i];
         } else if (strcmp(argv[i], "--screenshot-out") == 0 && i + 1 < argc) {
             screenshot_out_path = argv[++i];
+        } else if (strcmp(argv[i], "--input-script") == 0 && i + 1 < argc) {
+            input_script_path = argv[++i];
         } else {
             /* Also catches value-taking options with the value missing:
              * they fail the i + 1 < argc guard and fall through here. */
@@ -117,6 +121,11 @@ int main(int argc, char* argv[]) {
 
     if (scale < 1 || scale > 10) {
         LOG_ERROR("--scale must be between 1 and 10 (got %d)", scale);
+        return 1;
+    }
+
+    if (input_script_path && !headless) {
+        LOG_ERROR("--input-script requires --headless");
         return 1;
     }
 
@@ -195,6 +204,12 @@ int main(int argc, char* argv[]) {
             gba_destroy(&gba);
             return 1;
         }
+        // Fixed-size event table (~8 KB); static keeps it off the stack.
+        static InputScript input_script;
+        if (input_script_path && !input_script_load(&input_script, input_script_path)) {
+            gba_destroy(&gba);
+            return 1;
+        }
         FILE* hash_out = stdout;
         if (hash_out_path) {
             hash_out = fopen(hash_out_path, "w");
@@ -204,7 +219,8 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
-        int rc = headless_run(&gba, headless_frames, hash_out);
+        int rc = headless_run(&gba, headless_frames, hash_out,
+                              input_script_path ? &input_script : NULL);
         if (hash_out != stdout) fclose(hash_out);
         if (rc == 0 && screenshot_out_path) {
             if (!screenshot_save(gba.ppu.framebuffer, screenshot_out_path)) {
