@@ -19,6 +19,27 @@ curl -fsSL "${BASE}/arm/arm.gba"       -o "${DEST}/jsmolka_arm.gba"
 curl -fsSL "${BASE}/thumb/thumb.gba"   -o "${DEST}/jsmolka_thumb.gba"
 curl -fsSL "${BASE}/memory/memory.gba" -o "${DEST}/jsmolka_memory.gba"
 
+# --- mGBA test suite -------------------------------------------------------
+# mgba-emu/suite publishes no releases; its only prebuilt binary is the
+# moving https://s3.amazonaws.com/mgba/suite-latest.zip. This commit-pinned
+# copy is byte-identical to that build (upstream suite commit e6942030,
+# zip dated 2026-07-09). The sha256 check fails the script on any drift.
+MGBA_SUITE_URL="https://raw.githubusercontent.com/chalharu/nerust/fde681b1687d6a3c91fda7eda8f3e8c91ef46b46/roms/gba/mgba-suite/suite.gba"
+MGBA_SUITE_SHA256="8cf68cd31c5468a70aca8a1c5b63dc372fe755c40b446cf6aa6d0fc6e3a1f035"
+
+curl -fsSL "${MGBA_SUITE_URL}" -o "${DEST}/mgba_suite.gba"
+if command -v sha256sum >/dev/null 2>&1; then
+    MGBA_SUITE_ACTUAL="$(sha256sum "${DEST}/mgba_suite.gba" | cut -d' ' -f1)"
+else
+    MGBA_SUITE_ACTUAL="$(shasum -a 256 "${DEST}/mgba_suite.gba" | cut -d' ' -f1)"
+fi
+if [[ "${MGBA_SUITE_ACTUAL}" != "${MGBA_SUITE_SHA256}" ]]; then
+    echo "mgba_suite.gba sha256 mismatch: got ${MGBA_SUITE_ACTUAL}, want ${MGBA_SUITE_SHA256}" >&2
+    rm -f "${DEST}/mgba_suite.gba"
+    exit 1
+fi
+# --- end mGBA test suite ---------------------------------------------------
+
 # tonc demos
 # Prebuilt tonc v1.4.2 binaries (J. Vijn, 2013-03-24). The zip has not
 # changed since 2013, so the sha256 pins it; a mismatch aborts the fetch.

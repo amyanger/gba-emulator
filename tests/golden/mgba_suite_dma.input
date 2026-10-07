@@ -1,0 +1,16 @@
+# mGBA suite: select "DMA tests" (menu entry 9) and run it.
+# Menu wraps, so 5 UP presses from entry 0 land on entry 9.
+# The menu polls keys once per VBlank, so each key is held 2 frames
+# and presses are spaced 6 frames apart.
+30 press UP
+32 release UP
+36 press UP
+38 release UP
+42 press UP
+44 release UP
+48 press UP
+50 release UP
+54 press UP
+56 release UP
+60 press A
+62 release A

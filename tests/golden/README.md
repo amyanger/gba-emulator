@@ -1,10 +1,40 @@
-# Golden frames
+# Golden frame hashes
 
-Each `.hash` file holds one FNV1a framebuffer hash per frame from a headless
-run (`--headless --frames N --hash-out FILE`). `tools/check_golden.sh` diffs a
-fresh run against it. Every golden pins a screen that was checked by eye
-against a reference before it was committed. Do not regenerate one to make a
-failing check pass.
+Each `<name>.hash` holds one `<frame> <FNV1a>` line per frame from a
+headless run, checked by `tools/check_golden.sh`. Do not regenerate a
+golden to make a failing check pass; a mismatch means rendered output
+changed and needs a look first.
+
+The jsmolka, Emerald and tonc goldens pin screens that were checked by eye
+against a reference. The mGBA suite goldens are the exception: they are
+regression ratchets that pin current, partial pass counts (see below).
+
+## mGBA test suite
+
+`mgba_suite.gba` (fetched by `tools/fetch_test_roms.sh`) is menu driven,
+so each golden comes with an input script (`mgba_suite_<name>.input`)
+that selects one test group and runs it. The hash covers the run up to a
+static results screen.
+
+These goldens are regression ratchets. They pin the emulator's current
+results, which are partial, not verified-correct screens. When a fix
+raises a pass count, the golden will fail. Confirm the new count from a
+`--screenshot-out` capture, then re-bake the golden and update the
+table below in the same change.
+
+| Golden | Group | Frames | Passed |
+|--------|-------|--------|--------|
+| `mgba_suite_timing` | Timing tests | 420 | 4/2020 |
+| `mgba_suite_timers` | Timer count-up tests | 240 | 142/936 |
+| `mgba_suite_timer_irq` | Timer IRQ tests | 120 | 0/90 |
+| `mgba_suite_dma` | DMA tests | 240 | 984/1244 |
+
+Re-check one locally:
+
+```bash
+tools/check_golden.sh build/gba_emulator roms/mgba_suite.gba \
+    tests/golden/mgba_suite_dma.hash "" tests/golden/mgba_suite_dma.input
+```
 
 ## tonc demos
 

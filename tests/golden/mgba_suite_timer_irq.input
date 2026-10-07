@@ -1,0 +1,13 @@
+# mGBA suite: select "Timer IRQ tests" (menu entry 4) and run it.
+# The menu polls keys once per VBlank, so each key is held 2 frames
+# and presses are spaced 6 frames apart.
+30 press DOWN
+32 release DOWN
+36 press DOWN
+38 release DOWN
+42 press DOWN
+44 release DOWN
+48 press DOWN
+50 release DOWN
+54 press A
+56 release A

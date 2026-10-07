@@ -96,6 +96,20 @@ jobs:
       - name: Check golden frames (jsmolka memory)
         run: tools/check_golden.sh build/gba_emulator /tmp/gba-test-roms/jsmolka_memory.gba tests/golden/jsmolka_memory.hash
 
+      # mGBA test suite: menu-driven, so each golden replays an input script.
+      # These pin current (partial) pass counts; see tests/golden/README.md.
+      - name: Check golden frames (mGBA suite timing)
+        run: tools/check_golden.sh build/gba_emulator /tmp/gba-test-roms/mgba_suite.gba tests/golden/mgba_suite_timing.hash "" tests/golden/mgba_suite_timing.input
+
+      - name: Check golden frames (mGBA suite timers)
+        run: tools/check_golden.sh build/gba_emulator /tmp/gba-test-roms/mgba_suite.gba tests/golden/mgba_suite_timers.hash "" tests/golden/mgba_suite_timers.input
+
+      - name: Check golden frames (mGBA suite timer IRQ)
+        run: tools/check_golden.sh build/gba_emulator /tmp/gba-test-roms/mgba_suite.gba tests/golden/mgba_suite_timer_irq.hash "" tests/golden/mgba_suite_timer_irq.input
+
+      - name: Check golden frames (mGBA suite DMA)
+        run: tools/check_golden.sh build/gba_emulator /tmp/gba-test-roms/mgba_suite.gba tests/golden/mgba_suite_dma.hash "" tests/golden/mgba_suite_dma.input
+
       # tonc demos
       - name: Check golden frames (tonc demos)
         run: |
