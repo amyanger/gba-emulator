@@ -338,6 +338,21 @@ TEST(waitcnt_sram_is_n_only) {
     free(bus);
 }
 
+TEST(sound_master_off_preserves_wave_ram) {
+    /* GBATEK: master disable resets 4000060h..4000081h only; wave RAM at
+     * 4000090h..400009Fh must survive an off/on cycle. */
+    GBA* gba = make_gba();
+    bus_write16(&gba->bus, 0x04000084, 0x0080);
+    for (uint32_t i = 0; i < 16; i++) {
+        bus_write8(&gba->bus, 0x04000090 + i, (uint8_t)(0xA0 + i));
+    }
+    bus_write16(&gba->bus, 0x04000084, 0x0000);
+    bus_write16(&gba->bus, 0x04000084, 0x0080);
+    for (uint32_t i = 0; i < 16; i++) {
+        ASSERT_EQ_HEX(bus_read8(&gba->bus, 0x04000090 + i), 0xA0 + i);
+    }
+}
+
 void run_bus_tests(void) {
     TEST_SUITE("bus");
     RUN_TEST(ewram_write_read);
@@ -364,4 +379,5 @@ void run_bus_tests(void) {
     RUN_TEST(waitcnt_prefetch_32bit_sequential_uses_two_s);
     RUN_TEST(waitcnt_prefetch_off_keeps_s_timing);
     RUN_TEST(open_bus_returns_latched_word_byte_at_offset);
+    RUN_TEST(sound_master_off_preserves_wave_ram);
 }

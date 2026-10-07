@@ -809,11 +809,15 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
                               | (now_enabled ? 0x80 : 0x00);
         bus->io_regs[offset] = (uint8_t)(bus->apu->soundcnt_x);
 
-        /* Turning master off resets all channel state per GBATEK */
+        /* Turning master off resets 0x60-0x81 per GBATEK. Wave RAM (0x90-0x9F)
+         * is outside that range and survives. */
         if (was_enabled && !now_enabled) {
+            uint8_t wave_ram[sizeof(bus->apu->ch3.wave_ram)];
+            memcpy(wave_ram, bus->apu->ch3.wave_ram, sizeof(wave_ram));
             memset(&bus->apu->ch1, 0, sizeof(SquareChannel));
             memset(&bus->apu->ch2, 0, sizeof(SquareChannel));
             memset(&bus->apu->ch3, 0, sizeof(WaveChannel));
+            memcpy(bus->apu->ch3.wave_ram, wave_ram, sizeof(wave_ram));
             memset(&bus->apu->ch4, 0, sizeof(NoiseChannel));
             bus->apu->soundcnt_l = 0;
             /* Clear legacy register io_regs (0x60-0x81) */
