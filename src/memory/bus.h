@@ -72,6 +72,11 @@ struct Bus {
     uint32_t last_access_addr;
     uint8_t last_access_size;
 
+    // Cycles of the current CPU chunk already applied to the timers by a
+    // mid-chunk register write. gba_run_cycles ticks the rest and resets it,
+    // so it is always 0 between chunks (and never needs saving).
+    int timer_synced_cycles;
+
     // Subsystem pointers (wired during gba_init)
     ARM7TDMI* cpu;
     PPU* ppu;

@@ -2,6 +2,7 @@
 #include "gba.h"
 #include "sio/sio.h"
 #include "interrupt/interrupt.h"
+#include "memory/io_regs.h"
 
 /* Helper: create a fully wired GBA on the heap and return it.
  * The caller owns the pointer (but these are short-lived tests,
@@ -444,6 +445,36 @@ TEST(keypad_irq_sampled_each_frame) {
     ASSERT_EQ(gba->interrupts.irf & IRQ_KEYPAD, 0);
 }
 
+/* ---- Timer sync ----------------------------------------------------- */
+
+TEST(timer_enabled_mid_chunk_counts_only_cycles_after_the_write) {
+    /* A timer switched on 500 cycles into a chunk must not be credited
+     * with those 500 cycles when the chunk is ticked. */
+    GBA* gba = make_gba();
+    Bus* bus = &gba->bus;
+    gba->cpu.cycles_executed = 500;
+    bus_write16(bus, REG_TM0CNT_L, 0);
+    bus->pending_cycles = 0;
+    bus_write16(bus, REG_TM0CNT_H, 0x80); /* enable, prescaler 1 */
+
+    gba->cpu.halted = true; /* burn the chunk without running code */
+    gba_run_cycles(gba, 1006);
+    ASSERT_EQ(gba->timers[0].counter, 506);
+}
+
+TEST(timer_read_sees_counter_two_cycles_back) {
+    GBA* gba = make_gba();
+    Bus* bus = &gba->bus;
+    gba->cpu.cycles_executed = 100;
+    bus_write16(bus, REG_TM0CNT_L, 0);
+    bus->pending_cycles = 0;
+    bus_write16(bus, REG_TM0CNT_H, 0x80);
+
+    bus->pending_cycles = 0;
+    gba->cpu.cycles_executed = 120;
+    ASSERT_EQ(bus_read16(bus, REG_TM0CNT_L), 18);
+}
+
 void run_bus_tests(void) {
     TEST_SUITE("bus");
     RUN_TEST(ewram_write_read);
@@ -477,4 +508,6 @@ void run_bus_tests(void) {
     RUN_TEST(keycnt_write_without_irq_enable_does_not_fire);
     RUN_TEST(keycnt_halfword_write_checks_full_value);
     RUN_TEST(keypad_irq_sampled_each_frame);
+    RUN_TEST(timer_enabled_mid_chunk_counts_only_cycles_after_the_write);
+    RUN_TEST(timer_read_sees_counter_two_cycles_back);
 }

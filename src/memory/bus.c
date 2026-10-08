@@ -14,6 +14,28 @@
 static void bus_update_waitcnt(Bus* bus, uint16_t val);
 static void bus_charge_access(Bus* bus, uint32_t addr, int size);
 
+/* CPU time within the current chunk: finished instructions plus the wait
+ * cycles the in-flight instruction has accrued so far. */
+static int bus_chunk_now(const Bus* bus) {
+    if (!bus->cpu) return 0;
+    return bus->cpu->cycles_executed + bus->pending_cycles;
+}
+
+/* Bring the timers up to the current CPU time before a register write
+ * changes them, so the cycles before the write are counted under the old
+ * settings and none after it are counted twice. */
+static void bus_sync_timers(Bus* bus) {
+    int delta = bus_chunk_now(bus) - bus->timer_synced_cycles;
+    if (delta <= 0) return;
+    /* An overflow can start a FIFO DMA, which drains pending_cycles into
+     * its own stall; keep the in-flight instruction's wait cycles apart. */
+    int pending = bus->pending_cycles;
+    bus->pending_cycles = 0;
+    timer_tick(bus->timers, delta, bus->interrupts, bus->apu);
+    bus->pending_cycles = pending;
+    bus->timer_synced_cycles += delta;
+}
+
 /* ===== I/O Register Dispatch =====
  *
  * The GBA maps hardware subsystem registers into the 0x04000000-0x040003FF
@@ -212,9 +234,11 @@ static uint8_t io_read8(Bus* bus, uint32_t addr) {
         }
         /* Timer index: (offset - 0x100) / 4 */
         uint32_t timer_idx = (offset - 0x100) / 4;
-        /* Project past the last scanline-chunk sync: the CPU has run
-         * cycles_executed cycles that timer_tick hasn't applied yet. */
-        uint32_t elapsed = bus->cpu ? (uint32_t)bus->cpu->cycles_executed : 0;
+        /* Project past the last sync: the CPU has run this many cycles
+         * that timer_tick hasn't applied yet. A read sees the counter as
+         * it was 2 cycles earlier (matches mGBA and its timing suite). */
+        int unsynced = bus_chunk_now(bus) - bus->timer_synced_cycles - 2;
+        uint32_t elapsed = unsynced > 0 ? (uint32_t)unsynced : 0;
         uint16_t counter = timer_read_counter(&bus->timers[timer_idx], elapsed);
         /* Even offset = low byte, odd = high byte */
         if (offset & 1) {
@@ -940,6 +964,7 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
             uint16_t reload = (uint16_t)bus->io_regs[lo_offset]
                             | ((uint16_t)bus->io_regs[lo_offset + 1] << 8);
             uint32_t timer_idx = (lo_offset - 0x100) / 4;
+            bus_sync_timers(bus);
             timer_write_reload(&bus->timers[timer_idx], reload);
         }
         return;
@@ -959,6 +984,7 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
             uint16_t control = (uint16_t)bus->io_regs[lo_offset]
                              | ((uint16_t)bus->io_regs[lo_offset + 1] << 8);
             uint32_t timer_idx = (lo_offset - 0x102) / 4;
+            bus_sync_timers(bus);
             timer_write_control(&bus->timers[timer_idx], control);
         }
         return;

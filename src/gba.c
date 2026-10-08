@@ -64,7 +64,12 @@ bool gba_load_bios(GBA* gba, const char* path) {
 
 void gba_run_cycles(GBA* gba, int cycles) {
     cpu_run(&gba->cpu, cycles);
-    timer_tick(gba->timers, cycles, &gba->interrupts, &gba->apu);
+    // Timer writes mid-chunk already synced part of it; tick the rest.
+    int unsynced = cycles - gba->bus.timer_synced_cycles;
+    if (unsynced > 0) {
+        timer_tick(gba->timers, unsynced, &gba->interrupts, &gba->apu);
+    }
+    gba->bus.timer_synced_cycles = 0;
     apu_tick(&gba->apu, cycles);
     sio_tick(&gba->sio, cycles);
     // Timers are now synced; clear the CPU's chunk progress so timer
