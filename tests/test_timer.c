@@ -144,6 +144,23 @@ TEST(timer_read_projection_respects_prescaler_and_wrap) {
     ASSERT_EQ_HEX(timer_read_counter(&ts[0], 0x18), 0xFFF8);
 }
 
+TEST(timer_cycles_until_irq_finds_nearest_irq_timer) {
+    Timer ts[4];
+    timer_init(ts);
+    ASSERT_EQ(timer_cycles_until_irq(ts), INT32_MAX);
+
+    /* No IRQ enabled: not a slice boundary. */
+    timer_write_reload(&ts[0], 0xFFF0);
+    timer_write_control(&ts[0], 0x80);
+    ASSERT_EQ(timer_cycles_until_irq(ts), INT32_MAX);
+
+    /* Prescaler 64, 2 ticks left, 10 cycles into the current tick. */
+    timer_write_reload(&ts[1], 0xFFFE);
+    timer_write_control(&ts[1], 0xC1);
+    ts[1].prescaler_counter = 10;
+    ASSERT_EQ(timer_cycles_until_irq(ts), 2 * 64 - 10);
+}
+
 void run_timer_tests(void) {
     TEST_SUITE("timer");
     RUN_TEST(timer_init_zeros_state_and_sets_prescaler_to_one);
@@ -154,4 +171,5 @@ void run_timer_tests(void) {
     RUN_TEST(timer_cascade_increments_only_on_lower_overflow);
     RUN_TEST(timer_read_projects_unsynced_cycles);
     RUN_TEST(timer_read_projection_respects_prescaler_and_wrap);
+    RUN_TEST(timer_cycles_until_irq_finds_nearest_irq_timer);
 }

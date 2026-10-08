@@ -63,18 +63,32 @@ bool gba_load_bios(GBA* gba, const char* path) {
 }
 
 void gba_run_cycles(GBA* gba, int cycles) {
-    cpu_run(&gba->cpu, cycles);
-    // Timer writes mid-chunk already synced part of it; tick the rest.
-    int unsynced = cycles - gba->bus.timer_synced_cycles;
-    if (unsynced > 0) {
-        timer_tick(gba->timers, unsynced, &gba->interrupts, &gba->apu);
+    int32_t remaining = cycles - gba->cycle_carry;
+
+    while (remaining > 0) {
+        // End the slice where a timer IRQ fires so the CPU sees it on time.
+        int32_t slice = timer_cycles_until_irq(gba->timers);
+        if (slice > remaining) slice = remaining;
+
+        cpu_run(&gba->cpu, slice);
+        int32_t ran = gba->cpu.cycles_executed;
+
+        // Timer writes mid-slice already synced part of it; tick the rest.
+        int32_t unsynced = ran - gba->bus.timer_synced_cycles;
+        if (unsynced > 0) {
+            timer_tick(gba->timers, unsynced, &gba->interrupts, &gba->apu);
+        }
+        gba->bus.timer_synced_cycles = 0;
+        apu_tick(&gba->apu, ran);
+        sio_tick(&gba->sio, ran);
+        // Timers are now synced; clear the CPU's slice progress so timer
+        // reads don't project these cycles a second time.
+        gba->cpu.cycles_executed = 0;
+
+        remaining -= ran;
     }
-    gba->bus.timer_synced_cycles = 0;
-    apu_tick(&gba->apu, cycles);
-    sio_tick(&gba->sio, cycles);
-    // Timers are now synced; clear the CPU's chunk progress so timer
-    // reads don't project these cycles a second time.
-    gba->cpu.cycles_executed = 0;
+
+    gba->cycle_carry = -remaining;
 }
 
 void gba_run_scanline(GBA* gba) {

@@ -55,6 +55,21 @@ uint16_t timer_read_counter(Timer* timer, uint32_t elapsed_cycles) {
     return (uint16_t)projected;
 }
 
+/* Cycles until the next overflow of a prescaled timer with its IRQ enabled,
+ * or INT32_MAX if none. Lets gba.c end a CPU slice exactly where the IRQ
+ * fires instead of at the next scanline event. Cascade IRQs aren't
+ * predicted; they still fire at slice granularity. */
+int32_t timer_cycles_until_irq(const Timer timers[4]) {
+    int32_t best = INT32_MAX;
+    for (int i = 0; i < 4; i++) {
+        const Timer* t = &timers[i];
+        if (!t->enabled || t->cascade || !t->irq_enable) continue;
+        int64_t until = (int64_t)(0x10000u - t->counter) * t->prescaler - t->prescaler_counter;
+        if (until < best) best = (int32_t)until;
+    }
+    return best;
+}
+
 void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts, APU* apu) {
     static const uint16_t timer_irq_bits[] = {IRQ_TIMER0, IRQ_TIMER1, IRQ_TIMER2, IRQ_TIMER3};
 

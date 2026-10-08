@@ -41,6 +41,10 @@ struct GBA {
 #endif
 
     uint64_t total_cycles;
+    // Cycles the CPU ran past the last scanline event (its final
+    // instruction rarely ends exactly on it); the next chunk is shortened
+    // by this much. Not saved: a load just drops a few cycles of drift.
+    int32_t cycle_carry;
     bool frame_complete;
     bool running;
 

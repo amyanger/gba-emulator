@@ -34,5 +34,6 @@ void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts, AP
 void timer_write_reload(Timer* timer, uint16_t val);
 void timer_write_control(Timer* timer, uint16_t val);
 uint16_t timer_read_counter(Timer* timer, uint32_t elapsed_cycles);
+int32_t timer_cycles_until_irq(const Timer timers[4]);
 
 #endif // TIMER_H
