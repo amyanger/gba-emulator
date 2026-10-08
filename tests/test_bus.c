@@ -284,7 +284,7 @@ TEST(waitcnt_ewram_charges_extras) {
     free(bus);
 }
 
-TEST(waitcnt_prefetch_makes_sequential_rom_one_cycle) {
+TEST(waitcnt_prefetch_keeps_sequential_rom_at_s) {
     Bus* bus = calloc(1, sizeof(Bus));
     bus_init(bus);
     /* Enable prefetch (bit 14) on top of default WAITCNT=0. */
@@ -295,12 +295,12 @@ TEST(waitcnt_prefetch_makes_sequential_rom_one_cycle) {
     (void)bus_read16(bus, 0x08000000);
     ASSERT_EQ(bus_drain_pending(bus), 4);
 
-    /* Sequential ROM access hits the prefetch buffer: GBATEK says 0 waits,
-     * so 1 cycle total, extras=0. */
+    /* Prefetch doesn't make sequential reads cheaper on its own; the
+     * savings come from bus_prefetch_stall. Still S=3, extras=2. */
     (void)bus_read16(bus, 0x08000002);
-    ASSERT_EQ(bus_drain_pending(bus), 0);
+    ASSERT_EQ(bus_drain_pending(bus), 2);
     (void)bus_read16(bus, 0x08000004);
-    ASSERT_EQ(bus_drain_pending(bus), 0);
+    ASSERT_EQ(bus_drain_pending(bus), 2);
     free(bus);
 }
 
@@ -320,7 +320,7 @@ TEST(waitcnt_prefetch_does_not_affect_non_sequential) {
     free(bus);
 }
 
-TEST(waitcnt_prefetch_32bit_sequential_uses_two_s) {
+TEST(waitcnt_prefetch_32bit_sequential_keeps_two_s) {
     Bus* bus = calloc(1, sizeof(Bus));
     bus_init(bus);
     bus_write16(bus, 0x04000204, 0x4000);
@@ -330,9 +330,64 @@ TEST(waitcnt_prefetch_32bit_sequential_uses_two_s) {
     (void)bus_read32(bus, 0x08000000);
     ASSERT_EQ(bus_drain_pending(bus), 7);
 
-    /* 32-bit sequential ROM with prefetch: S+S = 1+1 = 2 cycles, extras=1. */
+    /* 32-bit sequential ROM with prefetch: still S+S = 6, extras=5. */
     (void)bus_read32(bus, 0x08000004);
-    ASSERT_EQ(bus_drain_pending(bus), 1);
+    ASSERT_EQ(bus_drain_pending(bus), 5);
+    free(bus);
+}
+
+/* Prefetch refunds: a Thumb instruction running from ROM loads from IWRAM
+ * (1 cycle + 1 I cycle). While the CPU is off the cart bus, the buffer
+ * fills, refunding upcoming S waits and the N penalty on the next fetch. */
+static Bus* prefetch_bus(uint16_t waitcnt) {
+    Bus* bus = calloc(1, sizeof(Bus));
+    bus_init(bus);
+    bus_write16(bus, 0x04000204, waitcnt);
+    bus->data_wait = 0;
+    bus->data_read = false;
+    bus_drain_pending(bus);
+    return bus;
+}
+
+TEST(prefetch_refunds_during_non_rom_load) {
+    Bus* bus = prefetch_bus(0x4000); /* WS0 N=4, S=2 waitstates */
+    (void)bus_read16(bus, 0x03000000);
+    bus_prefetch_stall(bus, 0x08000104, true);
+    /* wait=2, stall=S+1=3: refund 3-2-(4-2)-3 = -4 */
+    ASSERT_EQ(bus_drain_pending(bus), -4);
+    free(bus);
+}
+
+TEST(prefetch_buffer_hit_still_costs_a_cycle) {
+    Bus* bus = prefetch_bus(0x4010); /* WS0 N=4, S=1 waitstates */
+    (void)bus_read16(bus, 0x03000000);
+    bus_prefetch_stall(bus, 0x08000104, true);
+    /* mGBA's formula gives -5 (a free fetch); the floor keeps it at -4. */
+    ASSERT_EQ(bus_drain_pending(bus), -4);
+    free(bus);
+}
+
+TEST(prefetch_no_refund_for_rom_data_or_when_disabled) {
+    Bus* bus = prefetch_bus(0x4000);
+    (void)bus_read16(bus, 0x08001000); /* ROM data access */
+    bus_drain_pending(bus);
+    bus_prefetch_stall(bus, 0x08000104, true);
+    ASSERT_EQ(bus_drain_pending(bus), 0);
+    free(bus);
+
+    bus = prefetch_bus(0x0000); /* prefetch off */
+    (void)bus_read16(bus, 0x03000000);
+    bus_prefetch_stall(bus, 0x08000104, true);
+    ASSERT_EQ(bus_drain_pending(bus), 0);
+    free(bus);
+}
+
+TEST(prefetch_ignores_opcode_fetches) {
+    Bus* bus = prefetch_bus(0x4000);
+    (void)bus_fetch16(bus, 0x03000000);
+    ASSERT_EQ(bus->data_wait, 0);
+    (void)bus_read16(bus, 0x03000000);
+    ASSERT_EQ(bus->data_wait, 1);
     free(bus);
 }
 
@@ -517,9 +572,13 @@ void run_bus_tests(void) {
     RUN_TEST(waitcnt_iwram_is_one_cycle);
     RUN_TEST(waitcnt_ewram_charges_extras);
     RUN_TEST(waitcnt_sram_is_n_only);
-    RUN_TEST(waitcnt_prefetch_makes_sequential_rom_one_cycle);
+    RUN_TEST(waitcnt_prefetch_keeps_sequential_rom_at_s);
     RUN_TEST(waitcnt_prefetch_does_not_affect_non_sequential);
-    RUN_TEST(waitcnt_prefetch_32bit_sequential_uses_two_s);
+    RUN_TEST(waitcnt_prefetch_32bit_sequential_keeps_two_s);
+    RUN_TEST(prefetch_refunds_during_non_rom_load);
+    RUN_TEST(prefetch_buffer_hit_still_costs_a_cycle);
+    RUN_TEST(prefetch_no_refund_for_rom_data_or_when_disabled);
+    RUN_TEST(prefetch_ignores_opcode_fetches);
     RUN_TEST(waitcnt_prefetch_off_keeps_s_timing);
     RUN_TEST(open_bus_returns_latched_word_byte_at_offset);
     RUN_TEST(sound_master_off_preserves_wave_ram);

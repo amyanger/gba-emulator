@@ -359,8 +359,8 @@ int cpu_step(ARM7TDMI* cpu) {
         /* Refill the 2-entry pipeline */
         if (BIT(cpu->cpsr, CPSR_T)) {
             /* Thumb: two 16-bit fetches */
-            cpu->pipeline[0] = bus_read16(cpu->bus, cpu->regs[REG_PC]);
-            cpu->pipeline[1] = bus_read16(cpu->bus, cpu->regs[REG_PC] + 2);
+            cpu->pipeline[0] = bus_fetch16(cpu->bus, cpu->regs[REG_PC]);
+            cpu->pipeline[1] = bus_fetch16(cpu->bus, cpu->regs[REG_PC] + 2);
             cpu->regs[REG_PC] += 4;
             /* Open-bus latch: in Thumb mode, the latched value is the last
              * prefetched halfword duplicated into both halves. */
@@ -368,12 +368,17 @@ int cpu_step(ARM7TDMI* cpu) {
                 (uint32_t)cpu->pipeline[1] | ((uint32_t)cpu->pipeline[1] << 16);
         } else {
             /* ARM: two 32-bit fetches */
-            cpu->pipeline[0] = bus_read32(cpu->bus, cpu->regs[REG_PC]);
-            cpu->pipeline[1] = bus_read32(cpu->bus, cpu->regs[REG_PC] + 4);
+            cpu->pipeline[0] = bus_fetch32(cpu->bus, cpu->regs[REG_PC]);
+            cpu->pipeline[1] = bus_fetch32(cpu->bus, cpu->regs[REG_PC] + 4);
             cpu->regs[REG_PC] += 8;
             cpu->bus->open_bus = cpu->pipeline[1];
         }
         cpu->pipeline_valid = true;
+        /* A flush empties the prefetch buffer, and the flushing
+         * instruction's data accesses earn no refund. */
+        cpu->bus->last_prefetched_pc = 0;
+        cpu->bus->data_wait = 0;
+        cpu->bus->data_read = false;
         cycles = 2; /* pipeline refill cost */
         return cycles + bus_drain_pending(cpu->bus);
     }
@@ -384,13 +389,16 @@ int cpu_step(ARM7TDMI* cpu) {
         TRACE_LOG(cpu, cpu->regs[REG_PC] - 4, instr, true);
         cycles = thumb_execute(cpu, instr);
         if (cpu->pipeline_valid) {
+            bus_prefetch_stall(cpu->bus, cpu->regs[REG_PC], true);
             cpu->pipeline[0] = cpu->pipeline[1];
-            cpu->pipeline[1] = bus_read16(cpu->bus, cpu->regs[REG_PC]);
+            cpu->pipeline[1] = bus_fetch16(cpu->bus, cpu->regs[REG_PC]);
             cpu->regs[REG_PC] += 2;
             cpu->bus->open_bus =
                 (uint32_t)cpu->pipeline[1] | ((uint32_t)cpu->pipeline[1] << 16);
         }
-        return cycles + bus_drain_pending(cpu->bus);
+        cycles += bus_drain_pending(cpu->bus);
+        /* A prefetch refund can't make an instruction free. */
+        return cycles > 0 ? cycles : 1;
     } else {
         /* ARM mode: execute first, then advance pipeline if no flush */
         uint32_t instr = cpu->pipeline[0];
@@ -404,12 +412,14 @@ int cpu_step(ARM7TDMI* cpu) {
         }
 
         if (cpu->pipeline_valid) {
+            bus_prefetch_stall(cpu->bus, cpu->regs[REG_PC], false);
             cpu->pipeline[0] = cpu->pipeline[1];
-            cpu->pipeline[1] = bus_read32(cpu->bus, cpu->regs[REG_PC]);
+            cpu->pipeline[1] = bus_fetch32(cpu->bus, cpu->regs[REG_PC]);
             cpu->regs[REG_PC] += 4;
             cpu->bus->open_bus = cpu->pipeline[1];
         }
-        return cycles + bus_drain_pending(cpu->bus);
+        cycles += bus_drain_pending(cpu->bus);
+        return cycles > 0 ? cycles : 1;
     }
 }
 

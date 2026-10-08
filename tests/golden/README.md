@@ -24,7 +24,7 @@ table below in the same change.
 
 | Golden | Group | Frames | Passed |
 |--------|-------|--------|--------|
-| `mgba_suite_timing` | Timing tests | 420 | 608/2020 |
+| `mgba_suite_timing` | Timing tests | 420 | 744/2020 |
 | `mgba_suite_timers` | Timer count-up tests | 240 | 250/936 |
 | `mgba_suite_timer_irq` | Timer IRQ tests | 120 | 31/90 |
 | `mgba_suite_dma` | DMA tests | 240 | 984/1244 |

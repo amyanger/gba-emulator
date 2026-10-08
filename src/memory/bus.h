@@ -38,12 +38,9 @@ typedef struct WaitState {
     uint8_t ws1_s;
     uint8_t ws2_n;
     uint8_t ws2_s;
-    /* Game Pak Prefetch Buffer enabled (WAITCNT bit 14). When set, sequential
-     * ROM accesses pull from a small FIFO that the cart fills during cycles
-     * the CPU isn't using the bus, costing 1 cycle instead of the S timing.
-     * Non-sequential ROM access flushes the FIFO and pays full N. We model
-     * the steady state — S becomes 1 — without simulating the FIFO depth or
-     * fill rate, which is sufficient for our scanline-based timing. */
+    /* Game Pak Prefetch Buffer enabled (WAITCNT bit 14). Fetch costs don't
+     * change; instead bus_prefetch_stall refunds the ROM halfwords the
+     * buffer could fill while an instruction is busy off the cart bus. */
     bool prefetch_enabled;
     uint16_t raw;
 } WaitState;
@@ -77,6 +74,19 @@ struct Bus {
     // so it is always 0 between chunks (and never needs saving).
     int timer_synced_cycles;
 
+    // Prefetch bookkeeping for the instruction in flight: total cycles of
+    // its CPU data accesses, whether any was a read (adds the load's
+    // I cycle), and the last data address. Opcode fetches (fetching=true)
+    // and DMA are excluded. last_prefetched_pc marks how far the buffer
+    // has already been credited so one window isn't refunded twice; a
+    // pipeline flush resets it to 0. None of this survives a chunk
+    // boundary in a meaningful way, so it is not saved.
+    bool fetching;
+    bool data_read;
+    int data_wait;
+    uint32_t data_addr;
+    uint32_t last_prefetched_pc;
+
     // Subsystem pointers (wired during gba_init)
     ARM7TDMI* cpu;
     PPU* ppu;
@@ -103,6 +113,15 @@ void bus_write32(Bus* bus, uint32_t addr, uint32_t val);
 
 /* Returns the wait cycles accumulated since the last call, then resets. */
 int bus_drain_pending(Bus* bus);
+
+/* Opcode fetches: charged like reads but not counted as data accesses. */
+uint16_t bus_fetch16(Bus* bus, uint32_t addr);
+uint32_t bus_fetch32(Bus* bus, uint32_t addr);
+
+/* Apply the prefetch buffer's refund for the instruction just executed
+ * (pc = the pipeline PC it ran with, thumb = its mode), then clear the per-instruction
+ * data-access bookkeeping. */
+void bus_prefetch_stall(Bus* bus, uint32_t pc, bool thumb);
 
 /* Re-derive transient bus state (parsed WAITCNT, access tracking) from
  * io_regs after a savestate load — io_regs is serialized but the cached

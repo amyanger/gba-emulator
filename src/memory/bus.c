@@ -12,7 +12,7 @@
 
 /* Forward declarations for wait-state accounting helpers (defined below). */
 static void bus_update_waitcnt(Bus* bus, uint16_t val);
-static void bus_charge_access(Bus* bus, uint32_t addr, int size);
+static void bus_charge_access(Bus* bus, uint32_t addr, int size, bool is_read);
 
 /* CPU time within the current chunk: finished instructions plus the wait
  * cycles the in-flight instruction has accrued so far. */
@@ -1150,6 +1150,10 @@ void bus_init(Bus* bus) {
     bus->pending_cycles = 0;
     bus->last_access_addr = 0;
     bus->last_access_size = 0;
+    bus->fetching = false;
+    bus->data_read = false;
+    bus->data_wait = 0;
+    bus->last_prefetched_pc = 0;
     bus_update_waitcnt(bus, 0);
 }
 
@@ -1241,20 +1245,13 @@ static int bus_region_cycles(const Bus* bus, uint32_t addr, int size, bool seque
     default:
         return 1;
     }
-    /* Game Pak Prefetch Buffer (WAITCNT bit 14): only ROM regions reach here.
-     * When the FIFO is enabled, sequential ROM reads come from cache in 1
-     * cycle; non-sequential still pays full N. The first non-seq access
-     * resets the prefetch state implicitly (next access becomes sequential). */
-    if (bus->wait_state.prefetch_enabled && sequential) {
-        s = 1;
-    }
     if (size == 4) {
         return sequential ? (s + s) : (n + s);
     }
     return sequential ? s : n;
 }
 
-static void bus_charge_access(Bus* bus, uint32_t addr, int size) {
+static void bus_charge_access(Bus* bus, uint32_t addr, int size, bool is_read) {
     bool same_region = ((addr ^ bus->last_access_addr) >> 24) == 0;
     bool sequential  = same_region &&
                        (addr == bus->last_access_addr + bus->last_access_size);
@@ -1266,6 +1263,88 @@ static void bus_charge_access(Bus* bus, uint32_t addr, int size) {
     }
     bus->last_access_addr = addr;
     bus->last_access_size = (uint8_t)size;
+
+    /* Record CPU data accesses for bus_prefetch_stall. */
+    bool in_dma = bus->dma && bus->dma->active_channel >= 0;
+    if (!bus->fetching && !in_dma) {
+        bus->data_wait += total;
+        bus->data_addr = addr;
+        if (is_read) bus->data_read = true;
+    }
+}
+
+uint16_t bus_fetch16(Bus* bus, uint32_t addr) {
+    bus->fetching = true;
+    uint16_t v = bus_read16(bus, addr);
+    bus->fetching = false;
+    return v;
+}
+
+uint32_t bus_fetch32(Bus* bus, uint32_t addr) {
+    bus->fetching = true;
+    uint32_t v = bus_read32(bus, addr);
+    bus->fetching = false;
+    return v;
+}
+
+/* GamePak prefetch, modeled like mGBA's GBAMemoryStall. Fetch costs never
+ * change; while an instruction running from ROM spends `wait` cycles on a
+ * non-ROM data access, the cart fills up to 8 halfwords (first costs S+1,
+ * each further one S). Those upcoming S waits are refunded now, and so is
+ * the N penalty on the next fetch, since it now hits the buffer. */
+void bus_prefetch_stall(Bus* bus, uint32_t pc, bool thumb) {
+    int wait = bus->data_wait;
+    if (wait > 0 && bus->data_read) {
+        wait += 1; /* the load's internal cycle */
+    }
+    uint32_t addr = bus->data_addr;
+    bus->data_wait = 0;
+    bus->data_read = false;
+
+    if (wait == 0 || addr >= 0x08000000 || !bus->wait_state.prefetch_enabled) {
+        return;
+    }
+
+    /* Waitstates (not totals) of the ROM region the code runs from. */
+    int n16, s;
+    switch (pc >> 24) {
+    case 0x08: case 0x09: n16 = bus->wait_state.ws0_n; s = bus->wait_state.ws0_s; break;
+    case 0x0A: case 0x0B: n16 = bus->wait_state.ws1_n; s = bus->wait_state.ws1_s; break;
+    case 0x0C: case 0x0D: n16 = bus->wait_state.ws2_n; s = bus->wait_state.ws2_s; break;
+    default: return;
+    }
+    n16 -= 1;
+    s -= 1;
+
+    /* Don't credit halfwords an earlier stall already prefetched. */
+    int32_t previous = 0;
+    int32_t max_loads = 8;
+    uint32_t dist = bus->last_prefetched_pc - pc;
+    if (dist < 16) {
+        previous = (int32_t)(dist >> 1);
+        max_loads -= previous;
+    }
+
+    int32_t stall = s + 1;
+    int32_t loads = 1;
+    while (stall < wait && loads < max_loads) {
+        stall += s;
+        loads++;
+    }
+    bus->last_prefetched_pc = pc + 2u * (uint32_t)(loads + previous - 1);
+
+    int32_t cost = stall > wait ? stall : wait;
+    int32_t refund = cost - wait - (n16 - s) - stall;
+
+    /* mGBA can leave the next fetch free when the buffer fills exactly as
+     * the CPU asks for it; a buffer hit still takes a cycle (the suite's
+     * Thumb P.S ldr [sp] row expects 3, not 2). */
+    int32_t fetch = thumb ? 1 + s : 2 + 2 * s;
+    int32_t overlap = stall < wait ? stall : wait;
+    if (fetch - overlap < 1) {
+        refund += 1 - (fetch - overlap);
+    }
+    bus->pending_cycles += refund;
 }
 
 int bus_drain_pending(Bus* bus) {
@@ -1287,6 +1366,10 @@ void bus_post_load(Bus* bus) {
     bus->pending_cycles = 0;
     bus->last_access_addr = 0;
     bus->last_access_size = 0;
+    bus->fetching = false;
+    bus->data_read = false;
+    bus->data_wait = 0;
+    bus->last_prefetched_pc = 0;
 }
 
 static uint8_t bus_read8_raw(Bus* bus, uint32_t addr) {
@@ -1364,20 +1447,20 @@ static uint8_t bus_read8_raw(Bus* bus, uint32_t addr) {
 }
 
 uint8_t bus_read8(Bus* bus, uint32_t addr) {
-    bus_charge_access(bus, addr, 1);
+    bus_charge_access(bus, addr, 1, true);
     return bus_read8_raw(bus, addr);
 }
 
 uint16_t bus_read16(Bus* bus, uint32_t addr) {
     addr &= ~1u; /* Force halfword alignment */
-    bus_charge_access(bus, addr, 2);
+    bus_charge_access(bus, addr, 2, true);
     return (uint16_t)bus_read8_raw(bus, addr)
          | ((uint16_t)bus_read8_raw(bus, addr + 1) << 8);
 }
 
 uint32_t bus_read32(Bus* bus, uint32_t addr) {
     addr &= ~3u; /* Force word alignment */
-    bus_charge_access(bus, addr, 4);
+    bus_charge_access(bus, addr, 4, true);
     return (uint32_t)bus_read8_raw(bus, addr)
          | ((uint32_t)bus_read8_raw(bus, addr + 1) << 8)
          | ((uint32_t)bus_read8_raw(bus, addr + 2) << 16)
@@ -1455,13 +1538,13 @@ static void bus_write8_raw(Bus* bus, uint32_t addr, uint8_t val) {
 }
 
 void bus_write8(Bus* bus, uint32_t addr, uint8_t val) {
-    bus_charge_access(bus, addr, 1);
+    bus_charge_access(bus, addr, 1, false);
     bus_write8_raw(bus, addr, val);
 }
 
 void bus_write16(Bus* bus, uint32_t addr, uint16_t val) {
     addr &= ~1u;
-    bus_charge_access(bus, addr, 2);
+    bus_charge_access(bus, addr, 2, false);
     /* Palette, VRAM, and OAM need direct writes — the byte path has special
      * 8-bit behaviour (byte duplication / ignore) that would corrupt wider
      * writes if we decomposed into two byte writes. */
@@ -1500,7 +1583,7 @@ void bus_write16(Bus* bus, uint32_t addr, uint16_t val) {
 
 void bus_write32(Bus* bus, uint32_t addr, uint32_t val) {
     addr &= ~3u;
-    bus_charge_access(bus, addr, 4);
+    bus_charge_access(bus, addr, 4, false);
     switch (decode_region(addr)) {
     case 0x04: { /* I/O — special case FIFO writes for DMA */
         uint32_t io_addr = addr & 0xFFFFFF;
