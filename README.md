@@ -35,6 +35,7 @@ cmake .. -DENABLE_XRAY=OFF
   - 3-stage pipeline emulation with proper PC offset handling
   - 7 CPU modes with banked register switching
   - HLE BIOS for running without a BIOS dump
+  - GamePak wait states (WAITCNT) and prefetch buffer timing
 - **PPU (Graphics)** — Scanline-based renderer
   - Tiled backgrounds: Mode 0 (4 regular), Mode 1 (2 regular + 1 affine), Mode 2 (2 affine)
   - Bitmap modes: Mode 3 (16-bit), Mode 4 (8-bit palettized), Mode 5 (16-bit small)
@@ -45,7 +46,7 @@ cmake .. -DENABLE_XRAY=OFF
   - DirectSound FIFO A/B with timer-driven DMA refill chain
   - 32768 Hz stereo output via SDL2
 - **DMA Controller** — 4-channel with immediate, VBlank, HBlank, and FIFO timing modes
-- **Timers** — 4 cascadable 16-bit timers with prescaler and IRQ generation
+- **Timers** — 4 cascadable 16-bit timers with prescaler and IRQ generation, with timer IRQs raised on the cycle they overflow
 - **Interrupts** — IE/IF/IME with write-1-to-clear semantics
 - **Flash 64K / 128K Save** — Macronix and SST/Atmel/Panasonic chip IDs (Pokemon Emerald, Ruby, Sapphire, FireRed, LeafGreen)
 - **Real-Time Clock** — S-3511A serial RTC over GPIO (0x080000C4/C6/C8) with persistent offset stored in the `.sav` trailer
@@ -239,10 +240,12 @@ Headless mode is incompatible with `--link-master` / `--link-client`
 #### Golden-frame regression testing
 
 The CI job `golden-frame` (in `.github/workflows/ci.yml`) re-runs the
-emulator on the pinned [jsmolka/gba-tests](https://github.com/jsmolka/gba-tests)
-ROMs and diffs the per-frame hash output against
-`tests/golden/<rom>.hash`. Any change that alters rendering output
-fails the workflow.
+emulator on pinned test ROMs ([jsmolka/gba-tests](https://github.com/jsmolka/gba-tests),
+tonc demos, and the [mGBA test suite](https://github.com/mgba-emu/suite))
+and diffs the per-frame hash output against `tests/golden/<rom>.hash`.
+Any change that alters rendering output fails the workflow. The mGBA
+suite goldens pin the current pass counts, so they also catch accuracy
+regressions. The counts are listed in `tests/golden/README.md`.
 
 **To add a new golden ROM:**
 
@@ -338,7 +341,7 @@ Each block starts with `[GameShark]` or `[CodeBreaker]`, followed by a name line
 
 - **Bus as integration point** — The CPU never directly calls PPU, APU, or other subsystems. All communication happens through memory-mapped I/O reads and writes via the bus, mirroring real GBA hardware.
 - **Scanline-based rendering** — The PPU renders one complete scanline at each HBlank. Not cycle-accurate per-pixel, but sufficient for Pokemon Emerald and most commercial games.
-- **CPU runs in scanline chunks** — 960 cycles (HDraw) + 272 cycles (HBlank) = 1,232 cycles per scanline, 228 scanlines per frame.
+- **CPU runs in scanline chunks** — 1,006 cycles up to the HBlank flag, then 226 more (1,232 per scanline, 228 scanlines per frame). A chunk also ends early at the next timer IRQ so the CPU sees it on time.
 - **No dynamic allocation** — All subsystem memory is statically sized. The only heap allocation is ROM loading.
 - **One file = one hardware component** — Each source file maps to a discrete piece of GBA hardware.
 - **X-Ray is a passive observer** — It reads GBA state but never writes to it. Zero overhead when disabled.
@@ -463,7 +466,7 @@ The ARM7TDMI uses a 3-stage pipeline (fetch-decode-execute). The PC is always 2 
 
 ### Unit tests
 
-A minimal C unit test suite lives in `tests/` and runs on every CI build (Linux + macOS via GitHub Actions):
+A minimal C unit test suite lives in `tests/` and runs on every CI build (Linux, macOS and Windows via GitHub Actions, plus an ASan/UBSan build):
 
 ```bash
 cd build && cmake .. && make gba_tests && ctest --output-on-failure
