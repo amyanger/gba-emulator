@@ -69,6 +69,10 @@ void gba_run_cycles(GBA* gba, int cycles) {
         // End the slice where a timer IRQ fires so the CPU sees it on time.
         int32_t slice = timer_cycles_until_irq(gba->timers);
         if (slice > remaining) slice = remaining;
+        // A prescaler lowered while running can leave a partial count past
+        // the new prescaler, putting the overflow "in the past". Run at
+        // least one cycle so timer_tick catches up instead of looping.
+        if (slice < 1) slice = 1;
 
         cpu_run(&gba->cpu, slice);
         int32_t ran = gba->cpu.cycles_executed;

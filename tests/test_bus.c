@@ -475,6 +475,25 @@ TEST(timer_read_sees_counter_two_cycles_back) {
     ASSERT_EQ(bus_read16(bus, REG_TM0CNT_L), 18);
 }
 
+TEST(timer_prescaler_drop_while_running_does_not_stall_slices) {
+    /* Switching a running IRQ timer from prescaler 1024 to 1 keeps the
+     * partial prescaler count, which then exceeds the new prescaler.
+     * gba_run_cycles must still make progress instead of looping on an
+     * empty slice. */
+    GBA* gba = make_gba();
+    Bus* bus = &gba->bus;
+    /* 256 ticks from overflow, fewer than the 1000 leftover cycles. */
+    bus_write16(bus, REG_TM0CNT_L, 0xFF00);
+    bus_write16(bus, REG_TM0CNT_H, 0xC3); /* enable, IRQ, prescaler 1024 */
+    gba->cpu.halted = true;
+    gba_run_cycles(gba, 1000);
+    ASSERT_EQ(gba->timers[0].prescaler_counter, 1000);
+
+    bus_write16(bus, REG_TM0CNT_H, 0xC0); /* same, prescaler 1 */
+    gba_run_cycles(gba, 1006);
+    ASSERT_TRUE(gba->timers[0].prescaler_counter < gba->timers[0].prescaler);
+}
+
 void run_bus_tests(void) {
     TEST_SUITE("bus");
     RUN_TEST(ewram_write_read);
@@ -510,4 +529,5 @@ void run_bus_tests(void) {
     RUN_TEST(keypad_irq_sampled_each_frame);
     RUN_TEST(timer_enabled_mid_chunk_counts_only_cycles_after_the_write);
     RUN_TEST(timer_read_sees_counter_two_cycles_back);
+    RUN_TEST(timer_prescaler_drop_while_running_does_not_stall_slices);
 }
