@@ -21,6 +21,8 @@ void timer_write_reload(Timer* timer, uint16_t val) {
 
 void timer_write_control(Timer* timer, uint16_t val) {
     bool was_enabled = timer->enabled;
+    bool was_cascade = timer->cascade;
+    uint16_t old_prescaler = timer->prescaler;
 
     timer->control = val;
     timer->prescaler = prescaler_values[val & 3];
@@ -28,25 +30,47 @@ void timer_write_control(Timer* timer, uint16_t val) {
     timer->irq_enable = BIT(val, 6);
     timer->enabled = BIT(val, 7);
 
+    if (!timer->enabled) return;
+
     // On rising edge of enable, reload counter
-    if (!was_enabled && timer->enabled) {
+    if (!was_enabled) {
         timer->counter = timer->reload;
-        timer->prescaler_counter = 0;
+    }
+
+    /* A running timer ticks when the global clock reaches a multiple of
+     * its prescaler (mGBA's model). Re-align on start, on a prescaler
+     * change and when leaving count-up mode. The caller has synced the
+     * timers first, so progress toward an old-prescaler tick is dropped. */
+    if (!was_enabled || was_cascade || timer->prescaler != old_prescaler) {
+        timer->prescaler_counter = timer->clock & (timer->prescaler - 1u);
     }
 }
 
 /* Read the counter as of 'elapsed_cycles' past the last timer_tick
  * sync.  Timers advance in scanline chunks after the CPU runs, so a
  * mid-chunk read projects forward WITHOUT mutating timer state (the
- * pending cycles will be applied by the upcoming timer_tick).
+ * pending cycles will be applied by the upcoming timer_tick). A negative
+ * value looks back before the sync (reads see 2 cycles back).
  * Cascade timers are not projected — their advance depends on the lower
  * timer's overflows, and they move too slowly for the lag to matter. */
-uint16_t timer_read_counter(Timer* timer, uint32_t elapsed_cycles) {
+uint16_t timer_read_counter(const Timer* timer, int32_t elapsed_cycles) {
     if (!timer->enabled || timer->cascade || elapsed_cycles == 0) {
         return timer->counter;
     }
 
-    uint32_t ticks = (timer->prescaler_counter + elapsed_cycles) / timer->prescaler;
+    if (elapsed_cycles < 0) {
+        /* Undo the ticks inside the window. The latest one was
+         * prescaler_counter cycles before the sync. Like mGBA, stepping
+         * back over a reload or the start just goes below the reload. */
+        uint32_t back = (uint32_t)-elapsed_cycles;
+        if (timer->prescaler_counter >= back) {
+            return timer->counter;
+        }
+        uint32_t ticks = (back - 1 - timer->prescaler_counter) / timer->prescaler + 1;
+        return (uint16_t)(timer->counter - ticks);
+    }
+
+    uint32_t ticks = (timer->prescaler_counter + (uint32_t)elapsed_cycles) / timer->prescaler;
     uint32_t projected = (uint32_t)timer->counter + ticks;
     if (projected > 0xFFFF) {
         uint32_t period = 0x10000u - timer->reload;
@@ -55,19 +79,34 @@ uint16_t timer_read_counter(Timer* timer, uint32_t elapsed_cycles) {
     return (uint16_t)projected;
 }
 
-/* Cycles until the next overflow of a prescaled timer with its IRQ enabled,
- * or INT32_MAX if none. Lets gba.c end a CPU slice exactly where the IRQ
- * fires instead of at the next scanline event. Cascade IRQs aren't
- * predicted; they still fire at slice granularity. */
+/* Cycles until the next overflow of a timer with its IRQ enabled, or
+ * INT32_MAX if none. Lets gba.c end a CPU slice exactly where the IRQ
+ * fires instead of at the next scanline event. A count-up timer holding
+ * c overflows on the (0x10000 - c)th overflow of the timer below it. */
 int32_t timer_cycles_until_irq(const Timer timers[4]) {
-    int32_t best = INT32_MAX;
+    int64_t best = INT32_MAX;
+    /* Next overflow and overflow period of the timer below; INT32_MAX
+     * means it never overflows within range. */
+    int64_t first = INT32_MAX;
+    int64_t period = INT32_MAX;
     for (int i = 0; i < 4; i++) {
         const Timer* t = &timers[i];
-        if (!t->enabled || t->cascade || !t->irq_enable) continue;
-        int64_t until = (int64_t)(0x10000u - t->counter) * t->prescaler - t->prescaler_counter;
-        if (until < best) best = (int32_t)until;
+        if (!t->enabled || (t->cascade && i == 0)) {
+            first = period = INT32_MAX;
+            continue;
+        }
+        if (!t->cascade) {
+            first = (int64_t)(0x10000u - t->counter) * t->prescaler - t->prescaler_counter;
+            period = (int64_t)(0x10000u - t->reload) * t->prescaler;
+        } else if (first < INT32_MAX) {
+            first += (int64_t)(0xFFFFu - t->counter) * period;
+            period *= 0x10000u - t->reload;
+        }
+        if (first > INT32_MAX) first = INT32_MAX;
+        if (period > INT32_MAX) period = INT32_MAX;
+        if (t->irq_enable && first < best) best = first;
     }
-    return best;
+    return (int32_t)best;
 }
 
 void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts, APU* apu) {
@@ -75,6 +114,7 @@ void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts, AP
 
     for (int i = 0; i < 4; i++) {
         Timer* t = &timers[i];
+        t->clock += (uint32_t)cycles;
         if (!t->enabled || t->cascade) continue;
 
         t->prescaler_counter += cycles;

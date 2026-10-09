@@ -161,6 +161,101 @@ TEST(timer_cycles_until_irq_finds_nearest_irq_timer) {
     ASSERT_EQ(timer_cycles_until_irq(ts), 2 * 64 - 10);
 }
 
+TEST(timer_enable_aligns_prescaler_to_global_clock) {
+    /* A prescaled timer ticks at global times that are multiples of the
+     * prescaler, not a full prescaler period after it was enabled. */
+    Timer ts[4];
+    InterruptController ic;
+    timer_init(ts);
+    interrupt_init(&ic);
+
+    timer_tick(ts, 100, &ic, NULL);    /* global clock = 100 */
+    timer_write_reload(&ts[0], 0);
+    timer_write_control(&ts[0], 0x81); /* enable, prescaler 64 */
+
+    timer_tick(ts, 27, &ic, NULL);     /* clock 127 */
+    ASSERT_EQ(ts[0].counter, 0);
+    timer_tick(ts, 1, &ic, NULL);      /* clock 128: first tick */
+    ASSERT_EQ(ts[0].counter, 1);
+    timer_tick(ts, 64, &ic, NULL);     /* clock 192 */
+    ASSERT_EQ(ts[0].counter, 2);
+}
+
+TEST(timer_prescaler_change_realigns_and_drops_partial_tick) {
+    Timer ts[4];
+    InterruptController ic;
+    timer_init(ts);
+    interrupt_init(&ic);
+
+    timer_write_reload(&ts[0], 0);
+    timer_write_control(&ts[0], 0x81); /* prescaler 64 at clock 0 */
+    timer_tick(ts, 100, &ic, NULL);    /* one tick at 64, 36 cycles spare */
+    ASSERT_EQ(ts[0].counter, 1);
+
+    /* Switch to 256 at clock 100: the next tick is at 256, not 256
+     * cycles after the switch or 220 cycles counting the spare 36. */
+    timer_write_control(&ts[0], 0x82);
+    ASSERT_EQ(ts[0].counter, 1);
+    timer_tick(ts, 155, &ic, NULL);    /* clock 255 */
+    ASSERT_EQ(ts[0].counter, 1);
+    timer_tick(ts, 1, &ic, NULL);      /* clock 256 */
+    ASSERT_EQ(ts[0].counter, 2);
+
+    /* Rewriting the same settings changes nothing. */
+    timer_tick(ts, 10, &ic, NULL);
+    timer_write_control(&ts[0], 0x82);
+    timer_tick(ts, 246, &ic, NULL);    /* clock 512 */
+    ASSERT_EQ(ts[0].counter, 3);
+}
+
+TEST(timer_read_before_last_sync_steps_counter_back) {
+    Timer ts[4];
+    InterruptController ic;
+    timer_init(ts);
+    interrupt_init(&ic);
+
+    /* Prescaler 1: each cycle back is one tick back. */
+    timer_write_reload(&ts[0], 0x1000);
+    timer_write_control(&ts[0], 0x80);
+    timer_tick(ts, 50, &ic, NULL);
+    ASSERT_EQ_HEX(timer_read_counter(&ts[0], -2), 0x1030);
+    ASSERT_EQ_HEX(timer_read_counter(&ts[0], -1), 0x1031);
+
+    /* Prescaler 64: only a tick that landed inside the window counts. */
+    timer_write_reload(&ts[1], 0);
+    timer_write_control(&ts[1], 0x81); /* clock 50 */
+    timer_tick(ts, 15, &ic, NULL);     /* clock 65: ticked at 64 */
+    ASSERT_EQ(ts[1].counter, 1);
+    ASSERT_EQ(timer_read_counter(&ts[1], -1), 1); /* time 64 */
+    ASSERT_EQ(timer_read_counter(&ts[1], -2), 0); /* time 63 */
+    timer_tick(ts, 2, &ic, NULL);      /* clock 67 */
+    ASSERT_EQ(timer_read_counter(&ts[1], -2), 1);
+}
+
+TEST(timer_cycles_until_irq_predicts_cascade_overflow) {
+    Timer ts[4];
+    timer_init(ts);
+
+    /* Timer 0 overflows every 0x100 cycles, first at 0x100. */
+    timer_write_reload(&ts[0], 0xFF00);
+    timer_write_control(&ts[0], 0x80);
+    /* Count-up timer 1 with IRQ at 0xFFFE overflows on the 2nd one. */
+    timer_write_reload(&ts[1], 0xFFFE);
+    timer_write_control(&ts[1], 0xC4);
+    ASSERT_EQ(timer_cycles_until_irq(ts), 0x200);
+
+    /* Timer 2 counts timer 1, which overflows at 0x200 and then every
+     * 0x200; at 0xFFFE timer 2 raises its IRQ at 0x400. */
+    timer_write_control(&ts[1], 0x84); /* drop timer 1's IRQ */
+    timer_write_reload(&ts[2], 0xFFFE);
+    timer_write_control(&ts[2], 0xC4);
+    ASSERT_EQ(timer_cycles_until_irq(ts), 0x400);
+
+    /* A stopped lower timer never feeds the chain. */
+    timer_write_control(&ts[0], 0x00);
+    ASSERT_EQ(timer_cycles_until_irq(ts), INT32_MAX);
+}
+
 void run_timer_tests(void) {
     TEST_SUITE("timer");
     RUN_TEST(timer_init_zeros_state_and_sets_prescaler_to_one);
@@ -172,4 +267,8 @@ void run_timer_tests(void) {
     RUN_TEST(timer_read_projects_unsynced_cycles);
     RUN_TEST(timer_read_projection_respects_prescaler_and_wrap);
     RUN_TEST(timer_cycles_until_irq_finds_nearest_irq_timer);
+    RUN_TEST(timer_enable_aligns_prescaler_to_global_clock);
+    RUN_TEST(timer_prescaler_change_realigns_and_drops_partial_tick);
+    RUN_TEST(timer_read_before_last_sync_steps_counter_back);
+    RUN_TEST(timer_cycles_until_irq_predicts_cascade_overflow);
 }

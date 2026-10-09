@@ -428,6 +428,7 @@ int cpu_step(ARM7TDMI* cpu) {
  * If halted, fast-forwards cycles unless an IRQ wakes the CPU. */
 void cpu_run(ARM7TDMI* cpu, int cycles) {
     cpu->cycles_executed = 0;
+    cpu->bus->end_slice = false;
 
     while (cpu->cycles_executed < cycles) {
         /* DMA halts the CPU: burn off any pending transfer stall before
@@ -463,5 +464,8 @@ void cpu_run(ARM7TDMI* cpu, int cycles) {
 
         int step_cycles = cpu_step(cpu);
         cpu->cycles_executed += step_cycles;
+
+        /* A timer write asked for the slice to be re-planned. */
+        if (cpu->bus->end_slice) break;
     }
 }

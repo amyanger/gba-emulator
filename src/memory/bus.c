@@ -36,6 +36,14 @@ static void bus_sync_timers(Bus* bus) {
     bus->timer_synced_cycles += delta;
 }
 
+/* After a timer write, end the CPU slice if any timer IRQ is armed so
+ * gba_run_cycles re-plans it around the new overflow time. */
+static void bus_timer_reschedule(Bus* bus) {
+    if (timer_cycles_until_irq(bus->timers) != INT32_MAX) {
+        bus->end_slice = true;
+    }
+}
+
 /* ===== I/O Register Dispatch =====
  *
  * The GBA maps hardware subsystem registers into the 0x04000000-0x040003FF
@@ -236,9 +244,9 @@ static uint8_t io_read8(Bus* bus, uint32_t addr) {
         uint32_t timer_idx = (offset - 0x100) / 4;
         /* Project past the last sync: the CPU has run this many cycles
          * that timer_tick hasn't applied yet. A read sees the counter as
-         * it was 2 cycles earlier (matches mGBA and its timing suite). */
-        int unsynced = bus_chunk_now(bus) - bus->timer_synced_cycles - 2;
-        uint32_t elapsed = unsynced > 0 ? (uint32_t)unsynced : 0;
+         * it was 2 cycles earlier (matches mGBA and its timing suite),
+         * which may be before the last sync. */
+        int32_t elapsed = bus_chunk_now(bus) - bus->timer_synced_cycles - 2;
         uint16_t counter = timer_read_counter(&bus->timers[timer_idx], elapsed);
         /* Even offset = low byte, odd = high byte */
         if (offset & 1) {
@@ -966,6 +974,7 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
             uint32_t timer_idx = (lo_offset - 0x100) / 4;
             bus_sync_timers(bus);
             timer_write_reload(&bus->timers[timer_idx], reload);
+            bus_timer_reschedule(bus);
         }
         return;
     }
@@ -986,6 +995,7 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
             uint32_t timer_idx = (lo_offset - 0x102) / 4;
             bus_sync_timers(bus);
             timer_write_control(&bus->timers[timer_idx], control);
+            bus_timer_reschedule(bus);
         }
         return;
     }

@@ -549,6 +549,51 @@ TEST(timer_prescaler_drop_while_running_does_not_stall_slices) {
     ASSERT_TRUE(gba->timers[0].prescaler_counter < gba->timers[0].prescaler);
 }
 
+TEST(timer_read_right_after_a_sync_still_sees_two_cycles_back) {
+    /* A TMxCNT write syncs every timer. A read one cycle later must
+     * still see the counter as of 2 cycles back, which is before the
+     * sync point. */
+    GBA* gba = make_gba();
+    Bus* bus = &gba->bus;
+    bus_write16(bus, REG_TM0CNT_L, 0);
+    bus_write16(bus, REG_TM0CNT_H, 0x80); /* enable, prescaler 1 */
+
+    bus->pending_cycles = 0;
+    gba->cpu.cycles_executed = 50;
+    bus_write16(bus, REG_TM1CNT_H, 0);    /* sync point at 50 */
+    ASSERT_EQ(gba->timers[0].counter, 50);
+
+    bus->pending_cycles = 0;
+    gba->cpu.cycles_executed = 51;
+    ASSERT_EQ(bus_read16(bus, REG_TM0CNT_L), 49);
+}
+
+TEST(timer_irq_enabled_mid_slice_is_taken_on_time) {
+    /* An IRQ timer switched on partway into a slice must end the slice
+     * so the overflow is raised when it happens, not at slice end. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+
+    bus_write32(&gba->bus, 0x03000000, 0xE5810000); /* str r0, [r1] */
+    bus_write32(&gba->bus, 0x03000004, 0xEAFFFFFE); /* b . */
+    bus_write32(&gba->bus, 0x03000100, 0xEAFFFFFE); /* IRQ handler: b . */
+    bus_write32(&gba->bus, 0x03007FFC, 0x03000100);
+
+    cpu_switch_mode(cpu, CPU_MODE_SYS);
+    cpu->cpsr = CPU_MODE_SYS; /* ARM, IRQs unmasked */
+    cpu->regs[0] = 0x00C0FFF0;  /* reload FFF0; enable, IRQ, prescaler 1 */
+    cpu->regs[1] = REG_TM0CNT_L;
+    cpu->regs[REG_PC] = 0x03000000;
+    cpu->pipeline_valid = false;
+    gba->interrupts.ie = IRQ_TIMER0;
+    gba->interrupts.ime = true;
+
+    /* The overflow lands about 16 cycles in, well inside a 60 cycle run. */
+    gba_run_cycles(gba, 60);
+    ASSERT_EQ_HEX(gba->interrupts.irf & IRQ_TIMER0, IRQ_TIMER0);
+    ASSERT_EQ_HEX(cpu_get_mode(cpu), CPU_MODE_IRQ);
+}
+
 void run_bus_tests(void) {
     TEST_SUITE("bus");
     RUN_TEST(ewram_write_read);
@@ -589,4 +634,6 @@ void run_bus_tests(void) {
     RUN_TEST(timer_enabled_mid_chunk_counts_only_cycles_after_the_write);
     RUN_TEST(timer_read_sees_counter_two_cycles_back);
     RUN_TEST(timer_prescaler_drop_while_running_does_not_stall_slices);
+    RUN_TEST(timer_read_right_after_a_sync_still_sees_two_cycles_back);
+    RUN_TEST(timer_irq_enabled_mid_slice_is_taken_on_time);
 }

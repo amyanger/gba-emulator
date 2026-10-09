@@ -74,6 +74,12 @@ struct Bus {
     // so it is always 0 between chunks (and never needs saving).
     int timer_synced_cycles;
 
+    // Set by a timer register write while a timer IRQ is armed: the write
+    // can move that IRQ earlier than the slice gba_run_cycles planned, so
+    // cpu_run stops after the current instruction and the slice is
+    // recomputed. Cleared by cpu_run; not saved.
+    bool end_slice;
+
     // Prefetch bookkeeping for the instruction in flight: total cycles of
     // its CPU data accesses, whether any was a read (adds the load's
     // I cycle), and the last data address. Opcode fetches (fetching=true)
