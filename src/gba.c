@@ -110,7 +110,8 @@ void gba_run_scanline(GBA* gba) {
         /* DMA fires before IRQ — order matters; do not swap. */
         dma_on_hblank(&gba->dma);
     }
-    interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_HBLANK);
+    interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_HBLANK,
+                                 gba->cycle_carry);
 
     gba_run_cycles(gba, HBLANK_TAIL_CYCLES);  // 226
 
@@ -118,12 +119,14 @@ void gba_run_scanline(GBA* gba) {
     ppu_increment_vcount(&gba->ppu);
 
     if (ppu_vcount_match(&gba->ppu)) {
-        interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_VCOUNT);
+        interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_VCOUNT,
+                                     gba->cycle_carry);
     }
 
     if (gba->ppu.vcount == VDRAW_LINES) {
         ppu_set_vblank(&gba->ppu, true);
-        interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_VBLANK);
+        interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_VBLANK,
+                                     gba->cycle_carry);
         dma_on_vblank(&gba->dma);
         cheat_apply(&gba->cheats, &gba->bus);
         gba->ppu.bg_ref_x[0] = gba->ppu.bg_ref_x_latch[0];

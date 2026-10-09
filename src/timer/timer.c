@@ -130,8 +130,11 @@ void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts, AP
                 xray_notify_timer_overflow(g_xray, i);
 #endif
 
+                /* Cycles between this overflow and the end of the tick,
+                 * so the IRQ delay counts from the overflow itself. */
+                int32_t late = (int32_t)t->prescaler_counter;
                 if (t->irq_enable) {
-                    interrupt_request(interrupts, timer_irq_bits[i]);
+                    interrupt_request_late(interrupts, timer_irq_bits[i], late);
                 }
 
                 if (apu) {
@@ -151,7 +154,7 @@ void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts, AP
                         xray_notify_timer_overflow(g_xray, next);
 #endif
                         if (timers[next].irq_enable) {
-                            interrupt_request(interrupts, timer_irq_bits[next]);
+                            interrupt_request_late(interrupts, timer_irq_bits[next], late);
                         }
                         if (apu) {
                             apu_on_timer_overflow(apu, next);

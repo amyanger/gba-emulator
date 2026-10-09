@@ -76,12 +76,12 @@ TEST(interrupt_request_if_enabled_respects_dispstat_bits) {
 
     /* VBlank IRQ disabled in DISPSTAT (bit 3 clear). */
     ppu.dispstat = 0;
-    interrupt_request_if_enabled(&ic, &ppu, IRQ_VBLANK);
+    interrupt_request_if_enabled(&ic, &ppu, IRQ_VBLANK, 0);
     ASSERT_EQ(ic.irf & IRQ_VBLANK, 0);
 
     /* Enable VBlank IRQ in DISPSTAT (bit 3 = 1 << 3 = 8). */
     ppu.dispstat = (1 << 3);
-    interrupt_request_if_enabled(&ic, &ppu, IRQ_VBLANK);
+    interrupt_request_if_enabled(&ic, &ppu, IRQ_VBLANK, 0);
     ASSERT_EQ(ic.irf & IRQ_VBLANK, IRQ_VBLANK);
 }
 

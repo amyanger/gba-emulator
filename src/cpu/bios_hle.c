@@ -965,6 +965,7 @@ void bios_hle_execute(ARM7TDMI* cpu, uint32_t swi_num) {
 
         /* Run from SYS mode with IRQs enabled, FIQs left disabled. */
         cpu->cpsr = CPU_MODE_SYS | (1u << CPSR_F);
+        cpu_cpsr_written(cpu);
 
         cpu->regs[REG_PC] = boot_target;
         cpu_flush_pipeline(cpu);

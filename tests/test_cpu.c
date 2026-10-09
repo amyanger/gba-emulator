@@ -345,6 +345,123 @@ TEST(halt_stays_halted_when_irq_not_enabled_in_ie) {
     free(gba);
 }
 
+/* ---- IRQ dispatch delay (mGBA GBA_IRQ_DELAY = 7) ------------------- */
+
+/* SYS mode, ARM, IRQs unmasked, running 1-cycle NOPs from IWRAM with a
+ * warm pipeline, so every instruction boundary is one cycle apart. */
+static GBA* make_irq_delay_gba(void) {
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+    for (uint32_t a = 0x03000000; a < 0x03000400; a += 4) {
+        bus_write32(&gba->bus, a, 0xE1A00000); /* mov r0, r0 */
+    }
+    cpu_skip_bios(cpu);
+    cpu->regs[REG_PC] = 0x03000000;
+    cpu_flush_pipeline(cpu);
+    cpu_run(cpu, 1); /* refill the pipeline */
+    gba->interrupts.ie = IRQ_VBLANK | IRQ_HBLANK;
+    gba->interrupts.ime = true;
+    return gba;
+}
+
+/* Run one instruction at a time; return the CPU time at the boundary
+ * where IRQ mode was entered, or -1 if it wasn't within 'limit'. */
+static int32_t cycles_until_irq_mode(ARM7TDMI* cpu, int32_t limit) {
+    int32_t t = 0;
+    while (t < limit) {
+        cpu_run(cpu, 1);
+        if (cpu_get_mode(cpu) == CPU_MODE_IRQ) return t;
+        t += cpu->cycles_executed;
+    }
+    return -1;
+}
+
+TEST(irq_dispatch_waits_seven_cycles_after_raise) {
+    GBA* gba = make_irq_delay_gba();
+    interrupt_request(&gba->interrupts, IRQ_VBLANK);
+    /* IF is visible at once; dispatch happens at raise + 7. */
+    ASSERT_EQ_HEX(gba->interrupts.irf & IRQ_VBLANK, IRQ_VBLANK);
+    ASSERT_EQ(cycles_until_irq_mode(&gba->cpu, 50), 7);
+    free(gba);
+}
+
+TEST(irq_dispatch_earliest_pending_check_wins) {
+    GBA* gba = make_irq_delay_gba();
+    interrupt_request(&gba->interrupts, IRQ_VBLANK);
+    cpu_run(&gba->cpu, 3);
+    ASSERT_EQ(gba->cpu.cycles_executed, 3);
+    /* A second raise while a check is pending does not push it back. */
+    interrupt_request(&gba->interrupts, IRQ_HBLANK);
+    ASSERT_EQ(cycles_until_irq_mode(&gba->cpu, 50), 4);
+    free(gba);
+}
+
+TEST(irq_dispatch_rechecks_ime_when_it_fires) {
+    GBA* gba = make_irq_delay_gba();
+    interrupt_request(&gba->interrupts, IRQ_VBLANK);
+    cpu_run(&gba->cpu, 3);
+    gba->interrupts.ime = false; /* cleared during the delay */
+    ASSERT_EQ(cycles_until_irq_mode(&gba->cpu, 50), -1);
+    free(gba);
+}
+
+TEST(irq_dispatch_ime_write_delays_six_from_instruction_start) {
+    /* mGBA: an IME/IE/IF write tests with cyclesLate = 1, so the check
+     * lands 6 cycles after the start of the writing instruction. */
+    GBA* gba = make_irq_delay_gba();
+    gba->interrupts.ime = false;
+    gba->interrupts.irf = IRQ_VBLANK;
+    bus_write16(&gba->bus, 0x04000208, 1);
+    ASSERT_EQ(cycles_until_irq_mode(&gba->cpu, 50), 6);
+    free(gba);
+}
+
+TEST(irq_dispatch_msr_unmask_delays_seven) {
+    /* mGBA: any CPSR write (MSR, exception return) tests with no
+     * lateness, so a pending IRQ unmasked by MSR waits 7 cycles. */
+    GBA* gba = make_irq_delay_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+    cpu->cpsr |= (1u << CPSR_I);
+    interrupt_request(&gba->interrupts, IRQ_VBLANK);
+    cpu_run(cpu, 10); /* check fires but CPSR.I masks it */
+    ASSERT_EQ_HEX(cpu_get_mode(cpu), CPU_MODE_SYS);
+    cpu->regs[0] = CPU_MODE_SYS;
+    arm_execute(cpu, 0xE129F000); /* msr cpsr_fc, r0 */
+    ASSERT_EQ(cycles_until_irq_mode(cpu, 50), 7);
+    free(gba);
+}
+
+TEST(halt_wakes_only_after_irq_delay) {
+    GBA* gba = make_irq_delay_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+    cpu->halted = true;
+    interrupt_request(&gba->interrupts, IRQ_VBLANK);
+    cpu_run(cpu, 6);
+    ASSERT_TRUE(cpu->halted);
+    ASSERT_EQ_HEX(cpu_get_mode(cpu), CPU_MODE_SYS);
+    /* The halted CPU skips to the check time (one more cycle), then
+     * wakes and takes the IRQ at the next boundary. */
+    ASSERT_EQ(cycles_until_irq_mode(cpu, 50), 1);
+    ASSERT_TRUE(!cpu->halted);
+    free(gba);
+}
+
+TEST(irq_dispatch_counts_from_true_timer_overflow) {
+    /* An overflow found late (end of a slice that ran past it) is
+     * dispatched 7 cycles after the overflow, not after the sync. */
+    GBA* gba = make_gba();
+    gba->interrupts.ie = IRQ_TIMER0;
+    gba->timers[0].enabled = true;
+    gba->timers[0].irq_enable = true;
+    gba->timers[0].prescaler = 1;
+    gba->timers[0].counter = 0xFFFE;
+    timer_tick(gba->timers, 5, &gba->interrupts, NULL); /* overflow at 2 */
+    ASSERT_EQ_HEX(gba->interrupts.irf & IRQ_TIMER0, IRQ_TIMER0);
+    ASSERT_TRUE(gba->interrupts.check_pending);
+    ASSERT_EQ(gba->interrupts.check_delay, 4);
+    free(gba);
+}
+
 TEST(swi_arctan_precedence_matches_bios) {
     /* The BIOS polynomial computes a = -((r0*r0) >> 14).  Writing it as
      * -(r0*r0) >> 14 shifts the NEGATED square, which rounds toward
@@ -751,6 +868,13 @@ void run_cpu_tests(void) {
     RUN_TEST(ldr_writeback_with_rd_equal_rn_keeps_loaded_value);
     RUN_TEST(halt_wakes_on_ie_and_if_even_with_ime_off);
     RUN_TEST(halt_stays_halted_when_irq_not_enabled_in_ie);
+    RUN_TEST(irq_dispatch_waits_seven_cycles_after_raise);
+    RUN_TEST(irq_dispatch_earliest_pending_check_wins);
+    RUN_TEST(irq_dispatch_rechecks_ime_when_it_fires);
+    RUN_TEST(irq_dispatch_ime_write_delays_six_from_instruction_start);
+    RUN_TEST(irq_dispatch_msr_unmask_delays_seven);
+    RUN_TEST(halt_wakes_only_after_irq_delay);
+    RUN_TEST(irq_dispatch_counts_from_true_timer_overflow);
     RUN_TEST(swi_div_int_min_by_minus_one_no_crash);
     RUN_TEST(vblank_intr_wait_honors_mask_and_rehalts);
     RUN_TEST(swi_arctan_precedence_matches_bios);

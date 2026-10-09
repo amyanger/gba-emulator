@@ -438,9 +438,13 @@ int cpu_step(ARM7TDMI* cpu) {
 }
 
 /* Run the CPU for at least 'cycles' cycles.
- * Checks for pending IRQs between each instruction step.
- * If halted, fast-forwards cycles unless an IRQ wakes the CPU. */
+ * IRQs are taken only when the interrupt controller's delayed check
+ * fires (mGBA's _triggerIRQ): at the first instruction boundary at or
+ * after its time, it ends HALT and, if IE & IF, IME and !CPSR.I still
+ * hold, enters the IRQ. Every cycle that passes here (instructions, DMA
+ * stalls, halted time) counts toward the delay. */
 void cpu_run(ARM7TDMI* cpu, int cycles) {
+    InterruptController* ic = cpu->bus->interrupts;
     cpu->cycles_executed = 0;
     cpu->bus->end_slice = false;
 
@@ -455,34 +459,52 @@ void cpu_run(ARM7TDMI* cpu, int cycles) {
             if (take > remaining) take = remaining;
             dma->pending_stall -= take;
             cpu->cycles_executed += take;
+            if (ic) interrupt_elapse(ic, take);
             continue;
         }
 
+        if (ic && interrupt_check_due(ic)) {
+            cpu->halted = false;
+            if (cpu_check_irq(cpu)) {
+                cpu_handle_irq(cpu);
+                /* Entry charges the vector refill's base 1N+1S here, like
+                 * mGBA's ARMRaiseIRQ (ARMWritePC); cpu_step adds its waits. */
+                cpu->cycles_executed += 2;
+            }
+        }
+
         if (cpu->halted) {
-            /* HALT ends on IE & IF alone; IME and CPSR.I only gate
-             * dispatch (handled below). */
-            InterruptController* ic = cpu->bus->interrupts;
-            if (ic && interrupt_pending_raw(ic)) {
-                cpu->halted = false;
-            } else {
+            /* GBATEK: HALT lasts while IE & IF is 0, whatever IME and
+             * CPSR.I say. If it is already set, arm a check (mGBA only
+             * re-checks on the next raise). */
+            if (ic) interrupt_test(ic, IRQ_DISPATCH_DELAY);
+            int remaining = cycles - cpu->cycles_executed;
+            if (!ic || !ic->check_pending) {
                 /* Stay halted: consume all remaining cycles */
                 cpu->cycles_executed = cycles;
                 break;
             }
-        }
-
-        /* Check for pending IRQ before each instruction */
-        if (cpu_check_irq(cpu)) {
-            cpu_handle_irq(cpu);
-            /* Entry charges the vector refill's base 1N+1S here, like
-             * mGBA's ARMRaiseIRQ (ARMWritePC); cpu_step adds its waits. */
-            cpu->cycles_executed += 2;
+            /* Sleep until the check is due, then loop to take it. */
+            int skip = ic->check_delay < remaining ? ic->check_delay : remaining;
+            if (skip < 0) skip = 0;
+            cpu->cycles_executed += skip;
+            interrupt_elapse(ic, skip);
+            continue;
         }
 
         int step_cycles = cpu_step(cpu);
         cpu->cycles_executed += step_cycles;
+        if (ic) interrupt_elapse(ic, step_cycles);
 
         /* A timer write asked for the slice to be re-planned. */
         if (cpu->bus->end_slice) break;
     }
+}
+
+/* Run after any instruction writes CPSR (MSR, exception return): mGBA's
+ * readCPSR hook tests IRQs with no lateness, so an IRQ unmasked here is
+ * taken 7 cycles later. */
+void cpu_cpsr_written(ARM7TDMI* cpu) {
+    InterruptController* ic = cpu->bus ? cpu->bus->interrupts : NULL;
+    if (ic) interrupt_test(ic, IRQ_DISPATCH_DELAY);
 }

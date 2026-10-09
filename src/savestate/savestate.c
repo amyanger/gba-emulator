@@ -745,6 +745,9 @@ static void load_irq_chunk(const uint8_t** cur, InterruptController* ic) {
     ic->ime = read_u8(cur) != 0;
     ic->ie = read_u16(cur);
     ic->irf = read_u16(cur);
+    /* The pending dispatch check isn't saved; re-arm it with no delay. */
+    ic->check_pending = false;
+    interrupt_test(ic, 0);
 }
 
 static bool load_cart_chunk(const uint8_t** cur, Cartridge* cart) {

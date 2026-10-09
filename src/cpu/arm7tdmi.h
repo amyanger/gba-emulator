@@ -100,6 +100,7 @@ uint32_t* cpu_get_spsr(ARM7TDMI* cpu);
 
 /* Check if IRQ should fire (CPSR.I clear and interrupt controller has pending) */
 bool cpu_check_irq(ARM7TDMI* cpu);
+void cpu_cpsr_written(ARM7TDMI* cpu);
 
 /* Handle IRQ exception entry */
 void cpu_handle_irq(ARM7TDMI* cpu);

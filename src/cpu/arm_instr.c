@@ -238,6 +238,7 @@ static int arm_block_transfer(ARM7TDMI* cpu, uint32_t instr) {
                 cpu_switch_mode(cpu, target);
             }
             cpu->cpsr = *spsr;
+            cpu_cpsr_written(cpu);
         }
     }
 
@@ -645,6 +646,7 @@ static int arm_msr(ARM7TDMI* cpu, uint32_t instr) {
         } else {
             cpu->cpsr = new_cpsr;
         }
+        cpu_cpsr_written(cpu);
     }
 
     return 1;
@@ -849,6 +851,7 @@ static int arm_data_processing(ARM7TDMI* cpu, uint32_t instr) {
                 cpu_switch_mode(cpu, new_m);
             }
             cpu->cpsr = *spsr;
+            cpu_cpsr_written(cpu);
         }
     }
 
@@ -867,6 +870,7 @@ static int arm_data_processing(ARM7TDMI* cpu, uint32_t instr) {
                         cpu_switch_mode(cpu, new_m);
                     }
                     cpu->cpsr = *spsr;
+                    cpu_cpsr_written(cpu);
                 }
             }
             /* Align PC per the FINAL state: an exception return (S=1) may

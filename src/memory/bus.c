@@ -31,9 +31,22 @@ static void bus_sync_timers(Bus* bus) {
      * its own stall; keep the in-flight instruction's wait cycles apart. */
     int pending = bus->pending_cycles;
     bus->pending_cycles = 0;
+    bool was_pending = bus->interrupts && bus->interrupts->check_pending;
     timer_tick(bus->timers, delta, bus->interrupts, bus->apu);
+    /* The IRQ check delay counts from the instruction start, but this
+     * tick ran up to the instruction's waits so far. */
+    if (bus->interrupts && !was_pending && bus->interrupts->check_pending) {
+        bus->interrupts->check_delay += pending;
+    }
     bus->pending_cycles = pending;
     bus->timer_synced_cycles += delta;
+}
+
+/* IE, IF and IME writes re-test IRQs like mGBA's GBAIOWrite, which
+ * passes cyclesLate = 1: the check lands 6 cycles after the start of
+ * the writing instruction. */
+static void bus_test_irq(Bus* bus) {
+    interrupt_test(bus->interrupts, IRQ_DISPATCH_DELAY - 1);
 }
 
 /* After a timer write, end the CPU slice if any timer IRQ is armed so
@@ -917,6 +930,7 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         bus->io_regs[offset] = val;
         if (bus->interrupts) {
             bus->interrupts->ie = (bus->interrupts->ie & 0xFF00) | (uint16_t)val;
+            bus_test_irq(bus);
         }
         return;
     case 0x201:  /* REG_IE high byte */
@@ -924,17 +938,20 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         if (bus->interrupts) {
             bus->interrupts->ie = (bus->interrupts->ie & 0x00FF)
                                 | ((uint16_t)val << 8);
+            bus_test_irq(bus);
         }
         return;
     case 0x202:  /* REG_IF low byte — writing 1 clears */
         /* Do NOT update io_regs; IF is read from subsystem state */
         if (bus->interrupts) {
             interrupt_acknowledge(bus->interrupts, (uint16_t)val);
+            bus_test_irq(bus);
         }
         return;
     case 0x203:  /* REG_IF high byte — writing 1 clears */
         if (bus->interrupts) {
             interrupt_acknowledge(bus->interrupts, (uint16_t)val << 8);
+            bus_test_irq(bus);
         }
         return;
     case 0x204:  /* REG_WAITCNT low byte */
@@ -950,6 +967,7 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         bus->io_regs[offset] = val & 1;
         if (bus->interrupts) {
             bus->interrupts->ime = (val & 1) != 0;
+            bus_test_irq(bus);
         }
         return;
     case 0x209:  /* REG_IME high byte — ignored */
