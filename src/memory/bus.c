@@ -1482,16 +1482,29 @@ uint8_t bus_read8(Bus* bus, uint32_t addr) {
     return bus_read8_raw(bus, addr);
 }
 
+/* GamePak SRAM/Flash sits on an 8-bit bus (GBATEK), so wider reads see
+ * the one byte at the given address repeated, like mGBA's LOAD_SRAM. */
+static bool is_sram_region(uint32_t addr) {
+    uint32_t region = decode_region(addr);
+    return region == 0x0E || region == 0x0F;
+}
+
 uint16_t bus_read16(Bus* bus, uint32_t addr) {
+    bus_charge_access(bus, addr & ~1u, 2, true);
+    if (is_sram_region(addr)) {
+        return (uint16_t)(bus_read8_raw(bus, addr) * 0x0101u);
+    }
     addr &= ~1u; /* Force halfword alignment */
-    bus_charge_access(bus, addr, 2, true);
     return (uint16_t)bus_read8_raw(bus, addr)
          | ((uint16_t)bus_read8_raw(bus, addr + 1) << 8);
 }
 
 uint32_t bus_read32(Bus* bus, uint32_t addr) {
+    bus_charge_access(bus, addr & ~3u, 4, true);
+    if (is_sram_region(addr)) {
+        return bus_read8_raw(bus, addr) * 0x01010101u;
+    }
     addr &= ~3u; /* Force word alignment */
-    bus_charge_access(bus, addr, 4, true);
     return (uint32_t)bus_read8_raw(bus, addr)
          | ((uint32_t)bus_read8_raw(bus, addr + 1) << 8)
          | ((uint32_t)bus_read8_raw(bus, addr + 2) << 16)

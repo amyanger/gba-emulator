@@ -30,6 +30,23 @@ TEST(ewram_mirror) {
     ASSERT_EQ_HEX(val, 0xCAFEBABE);
 }
 
+/* ---- GamePak SRAM ------------------------------------------------- */
+
+TEST(sram_wide_reads_repeat_byte) {
+    /* SRAM is on an 8-bit bus: 16/32-bit reads return the byte at the
+     * exact address repeated, not neighbouring bytes. */
+    GBA* gba = make_gba();
+    gba->cart.save_type = SAVE_SRAM;
+    gba->cart.sram[0x10] = 0x61;
+    gba->cart.sram[0x11] = 0x6E;
+    gba->cart.sram[0x13] = 0x0E;
+    ASSERT_EQ_HEX(bus_read16(&gba->bus, 0x0E000010), 0x6161);
+    ASSERT_EQ_HEX(bus_read16(&gba->bus, 0x0E000011), 0x6E6E);
+    ASSERT_EQ_HEX(bus_read32(&gba->bus, 0x0E000010), 0x61616161);
+    ASSERT_EQ_HEX(bus_read32(&gba->bus, 0x0E000013), 0x0E0E0E0E);
+    free(gba);
+}
+
 /* ---- IWRAM -------------------------------------------------------- */
 
 TEST(iwram_write_read) {
@@ -610,6 +627,7 @@ void run_bus_tests(void) {
     TEST_SUITE("bus");
     RUN_TEST(ewram_write_read);
     RUN_TEST(ewram_mirror);
+    RUN_TEST(sram_wide_reads_repeat_byte);
     RUN_TEST(iwram_write_read);
     RUN_TEST(palette_8bit_duplicate);
     RUN_TEST(vram_8bit_duplicate);
