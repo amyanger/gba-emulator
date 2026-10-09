@@ -12,6 +12,7 @@ void dma_init(DMAController* dma) {
     memset(dma->channels, 0, sizeof(dma->channels));
     dma->active_channel = -1;
     dma->pending_stall = 0;
+    memset(dma->irq_stall, 0, sizeof(dma->irq_stall));
 }
 
 void dma_write_control(DMAController* dma, int ch, uint16_t val) {
@@ -151,12 +152,6 @@ int dma_execute(DMAController* dma, int ch) {
         dc->dest = dc->dest_latch;
     }
 
-    // Fire IRQ if requested
-    if (dc->irq_on_done && dma->interrupts) {
-        uint16_t irq_bit = (uint16_t)(1 << (8 + ch)); // DMA0=bit8, DMA1=bit9, etc.
-        interrupt_request(dma->interrupts, irq_bit);
-    }
-
     // Repeat or disable
     if (dc->repeat && dc->timing != 0) {
         // Repeating DMA: stay enabled, wait for next trigger
@@ -181,5 +176,44 @@ int dma_execute(DMAController* dma, int ch) {
     // DMA halts the CPU: bank the cost as a stall that cpu_run consumes
     // before executing further instructions.
     dma->pending_stall += cost;
+
+    /* The completion IRQ is raised once the CPU has sat through this
+     * transfer's stall (and any queued ahead of it), not now. */
+    if (dc->irq_on_done && dma->interrupts) {
+        dma->irq_stall[ch] = dma->pending_stall;
+    }
     return cost;
+}
+
+/* Burn up to 'max' stall cycles, stopping early at the next owed
+ * completion IRQ so it is raised exactly when its transfer ends. The
+ * burned cycles elapse on the interrupt controller first, so the IRQ's
+ * dispatch delay starts when the CPU unblocks (mGBA's _dmaEvent). */
+int32_t dma_consume_stall(DMAController* dma, int32_t max) {
+    int32_t take = dma->pending_stall < max ? dma->pending_stall : max;
+    for (int ch = 0; ch < 4; ch++) {
+        if (dma->irq_stall[ch] > 0 && dma->irq_stall[ch] < take) take = dma->irq_stall[ch];
+    }
+    dma->pending_stall -= take;
+    if (!dma->interrupts) return take;
+
+    interrupt_elapse(dma->interrupts, take);
+    for (int ch = 0; ch < 4; ch++) {
+        if (dma->irq_stall[ch] <= 0) continue;
+        dma->irq_stall[ch] -= take;
+        if (dma->irq_stall[ch] <= 0) {
+            dma->irq_stall[ch] = 0;
+            interrupt_request(dma->interrupts, (uint16_t)(1 << (8 + ch)));
+        }
+    }
+    return take;
+}
+
+/* Completion IRQs owed but not yet raised, as IF bits. */
+uint16_t dma_owed_irqs(const DMAController* dma) {
+    uint16_t bits = 0;
+    for (int ch = 0; ch < 4; ch++) {
+        if (dma->irq_stall[ch] > 0) bits |= (uint16_t)(1 << (8 + ch));
+    }
+    return bits;
 }

@@ -454,12 +454,7 @@ void cpu_run(ARM7TDMI* cpu, int cycles) {
          * ticks them by wall-chunk, not by instructions executed. */
         DMAController* dma = cpu->bus->dma;
         if (dma && dma->pending_stall > 0) {
-            int take = dma->pending_stall;
-            int remaining = cycles - cpu->cycles_executed;
-            if (take > remaining) take = remaining;
-            dma->pending_stall -= take;
-            cpu->cycles_executed += take;
-            if (ic) interrupt_elapse(ic, take);
+            cpu->cycles_executed += dma_consume_stall(dma, cycles - cpu->cycles_executed);
             continue;
         }
 

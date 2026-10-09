@@ -77,6 +77,32 @@ TEST(dma_transfer_stalls_cpu) {
     free(gba);
 }
 
+TEST(dma_irq_raised_when_stall_ends) {
+    /* mGBA raises the completion IRQ when the transfer ends and the CPU
+     * unblocks, so the IRQ dispatch delay starts after the stall. */
+    GBA* gba = make_gba();
+    Bus* bus = &gba->bus;
+    gba->interrupts.ie = (1 << 11); /* DMA3 */
+
+    bus_write32(bus, 0x040000D4, 0x03000000);
+    bus_write32(bus, 0x040000D8, 0x03000400);
+    bus_write16(bus, 0x040000DC, 64);
+    bus_write16(bus, 0x040000DE, dma_control(true, 0) | (1u << 14));
+
+    int stall = gba->dma.pending_stall;
+    ASSERT_EQ(gba->interrupts.irf & (1 << 11), 0);
+
+    /* Run past the stall: the consume stops exactly at its end. */
+    cpu_run(&gba->cpu, stall - 1);
+    ASSERT_EQ(gba->interrupts.irf & (1 << 11), 0);
+    cpu_run(&gba->cpu, 1);
+    ASSERT_EQ(gba->interrupts.irf & (1 << 11), (1 << 11));
+    ASSERT_TRUE(gba->interrupts.check_pending);
+    ASSERT_EQ(gba->interrupts.check_delay, IRQ_DISPATCH_DELAY);
+
+    free(gba);
+}
+
 TEST(dma0_count_masked_to_14_bits) {
     /* DMA0-2 word counts are 14-bit (GBATEK); bits 14-15 of CNT_L are
      * ignored.  0x4001 must transfer exactly 1 unit, not 0x4001. */
@@ -126,6 +152,7 @@ void run_dma_tests(void) {
     TEST_SUITE("dma");
     RUN_TEST(dma3_immediate_word_copy);
     RUN_TEST(dma_transfer_stalls_cpu);
+    RUN_TEST(dma_irq_raised_when_stall_ends);
     RUN_TEST(dma0_count_masked_to_14_bits);
     RUN_TEST(dma_disabled_does_not_transfer);
 }

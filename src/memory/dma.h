@@ -32,6 +32,10 @@ struct DMAController {
      * consumes this stall before executing instructions.  Transient
      * (not serialized in savestates). */
     int32_t pending_stall;
+    /* Per channel: stall cycles left until its completion IRQ is raised
+     * (0 = none owed). The IRQ fires when the CPU unblocks, like mGBA's
+     * end-of-transfer event. Transient like pending_stall. */
+    int32_t irq_stall[4];
     Bus* bus;
     InterruptController* interrupts;
 };
@@ -43,5 +47,7 @@ void dma_on_vblank(DMAController* dma);
 void dma_on_hblank(DMAController* dma);
 void dma_on_fifo(DMAController* dma, int fifo_id);
 int dma_execute(DMAController* dma, int ch);
+int32_t dma_consume_stall(DMAController* dma, int32_t max);
+uint16_t dma_owed_irqs(const DMAController* dma);
 
 #endif // DMA_H

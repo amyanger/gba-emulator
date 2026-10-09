@@ -420,12 +420,14 @@ static void save_tmr_chunk(WriteBuffer* wb, Timer timers[4]) {
     }
 }
 
-static void save_irq_chunk(WriteBuffer* wb, InterruptController* ic) {
+/* 'owed' holds DMA completion IRQs still waiting on their stall, which
+ * isn't saved; they go into the saved IF so a load can't lose them. */
+static void save_irq_chunk(WriteBuffer* wb, InterruptController* ic, uint16_t owed) {
     write_chunk_header(wb, CHUNK_IRQ, CHUNK_IRQ_PAYLOAD);
 
     write_u8(wb, ic->ime ? 1 : 0);
     write_u16(wb, ic->ie);
-    write_u16(wb, ic->irf);
+    write_u16(wb, ic->irf | owed);
 }
 
 static void save_cart_chunk(WriteBuffer* wb, Cartridge* cart) {
@@ -574,6 +576,8 @@ static bool load_dma_chunk(const uint8_t** cur, DMAController* dma) {
     int8_t active_channel = (int8_t)read_u8(cur);
     if (active_channel < -1 || active_channel > 3) return false;
     dma->active_channel = active_channel;
+    /* Owed completion IRQs were saved into IF; drop any from before the load. */
+    memset(dma->irq_stall, 0, sizeof(dma->irq_stall));
     return true;
 }
 
@@ -1010,7 +1014,7 @@ SaveStateResult savestate_save_to_buffer(GBA* gba, uint8_t** out, size_t* out_si
     save_ppu_chunk(&wb, &gba->ppu);
     save_apu_chunk(&wb, &gba->apu);
     save_tmr_chunk(&wb, gba->timers);
-    save_irq_chunk(&wb, &gba->interrupts);
+    save_irq_chunk(&wb, &gba->interrupts, dma_owed_irqs(&gba->dma));
     save_cart_chunk(&wb, &gba->cart);
     save_inpt_chunk(&wb, &gba->input);
     save_sio_chunk(&wb, &gba->sio);
