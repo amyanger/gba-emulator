@@ -659,6 +659,32 @@ TEST(arm_ldm_cycles_include_internal_cycle) {
     free(gba);
 }
 
+TEST(thumb_pop_pc_and_empty_ldmia_cycles) {
+    /* GBATEK: POP {Rlist,PC} = (n+1)S+2N+1I with n words loaded, the same
+     * total as ARM LDM with R15 (mGBA: THUMB_PREFETCH + n + I + WritePC).
+     * The empty-rlist LDMIA loads only R15, so it is the n=1 case. */
+    GBA* gba = make_flush_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+    flush_put32(gba, 0x03000200, 0x03000101);
+    flush_put32(gba, 0x03000204, 0x03000101);
+
+    cpu->regs[REG_SP] = 0x03000200;
+    flush_put16(gba, 0x03000000, 0xBD00); /* POP {PC} */
+    ASSERT_EQ(flush_cycles(gba, 0x03000000, true), 1 + 1 + 1 + 2);
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x03000104);
+
+    cpu->regs[REG_SP] = 0x03000200;
+    flush_put16(gba, 0x03000000, 0xBD10); /* POP {R4, PC} */
+    ASSERT_EQ(flush_cycles(gba, 0x03000000, true), 1 + 2 + 1 + 2);
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x03000104);
+
+    cpu->regs[0] = 0x03000200;
+    flush_put16(gba, 0x03000000, 0xC800); /* LDMIA R0!, {} */
+    ASSERT_EQ(flush_cycles(gba, 0x03000000, true), 1 + 1 + 1 + 2);
+    ASSERT_EQ_HEX(cpu->regs[REG_PC], 0x03000104);
+    free(gba);
+}
+
 TEST(soft_reset_default_jumps_to_rom) {
     GBA* gba = make_gba();
     ARM7TDMI* cpu = &gba->cpu;
@@ -737,6 +763,7 @@ void run_cpu_tests(void) {
     RUN_TEST(arm_bx_to_thumb_cycles_iwram_and_rom);
     RUN_TEST(arm_ldr_pc_cycles_iwram_and_rom);
     RUN_TEST(arm_ldm_cycles_include_internal_cycle);
+    RUN_TEST(thumb_pop_pc_and_empty_ldmia_cycles);
     RUN_TEST(soft_reset_default_jumps_to_rom);
     RUN_TEST(soft_reset_flag_set_jumps_to_ewram);
 }
