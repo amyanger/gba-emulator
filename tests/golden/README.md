@@ -27,7 +27,7 @@ table below in the same change.
 | `mgba_suite_timing` | Timing tests | 420 | 930/2020 |
 | `mgba_suite_timers` | Timer count-up tests | 240 | 554/936 |
 | `mgba_suite_timer_irq` | Timer IRQ tests | 120 | 70/90 |
-| `mgba_suite_dma` | DMA tests | 240 | 984/1244 |
+| `mgba_suite_dma` | DMA tests | 240 | 1244/1244 |
 
 Re-check one locally:
 

@@ -115,21 +115,27 @@ int dma_execute(DMAController* dma, int ch) {
 
     // Execute the transfer
     for (uint32_t i = 0; i < count; i++) {
+        bool src_readable = dc->source >= 0x02000000;
         if (use_32) {
-            uint32_t val = bus_read32(bus, dc->source);
-            bus_write32(bus, dc->dest, val);
+            if (src_readable) dc->data_latch = bus_read32(bus, dc->source);
+            bus_write32(bus, dc->dest, dc->data_latch);
         } else {
-            uint16_t val = bus_read16(bus, dc->source);
-            bus_write16(bus, dc->dest, val);
+            if (src_readable) dc->data_latch = bus_read16(bus, dc->source) * 0x00010001u;
+            bus_write16(bus, dc->dest, (uint16_t)(dc->data_latch >> (8 * (dc->dest & 2))));
         }
 
         // Adjust source address
         // 0=increment, 1=decrement, 2=fixed, 3=prohibited (treat as fixed)
-        switch (dc->src_adjust) {
-        case 0: dc->source += step; break;
-        case 1: dc->source -= step; break;
-        case 2: break; // fixed
-        case 3: break; // prohibited, treat as fixed
+        // GamePak ROM addresses only count up, whatever the setting says.
+        if (dc->source >= 0x08000000 && dc->source < 0x0E000000) {
+            dc->source += step;
+        } else {
+            switch (dc->src_adjust) {
+            case 0: dc->source += step; break;
+            case 1: dc->source -= step; break;
+            case 2: break; // fixed
+            case 3: break; // prohibited, treat as fixed
+            }
         }
 
         // Adjust destination address

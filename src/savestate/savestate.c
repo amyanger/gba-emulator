@@ -576,8 +576,10 @@ static bool load_dma_chunk(const uint8_t** cur, DMAController* dma) {
     int8_t active_channel = (int8_t)read_u8(cur);
     if (active_channel < -1 || active_channel > 3) return false;
     dma->active_channel = active_channel;
-    /* Owed completion IRQs were saved into IF; drop any from before the load. */
+    /* Owed completion IRQs were saved into IF; drop any from before the
+     * load, along with the unsaved read latches. */
     memset(dma->irq_stall, 0, sizeof(dma->irq_stall));
+    for (int ch = 0; ch < 4; ch++) dma->channels[ch].data_latch = 0;
     return true;
 }
 

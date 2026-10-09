@@ -103,6 +103,60 @@ TEST(dma_irq_raised_when_stall_ends) {
     free(gba);
 }
 
+TEST(dma_bios_source_writes_latch) {
+    /* A source below EWRAM isn't read: each unit writes the channel's
+     * latch, the last value it transferred. */
+    GBA* gba = make_gba();
+    Bus* bus = &gba->bus;
+    bus_write32(bus, 0x03000000, 0xCAFEBABE);
+
+    bus_write32(bus, 0x040000D4, 0x03000000);
+    bus_write32(bus, 0x040000D8, 0x03000100);
+    bus_write16(bus, 0x040000DC, 1);
+    bus_write16(bus, 0x040000DE, dma_control(true, 0));
+
+    bus_write32(bus, 0x040000D4, 0x00000010); /* BIOS */
+    bus_write32(bus, 0x040000D8, 0x03000200);
+    bus_write16(bus, 0x040000DC, 2);
+    bus_write16(bus, 0x040000DE, dma_control(true, 0));
+    ASSERT_EQ_HEX(bus_read32(bus, 0x03000200), 0xCAFEBABE);
+    ASSERT_EQ_HEX(bus_read32(bus, 0x03000204), 0xCAFEBABE);
+
+    /* A 16-bit read fills both latch halves. */
+    bus_write16(bus, 0x03000000, 0xBEEF);
+    bus_write32(bus, 0x040000D4, 0x03000000);
+    bus_write32(bus, 0x040000D8, 0x03000300);
+    bus_write16(bus, 0x040000DC, 1);
+    bus_write16(bus, 0x040000DE, dma_control(false, 0));
+    bus_write32(bus, 0x040000D4, 0x00000010);
+    bus_write32(bus, 0x040000D8, 0x03000400);
+    bus_write16(bus, 0x040000DC, 2);
+    bus_write16(bus, 0x040000DE, dma_control(true, 0));
+    ASSERT_EQ_HEX(bus_read32(bus, 0x03000400), 0xBEEFBEEF);
+
+    free(gba);
+}
+
+TEST(dma_rom_source_always_increments) {
+    /* GamePak ROM sources count up even when set to decrement. */
+    GBA* gba = make_gba();
+    Bus* bus = &gba->bus;
+    static uint8_t rom[16] = { 0x11, 0x11, 0x22, 0x22, 0x33, 0x33 };
+    gba->cart.rom = rom;
+    gba->cart.rom_size = sizeof(rom);
+
+    bus_write32(bus, 0x040000D4, 0x08000000);
+    bus_write32(bus, 0x040000D8, 0x03000100);
+    bus_write16(bus, 0x040000DC, 3);
+    bus_write16(bus, 0x040000DE, dma_control(false, 0) | (1u << 7)); /* src dec */
+    ASSERT_EQ_HEX(bus_read16(bus, 0x03000100), 0x1111);
+    ASSERT_EQ_HEX(bus_read16(bus, 0x03000102), 0x2222);
+    ASSERT_EQ_HEX(bus_read16(bus, 0x03000104), 0x3333);
+
+    gba->cart.rom = NULL;
+    free(gba);
+}
+
 TEST(dma0_count_masked_to_14_bits) {
     /* DMA0-2 word counts are 14-bit (GBATEK); bits 14-15 of CNT_L are
      * ignored.  0x4001 must transfer exactly 1 unit, not 0x4001. */
@@ -153,6 +207,8 @@ void run_dma_tests(void) {
     RUN_TEST(dma3_immediate_word_copy);
     RUN_TEST(dma_transfer_stalls_cpu);
     RUN_TEST(dma_irq_raised_when_stall_ends);
+    RUN_TEST(dma_bios_source_writes_latch);
+    RUN_TEST(dma_rom_source_always_increments);
     RUN_TEST(dma0_count_masked_to_14_bits);
     RUN_TEST(dma_disabled_does_not_transfer);
 }

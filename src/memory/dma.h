@@ -23,6 +23,10 @@ typedef struct {
     uint8_t timing;       // 0=immediate, 1=VBlank, 2=HBlank, 3=special
     bool irq_on_done;
     bool enabled;
+    /* Last value this channel read (16-bit reads fill both halves). A
+     * source below EWRAM isn't read; the latch is written instead, like
+     * mGBA. Not serialized. */
+    uint32_t data_latch;
 } DMAChannel;
 
 struct DMAController {
