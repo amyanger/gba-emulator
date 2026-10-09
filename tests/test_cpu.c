@@ -526,6 +526,139 @@ TEST(stmfd_ldmfd_round_trip_in_iwram) {
     free(gba);
 }
 
+/* ---- Pipeline flush cycle totals ------------------------------------
+ *
+ * GBATEK "ARM CPU Instruction Cycle Times": B/BL/BX = 2S+1N, LDR with R15
+ * loaded = 2S+2N+1I. The first S is the flushing instruction's own fetch
+ * at the old PC; the N and S fetch the new PC. mGBA charges the same:
+ * ARM/THUMB_PREFETCH_CYCLES plus ARMWritePC/ThumbWritePC. Default WAITCNT
+ * gives WS0 16-bit N=5, S=3, so 32-bit N=8, S=6 (GBATEK memory map). */
+
+static uint8_t flush_rom[0x400];
+
+static void flush_put32(GBA* gba, uint32_t addr, uint32_t v) {
+    if (addr >= 0x08000000) {
+        for (uint32_t i = 0; i < 4; i++) {
+            flush_rom[(addr & 0x3FF) + i] = (uint8_t)(v >> (8 * i));
+        }
+    } else {
+        bus_write32(&gba->bus, addr, v);
+    }
+}
+
+static void flush_put16(GBA* gba, uint32_t addr, uint16_t v) {
+    if (addr >= 0x08000000) {
+        flush_rom[addr & 0x3FF] = (uint8_t)v;
+        flush_rom[(addr & 0x3FF) + 1] = (uint8_t)(v >> 8);
+    } else {
+        bus_write16(&gba->bus, addr, v);
+    }
+}
+
+static GBA* make_flush_gba(void) {
+    GBA* gba = make_gba();
+    memset(flush_rom, 0, sizeof(flush_rom));
+    gba->cart.rom = flush_rom;
+    gba->cart.rom_size = sizeof(flush_rom);
+    cpu_switch_mode(&gba->cpu, CPU_MODE_SYS);
+    return gba;
+}
+
+/* Fill the pipeline at `pc`, then return the cycles of the flushing
+ * instruction there plus the refill step that follows it. */
+static int flush_cycles(GBA* gba, uint32_t pc, bool thumb) {
+    ARM7TDMI* cpu = &gba->cpu;
+    cpu->cpsr = thumb ? (CPU_MODE_SYS | (1u << CPSR_T)) : CPU_MODE_SYS;
+    cpu->regs[REG_PC] = pc;
+    cpu->pipeline_valid = false;
+    (void)cpu_step(cpu); /* initial refill, not measured */
+    int total = cpu_step(cpu);
+    total += cpu_step(cpu);
+    return total;
+}
+
+TEST(arm_b_cycles_iwram_and_rom) {
+    GBA* gba = make_flush_gba();
+    /* B +0x100: offset field (0x100 - 8) / 4 */
+    flush_put32(gba, 0x03000000, 0xEA00003E);
+    ASSERT_EQ(flush_cycles(gba, 0x03000000, false), 3);
+    ASSERT_EQ_HEX(gba->cpu.regs[REG_PC], 0x03000108);
+
+    flush_put32(gba, 0x08000000, 0xEA00003E);
+    ASSERT_EQ(flush_cycles(gba, 0x08000000, false), 6 + 8 + 6);
+    ASSERT_EQ_HEX(gba->cpu.regs[REG_PC], 0x08000108);
+    free(gba);
+}
+
+TEST(thumb_b_cycles_iwram_and_rom) {
+    GBA* gba = make_flush_gba();
+    /* B +0x100: offset11 (0x100 - 4) / 2 */
+    flush_put16(gba, 0x03000000, 0xE07E);
+    ASSERT_EQ(flush_cycles(gba, 0x03000000, true), 3);
+    ASSERT_EQ_HEX(gba->cpu.regs[REG_PC], 0x03000104);
+
+    flush_put16(gba, 0x08000000, 0xE07E);
+    ASSERT_EQ(flush_cycles(gba, 0x08000000, true), 3 + 5 + 3);
+    ASSERT_EQ_HEX(gba->cpu.regs[REG_PC], 0x08000104);
+    free(gba);
+}
+
+TEST(thumb_b_over_one_instruction_fetches_target_nonsequential) {
+    /* B to exec+6 lands right after the old-PC fetch (exec+4), but a
+     * branch target fetch is still N, not S. */
+    GBA* gba = make_flush_gba();
+    flush_put16(gba, 0x08000000, 0xE001);
+    ASSERT_EQ(flush_cycles(gba, 0x08000000, true), 3 + 5 + 3);
+    ASSERT_EQ_HEX(gba->cpu.regs[REG_PC], 0x0800000A);
+    free(gba);
+}
+
+TEST(arm_bx_to_thumb_cycles_iwram_and_rom) {
+    GBA* gba = make_flush_gba();
+    /* BX R0 into Thumb: old fetch is 32-bit, refill is 16-bit. */
+    flush_put32(gba, 0x03000000, 0xE12FFF10);
+    gba->cpu.regs[0] = 0x03000101;
+    ASSERT_EQ(flush_cycles(gba, 0x03000000, false), 3);
+    ASSERT_EQ_HEX(gba->cpu.regs[REG_PC], 0x03000104);
+
+    flush_put32(gba, 0x08000000, 0xE12FFF10);
+    gba->cpu.regs[0] = 0x08000101;
+    ASSERT_EQ(flush_cycles(gba, 0x08000000, false), 6 + 5 + 3);
+    ASSERT_EQ_HEX(gba->cpu.regs[REG_PC], 0x08000104);
+    free(gba);
+}
+
+TEST(arm_ldr_pc_cycles_iwram_and_rom) {
+    GBA* gba = make_flush_gba();
+    /* LDR PC, [R1] with the target word in IWRAM (1 cycle). */
+    flush_put32(gba, 0x03000200, 0x03000100);
+    flush_put32(gba, 0x03000000, 0xE591F000);
+    gba->cpu.regs[1] = 0x03000200;
+    ASSERT_EQ(flush_cycles(gba, 0x03000000, false), 5);
+    ASSERT_EQ_HEX(gba->cpu.regs[REG_PC], 0x03000108);
+
+    /* From ROM the old-PC fetch follows the data access, so it is N:
+     * N(8) + data(1) + I(1) + N(8) + S(6). */
+    flush_put32(gba, 0x03000200, 0x08000100);
+    flush_put32(gba, 0x08000000, 0xE591F000);
+    ASSERT_EQ(flush_cycles(gba, 0x08000000, false), 8 + 1 + 1 + 8 + 6);
+    ASSERT_EQ_HEX(gba->cpu.regs[REG_PC], 0x08000108);
+    free(gba);
+}
+
+TEST(arm_ldm_cycles_include_internal_cycle) {
+    /* LDM = nS+1N+1I; with R15 loaded add 1S+1N. Handler counts only. */
+    GBA* gba = make_flush_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+    cpu->regs[1] = 0x03000200;
+    /* LDMIA R1, {R2, R3} */
+    ASSERT_EQ(arm_execute(cpu, 0xE891000C), 2 + 2);
+    /* LDMIA R1, {R2, PC} */
+    flush_put32(gba, 0x03000204, 0x03000100);
+    ASSERT_EQ(arm_execute(cpu, 0xE8918004), 2 + 2 + 2);
+    free(gba);
+}
+
 TEST(soft_reset_default_jumps_to_rom) {
     GBA* gba = make_gba();
     ARM7TDMI* cpu = &gba->cpu;
@@ -598,6 +731,12 @@ void run_cpu_tests(void) {
     RUN_TEST(mode_switch_banks_sp_independently);
     RUN_TEST(fiq_mode_banks_r8_through_r12);
     RUN_TEST(stmfd_ldmfd_round_trip_in_iwram);
+    RUN_TEST(arm_b_cycles_iwram_and_rom);
+    RUN_TEST(thumb_b_cycles_iwram_and_rom);
+    RUN_TEST(thumb_b_over_one_instruction_fetches_target_nonsequential);
+    RUN_TEST(arm_bx_to_thumb_cycles_iwram_and_rom);
+    RUN_TEST(arm_ldr_pc_cycles_iwram_and_rom);
+    RUN_TEST(arm_ldm_cycles_include_internal_cycle);
     RUN_TEST(soft_reset_default_jumps_to_rom);
     RUN_TEST(soft_reset_flag_set_jumps_to_ewram);
 }

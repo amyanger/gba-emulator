@@ -241,12 +241,17 @@ static int arm_block_transfer(ARM7TDMI* cpu, uint32_t instr) {
         }
     }
 
+    if (load) {
+        cycles += 1; /* LDM = nS+1N+1I */
+    }
+
     /* Flush pipeline if PC was loaded.  Align per the final state: after
      * an LDM {..,PC}^ exception return the restored CPSR may be Thumb,
      * where only bit 0 is cleared. */
     if (pc_loaded) {
         cpu->regs[REG_PC] &= BIT(cpu->cpsr, CPSR_T) ? ~1u : ~3u;
         cpu_flush_pipeline(cpu);
+        cycles += 2; /* +1S+1N if R15 loaded */
     }
 
     return cycles;

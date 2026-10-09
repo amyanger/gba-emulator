@@ -714,7 +714,7 @@ static int thumb_multiple_load_store(ARM7TDMI* cpu, uint16_t instr) {
             bus_write32(cpu->bus, addr, cpu->regs[REG_PC] + 2);
         }
         cpu->regs[rb] = addr + 0x40;
-        return 3;
+        return load ? 4 : 3; /* load: 1S+2N+1I (R15 loaded) */
     }
 
     int cycles;

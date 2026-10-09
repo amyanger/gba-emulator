@@ -356,7 +356,10 @@ int cpu_step(ARM7TDMI* cpu) {
     int cycles;
 
     if (!cpu->pipeline_valid) {
-        /* Refill the 2-entry pipeline */
+        /* Refill the 2-entry pipeline. The fetch at the new PC is always
+         * nonsequential, even when it lands right after the old PC. */
+        cpu->bus->last_access_addr = 0xFFFFFFFFu;
+        cpu->bus->last_access_size = 0;
         if (BIT(cpu->cpsr, CPSR_T)) {
             /* Thumb: two 16-bit fetches */
             cpu->pipeline[0] = bus_fetch16(cpu->bus, cpu->regs[REG_PC]);
@@ -379,9 +382,16 @@ int cpu_step(ARM7TDMI* cpu) {
         cpu->bus->last_prefetched_pc = 0;
         cpu->bus->data_wait = 0;
         cpu->bus->data_read = false;
-        cycles = 2; /* pipeline refill cost */
-        return cycles + bus_drain_pending(cpu->bus);
+        /* The flushing instruction (or exception entry) already counted
+         * the refill's 1N+1S base cycles (GBATEK B = 2S+1N); only the
+         * fetch waitstates are added here, as mGBA's ARMWritePC does. */
+        return bus_drain_pending(cpu->bus);
     }
+
+    /* A flushing instruction still makes its own opcode fetch at the old
+     * PC (the first S of B = 2S+1N); it is discarded but its waitstates
+     * count, like mGBA's ARM/THUMB_PREFETCH_CYCLES. */
+    uint32_t fetch_pc = cpu->regs[REG_PC];
 
     if (BIT(cpu->cpsr, CPSR_T)) {
         /* Thumb mode: execute first, then advance pipeline if no flush */
@@ -395,6 +405,8 @@ int cpu_step(ARM7TDMI* cpu) {
             cpu->regs[REG_PC] += 2;
             cpu->bus->open_bus =
                 (uint32_t)cpu->pipeline[1] | ((uint32_t)cpu->pipeline[1] << 16);
+        } else {
+            (void)bus_fetch16(cpu->bus, fetch_pc);
         }
         cycles += bus_drain_pending(cpu->bus);
         /* A prefetch refund can't make an instruction free. */
@@ -417,6 +429,8 @@ int cpu_step(ARM7TDMI* cpu) {
             cpu->pipeline[1] = bus_fetch32(cpu->bus, cpu->regs[REG_PC]);
             cpu->regs[REG_PC] += 4;
             cpu->bus->open_bus = cpu->pipeline[1];
+        } else {
+            (void)bus_fetch32(cpu->bus, fetch_pc);
         }
         cycles += bus_drain_pending(cpu->bus);
         return cycles > 0 ? cycles : 1;
@@ -460,6 +474,9 @@ void cpu_run(ARM7TDMI* cpu, int cycles) {
         /* Check for pending IRQ before each instruction */
         if (cpu_check_irq(cpu)) {
             cpu_handle_irq(cpu);
+            /* Entry charges the vector refill's base 1N+1S here, like
+             * mGBA's ARMRaiseIRQ (ARMWritePC); cpu_step adds its waits. */
+            cpu->cycles_executed += 2;
         }
 
         int step_cycles = cpu_step(cpu);
