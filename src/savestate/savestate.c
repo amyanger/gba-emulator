@@ -732,6 +732,8 @@ static bool load_tmr_chunk(const uint8_t** cur, Timer timers[4]) {
         }
         t->prescaler = prescaler;
         t->cascade = read_u8(cur) != 0;
+        /* Older builds let TM0 count up; it can't (see bus.c). */
+        if (i == 0) t->cascade = false;
         t->irq_enable = read_u8(cur) != 0;
         t->enabled = read_u8(cur) != 0;
         t->prescaler_counter = read_u32(cur);

@@ -594,6 +594,18 @@ TEST(timer_irq_enabled_mid_slice_is_taken_on_time) {
     ASSERT_EQ_HEX(cpu_get_mode(cpu), CPU_MODE_IRQ);
 }
 
+TEST(tm0_ignores_count_up_bit) {
+    /* GBATEK: the count-up bit is unused in TM0CNT_H, so TM0 still counts
+     * with its prescaler. mGBA keeps the bit for readback. */
+    GBA* gba = make_gba();
+    bus_write16(&gba->bus, REG_TM0CNT_H, 0x0084); /* enable + count-up */
+    ASSERT_EQ_HEX(bus_read16(&gba->bus, REG_TM0CNT_H), 0x0084);
+    timer_tick(gba->timers, 10, &gba->interrupts, &gba->apu);
+    ASSERT_EQ(gba->timers[0].counter, 10);
+    ASSERT_EQ(timer_cycles_until_irq(gba->timers), INT32_MAX);
+    free(gba);
+}
+
 void run_bus_tests(void) {
     TEST_SUITE("bus");
     RUN_TEST(ewram_write_read);
@@ -636,4 +648,5 @@ void run_bus_tests(void) {
     RUN_TEST(timer_prescaler_drop_while_running_does_not_stall_slices);
     RUN_TEST(timer_read_right_after_a_sync_still_sees_two_cycles_back);
     RUN_TEST(timer_irq_enabled_mid_slice_is_taken_on_time);
+    RUN_TEST(tm0_ignores_count_up_bit);
 }

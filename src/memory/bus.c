@@ -995,6 +995,9 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
             uint32_t timer_idx = (lo_offset - 0x102) / 4;
             bus_sync_timers(bus);
             timer_write_control(&bus->timers[timer_idx], control);
+            /* TM0 has nothing to count up from; GBATEK marks the bit
+             * unused there. It still reads back as written. */
+            if (timer_idx == 0) bus->timers[0].cascade = false;
             bus_timer_reschedule(bus);
         }
         return;
