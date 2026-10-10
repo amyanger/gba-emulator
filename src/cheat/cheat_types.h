@@ -10,6 +10,7 @@
 #define CHEAT_MAX_LINES  48     /* raw code lines per cheat */
 #define CHEAT_MAX_OPS    96     /* decoded ops per cheat */
 #define CHEAT_NAME_LEN   48
+#define CHEAT_KEPT_TEXT  4096   /* unparseable .cht blocks, kept verbatim */
 
 typedef enum {
     CHEAT_DEV_CODEBREAKER,

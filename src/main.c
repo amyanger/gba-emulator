@@ -3,6 +3,7 @@
 #include "cheat/cheat_backup.h"
 #include "cheat/cheat_file.h"
 #include "cheat/cheat_report.h"
+#include "cheat/cheat_session.h"
 #include "frontend/frontend.h"
 #include "frontend/overlay_draw.h"
 #include "frontend/input_display.h"
@@ -40,6 +41,10 @@ static const char* path_base(const char* p) {
     return s ? s + 1 : p;
 }
 
+static void settings_toast(void* user, ToastKind kind, const char* title, const char* detail) {
+    frontend_toast((Frontend*)user, kind, title, detail);
+}
+
 /* Present one frame: clear overlay, render HUD layers, then blit to screen. */
 static void render_with_overlay(Frontend* fe, GBA* gba) {
     frontend_overlay_clear(fe);
@@ -65,6 +70,7 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
             fe->panel_dirty = false;
         }
     }
+    frontend_update_settings(fe, gba);
     frontend_update_hud(fe, SDL_GetTicks());
     frontend_present_frame(fe, gba->ppu.framebuffer);
 }
@@ -331,14 +337,17 @@ int main(int argc, char* argv[]) {
     }
     char auto_cheat_path[1024];
     bool cheat_path_explicit = cheat_path != NULL;
-    if (!cheat_path && (size_t)snprintf(auto_cheat_path, sizeof(auto_cheat_path), "%s.cht", rom_path) <
-                           sizeof(auto_cheat_path)) {
+    bool auto_path_ok = (size_t)snprintf(auto_cheat_path, sizeof(auto_cheat_path), "%s.cht", rom_path) <
+                        sizeof(auto_cheat_path);
+    if (!cheat_path && auto_path_ok) {
         FILE* probe = fopen(auto_cheat_path, "r");
         if (probe) {
             fclose(probe);
             cheat_path = auto_cheat_path;
         }
     }
+    /* Where Settings saves cheats: the --cheats file, else <rom>.cht (created on first add). */
+    const char* cheat_save_path = cheat_path_explicit ? cheat_path : auto_path_ok ? auto_cheat_path : NULL;
     int32_t cheats_loaded = -1;
     uint32_t cheats_skipped = 0, cheats_broken = 0;
     const char* first_broken = NULL;
@@ -372,7 +381,7 @@ int main(int argc, char* argv[]) {
     bool cheat_backup_ran = false;
     if (cheat_any_enabled(&gba.cheats)) {
         cheat_backup_ran = true;
-        cheat_backup = cheat_backup_save(&gba.cart);
+        cheat_backup = cheat_session_backup(&gba.cheats, &gba.cart);
         if (cheat_backup == CHEAT_BACKUP_FAILED) {
             LOG_ERROR("Couldn't back up the save; cheats are off for this session");
             for (uint32_t i = 0; i < gba.cheats.cheat_count; i++) gba.cheats.cheats[i].enabled = false;
@@ -524,6 +533,7 @@ int main(int argc, char* argv[]) {
     else if (cheat_backup_ran && cheat_backup == CHEAT_BACKUP_FAILED)
         frontend_toast(&fe, TOAST_ERROR, "Couldn't back up save", "Cheats stay off");
     if (link_peer) frontend_toast(&fe, TOAST_INFO, "Link cable connected", NULL);
+    fe.settings_ctx = (SettingsContext){&gba.cheats, &gba.cart, cheat_save_path, settings_toast, &fe};
 
     // Initialize audio
     frontend_audio_init(&fe);

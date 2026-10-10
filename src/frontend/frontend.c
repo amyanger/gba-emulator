@@ -3,6 +3,7 @@
 #include "input_display.h"
 #include "slot_picker.h"
 #include "frontend/hud_draw.h"
+#include "frontend/macos_menu.h"
 #include "gba.h"
 #include "apu/apu.h"
 #include "input/input.h"
@@ -36,6 +37,7 @@ void frontend_set_hints(void) {
 bool frontend_init(Frontend* fe, int scale) {
     memset(fe, 0, sizeof(*fe));
     toast_init(&fe->toasts);
+    settings_init(&fe->settings);
 
     frontend_set_hints();
 
@@ -117,6 +119,8 @@ bool frontend_init(Frontend* fe, int scale) {
     fe->controller_keys = 0;
     fe->slot_picker.mode = SLOT_PICKER_CLOSED;
     frontend_apply_layout(fe);
+    fe->settings_event = SDL_RegisterEvents(1);
+    if (fe->settings_event != (uint32_t)-1) macos_menu_install_settings(fe->settings_event);
 
     fe->controller = NULL;
     for (int i = 0; i < SDL_NumJoysticks(); i++) {
@@ -195,6 +199,36 @@ static void frontend_keep_on_screen(Frontend* fe, int display) {
 /* Recomputes the plan and rects. resize_window is false when reacting to a size change
  * the window already went through, so a window manager that clamps our request cannot
  * bounce resize events back and forth. */
+static void settings_free(Frontend* fe) {
+    if (fe->settings_texture) SDL_DestroyTexture(fe->settings_texture);
+    fe->settings_texture = NULL;
+    free(fe->settings_buffer);
+    fe->settings_buffer = NULL;
+    fe->settings_px_w = fe->settings_px_h = 0;
+}
+
+/* Window-sized layer, allocated only while Settings is open. */
+static void settings_alloc(Frontend* fe) {
+    int w = 0, h = 0;
+    SDL_GetRendererOutputSize(fe->renderer, &w, &h);
+    fe->settings_density = settings_density(w, h, fe->plan.density);
+    fe->settings_dirty = true;
+    if (w == fe->settings_px_w && h == fe->settings_px_h && fe->settings_texture) return;
+    settings_free(fe);
+    if (w <= 0 || h <= 0) return;
+    fe->settings_buffer = (uint32_t*)calloc((size_t)w * (size_t)h, sizeof(uint32_t));
+    fe->settings_texture = SDL_CreateTexture(fe->renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, w, h);
+    if (!fe->settings_buffer || !fe->settings_texture) {
+        LOG_ERROR("Failed to create the Settings texture: %s", SDL_GetError());
+        settings_free(fe);
+        return;
+    }
+    SDL_SetTextureBlendMode(fe->settings_texture, SDL_BLENDMODE_BLEND);
+    SDL_SetTextureScaleMode(fe->settings_texture, SDL_ScaleModeNearest);
+    fe->settings_px_w = w;
+    fe->settings_px_h = h;
+}
+
 static void frontend_layout(Frontend* fe, bool resize_window) {
     LayoutInput in;
     in.game_scale = fe->scale;
@@ -289,6 +323,7 @@ static void frontend_layout(Frontend* fe, bool resize_window) {
         }
     }
     fe->hud_dirty = true;
+    if (fe->settings.open) settings_alloc(fe);
 }
 
 void frontend_apply_layout(Frontend* fe) {
@@ -305,9 +340,10 @@ void frontend_toast_keyed(Frontend* fe, const char* key, ToastKind kind, const c
 }
 
 void frontend_update_hud(Frontend* fe, uint32_t now_ms) {
-    toast_set_badge(&fe->toasts, BADGE_PAUSED, fe->paused);
-    toast_set_badge(&fe->toasts, BADGE_FAST, fe->ff_hold || fe->ff_toggle);
-    toast_set_badge(&fe->toasts, BADGE_MUTED, fe->muted);
+    bool badges = !fe->settings.open;   /* Settings covers the game; its dimming shows the pause */
+    toast_set_badge(&fe->toasts, BADGE_PAUSED, badges && fe->paused);
+    toast_set_badge(&fe->toasts, BADGE_FAST, badges && (fe->ff_hold || fe->ff_toggle));
+    toast_set_badge(&fe->toasts, BADGE_MUTED, badges && fe->muted);
     toast_tick(&fe->toasts, now_ms);
     fe->hud_shown = fe->hud_texture && hud_visible(&fe->toasts);
     if (!fe->hud_shown) {
@@ -337,6 +373,7 @@ void frontend_destroy(Frontend* fe) {
         free(fe->panel_buffer);
         fe->panel_buffer = NULL;
     }
+    settings_free(fe);
     if (fe->hud_texture) SDL_DestroyTexture(fe->hud_texture);
     free(fe->hud_buffer);
     fe->hud_buffer = NULL;
@@ -364,14 +401,16 @@ void frontend_present_frame(Frontend* fe, uint16_t* framebuffer) {
         SDL_RenderCopy(fe->renderer, fe->overlay_texture, NULL, &game_rect);
     }
 
-    if (fe->hud_shown && fe->hud_texture) {
-        SDL_Rect hud_rect = {fe->game_rect.x, fe->game_rect.y, fe->hud_px_w, fe->hud_px_h};
-        SDL_RenderCopy(fe->renderer, fe->hud_texture, NULL, &hud_rect);
-    }
-
     if (fe->panel_visible && fe->panel_texture) {
         SDL_Rect panel_rect = {fe->panel_rect.x, fe->panel_rect.y, fe->panel_px_w, fe->panel_px_h};
         SDL_RenderCopy(fe->renderer, fe->panel_texture, NULL, &panel_rect);
+    }
+    if (fe->settings.open && fe->settings_texture)
+        SDL_RenderCopy(fe->renderer, fe->settings_texture, NULL, NULL);
+    /* Toasts last, so "Cheat added" shows above Settings. */
+    if (fe->hud_shown && fe->hud_texture) {
+        SDL_Rect hud_rect = {fe->game_rect.x, fe->game_rect.y, fe->hud_px_w, fe->hud_px_h};
+        SDL_RenderCopy(fe->renderer, fe->hud_texture, NULL, &hud_rect);
     }
     SDL_RenderPresent(fe->renderer);
 }
@@ -401,6 +440,167 @@ static void frontend_handle_window_event(Frontend* fe, const SDL_Event* event) {
     }
 }
 
+/* ⌘, arrives only as the menu's event on macOS (also matching ⌘ here could
+ * toggle twice for one press); Ctrl+, is the key everywhere. */
+static bool frontend_settings_shortcut(Frontend* fe, const SDL_Event* e) {
+    if (fe->settings_event != (uint32_t)-1 && e->type == fe->settings_event) return true;
+    return e->type == SDL_KEYDOWN && !e->key.repeat && e->key.keysym.scancode == SDL_SCANCODE_COMMA &&
+           (e->key.keysym.mod & KMOD_CTRL);
+}
+
+static void release_gba_keys(Frontend* fe, GBA* gba) {
+    input_release(&gba->input, 0x03FF);
+    fe->controller_keys = 0;
+    fe->ff_hold = false;
+#ifdef ENABLE_REWIND
+    fe->rewind_hold = false;
+#endif
+}
+
+void frontend_settings_open(Frontend* fe, GBA* gba) {
+    if (fe->settings.open) return;
+    if (slot_picker_is_open(fe)) slot_picker_close(fe);
+    fe->settings_was_paused = fe->paused;
+    fe->paused = true;
+    release_gba_keys(fe, gba);
+    float mx = fe->ui_input.mx, my = fe->ui_input.my;
+    memset(&fe->ui_input, 0, sizeof(fe->ui_input));
+    fe->ui_input.mx = mx;
+    fe->ui_input.my = my;
+    fe->ui_input.focus = SETTINGS_ID_PASTE;
+    settings_open(&fe->settings);
+    settings_alloc(fe);
+    SDL_StartTextInput();
+}
+
+void frontend_settings_close(Frontend* fe, GBA* gba) {
+    if (!fe->settings.open) return;
+    settings_close(&fe->settings);
+    SDL_StopTextInput();
+    settings_free(fe);
+    release_gba_keys(fe, gba);
+    fe->paused = fe->settings_was_paused;
+}
+
+static void settings_mouse(Frontend* fe, int wx, int wy) {
+    int win_w = 0, win_h = 0, out_w = 0, out_h = 0;
+    SDL_GetWindowSize(fe->window, &win_w, &win_h);
+    SDL_GetRendererOutputSize(fe->renderer, &out_w, &out_h);
+    float px_per_unit = win_w > 0 ? (float)out_w / (float)win_w : 1.0f;
+    settings_point_from_window((float)wx, (float)wy, px_per_unit, fe->settings_density, &fe->ui_input.mx,
+                               &fe->ui_input.my);
+}
+
+static UiKey settings_key(const SDL_KeyboardEvent* k) {
+    bool cmd = (k->keysym.mod & (KMOD_CTRL | KMOD_GUI)) != 0;
+    switch (k->keysym.scancode) {
+    case SDL_SCANCODE_TAB:       return (k->keysym.mod & KMOD_SHIFT) ? UI_KEY_SHIFT_TAB : UI_KEY_TAB;
+    case SDL_SCANCODE_UP:        return UI_KEY_UP;
+    case SDL_SCANCODE_DOWN:      return UI_KEY_DOWN;
+    case SDL_SCANCODE_LEFT:      return UI_KEY_LEFT;
+    case SDL_SCANCODE_RIGHT:     return UI_KEY_RIGHT;
+    case SDL_SCANCODE_HOME:      return UI_KEY_HOME;
+    case SDL_SCANCODE_END:       return UI_KEY_END;
+    case SDL_SCANCODE_RETURN:
+    case SDL_SCANCODE_KP_ENTER:  return UI_KEY_ENTER;
+    case SDL_SCANCODE_ESCAPE:    return UI_KEY_ESCAPE;
+    case SDL_SCANCODE_BACKSPACE: return UI_KEY_BACKSPACE;
+    case SDL_SCANCODE_DELETE:    return UI_KEY_DELETE;
+    case SDL_SCANCODE_SPACE:     return UI_KEY_SPACE;
+    case SDL_SCANCODE_A:         return cmd ? UI_KEY_SELECT_ALL : UI_KEY_NONE;
+    default:                     return UI_KEY_NONE;
+    }
+}
+
+/* While Settings is open every input goes to it; nothing reaches the GBA. */
+static void settings_handle_event(Frontend* fe, const SDL_Event* e) {
+    UiInput* in = &fe->ui_input;
+    /* Ignore input aimed at other windows (X-Ray). */
+    uint32_t main_id = SDL_GetWindowID(fe->window), id = main_id;
+    switch (e->type) {
+    case SDL_MOUSEMOTION: id = e->motion.windowID; break;
+    case SDL_MOUSEBUTTONDOWN:
+    case SDL_MOUSEBUTTONUP: id = e->button.windowID; break;
+    case SDL_MOUSEWHEEL: id = e->wheel.windowID; break;
+    case SDL_KEYDOWN:
+    case SDL_KEYUP: id = e->key.windowID; break;
+    case SDL_TEXTINPUT: id = e->text.windowID; break;
+    default: break;
+    }
+    if (id != main_id) return;
+    switch (e->type) {
+    case SDL_MOUSEMOTION:
+        settings_mouse(fe, e->motion.x, e->motion.y);
+        fe->settings_dirty = true;
+        break;
+    case SDL_MOUSEBUTTONDOWN:
+    case SDL_MOUSEBUTTONUP:
+        if (e->button.button != SDL_BUTTON_LEFT) break;
+        settings_mouse(fe, e->button.x, e->button.y);
+        in->down = e->type == SDL_MOUSEBUTTONDOWN;
+        if (in->down) in->pressed = true;
+        else in->released = true;
+        break;
+    case SDL_MOUSEWHEEL:
+        /* y already follows the system's natural-scrolling setting; direction is informational. */
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+        in->wheel += e->wheel.preciseY;
+#else
+        in->wheel += (float)e->wheel.y;
+#endif
+        break;
+    case SDL_KEYDOWN: {
+        bool cmd = (e->key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) != 0;
+        if (cmd && e->key.keysym.scancode == SDL_SCANCODE_V) {
+            char* clip = SDL_GetClipboardText();
+            if (clip) {
+                ui_input_text(in, clip);
+                SDL_free(clip);
+            }
+            break;
+        }
+        UiKey k = settings_key(&e->key);
+        /* Repeats move the caret or delete text, but never press buttons:
+         * a held Enter must not arm and then confirm Delete. */
+        bool repeat_ok = k == UI_KEY_LEFT || k == UI_KEY_RIGHT || k == UI_KEY_UP || k == UI_KEY_DOWN ||
+                         k == UI_KEY_BACKSPACE || k == UI_KEY_TAB || k == UI_KEY_SHIFT_TAB;
+        if (k != UI_KEY_NONE && (!e->key.repeat || repeat_ok)) ui_input_key(in, k);
+        break;
+    }
+    case SDL_TEXTINPUT:
+        ui_input_text(in, e->text.text);
+        break;
+    default:
+        break;
+    }
+}
+
+void frontend_update_settings(Frontend* fe, GBA* gba) {
+    if (!fe->settings.open) return;
+    UiInput* in = &fe->ui_input;
+    in->now_ms = SDL_GetTicks();
+    bool text_focus = in->focus == SETTINGS_ID_PASTE || in->focus == SETTINGS_ID_NAME;
+    uint32_t blink = text_focus ? (in->now_ms - in->caret_ms) / UI_CARET_MS : 0;
+    if (!fe->settings_buffer) {   /* texture couldn't be made: don't leave an invisible modal */
+        frontend_settings_close(fe, gba);
+        return;
+    }
+    if (fe->settings_dirty || ui_input_pending(in) || blink != fe->settings_blink) {
+        /* Effects applied after a widget was drawn (Tab focus, Add clearing the
+         * boxes, a pop-up closing, a deleted row) show up in one more frame. */
+        bool settle = ui_input_pending(in);
+        UiCanvas canvas;
+        ui_canvas_init(&canvas, fe->settings_buffer, fe->settings_px_w, fe->settings_px_h, fe->settings_density);
+        ui_input_frame_begin(in);
+        settings_draw(&canvas, in, &fe->settings, &fe->settings_ctx);
+        ui_input_frame_end(in);
+        SDL_UpdateTexture(fe->settings_texture, NULL, fe->settings_buffer, fe->settings_px_w * (int)sizeof(uint32_t));
+        fe->settings_dirty = settle;
+        fe->settings_blink = text_focus ? (in->now_ms - in->caret_ms) / UI_CARET_MS : 0;
+    }
+    if (fe->settings.close_requested) frontend_settings_close(fe, gba);
+}
+
 void frontend_poll_input(Frontend* fe, GBA* gba) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -418,6 +618,17 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             continue;
         }
 
+        if (frontend_settings_shortcut(fe, &event)) {
+            if (fe->settings.open) frontend_settings_close(fe, gba);
+            else frontend_settings_open(fe, gba);
+            continue;
+        }
+        bool hotplug = event.type == SDL_CONTROLLERDEVICEADDED || event.type == SDL_CONTROLLERDEVICEREMOVED;
+        if (fe->settings.open && !hotplug) {
+            settings_handle_event(fe, &event);
+            continue;
+        }
+
         /* If a slot-picker modal is open, route events to it first. */
         if (slot_picker_is_open(fe)) {
             if (slot_picker_handle_event(fe, gba, &event)) {
@@ -431,7 +642,8 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             if (key) input_press(&gba->input, key);
 
             // Escape to quit
-            if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
+            /* Not on repeat: a held Esc that just closed Settings must not quit. */
+            if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat) {
                 fe->running = false;
                 gba->running = false;
             }

@@ -161,6 +161,21 @@ TEST(cheat_apply_costs_no_bus_side_effects_for_ram) {
     ASSERT_MEM_EQ(&before, &g->bus, sizeof(Bus));
 }
 
+/* A broken cheat loaded with enabled=true must not start running when it is
+ * repaired: turning it on has to go through cheat_enable (save backup). */
+TEST(cheat_repair_leaves_cheat_off) {
+    GBA* g = make_gba();
+    CheatRawList raw = {0};
+    uint32_t a = 0x02224ABC, b = 0x0000270F;
+    raw.lines[0] = (CheatRawLine){a, b, 8};
+    raw.count = 1;
+    int32_t i = cheat_add_raw(&g->cheats, "x", &raw, CHEAT_DEV_CODEBREAKER, true, true);
+    ASSERT_TRUE(g->cheats.cheats[i].broken);
+    ASSERT_TRUE(cheat_set_device(&g->cheats, (uint32_t)i, CHEAT_DEV_PAR3_RAW));
+    ASSERT_TRUE(!g->cheats.cheats[i].broken);
+    ASSERT_TRUE(!g->cheats.cheats[i].enabled);
+}
+
 void run_cheat_tests(void) {
     TEST_SUITE("cheat");
     RUN_TEST(cheat_add_text_codebreaker_writes_ram);
@@ -175,4 +190,5 @@ void run_cheat_tests(void) {
     RUN_TEST(cheat_disabled_does_nothing_and_toggle_remove);
     RUN_TEST(cheat_engine_full_returns_minus_one);
     RUN_TEST(cheat_apply_costs_no_bus_side_effects_for_ram);
+    RUN_TEST(cheat_repair_leaves_cheat_off);
 }

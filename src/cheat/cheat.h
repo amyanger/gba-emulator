@@ -29,6 +29,12 @@ typedef struct {
     CheatEntry cheats[CHEAT_MAX_CHEATS];
     uint32_t cheat_count;
     uint32_t game_code;      /* ROM header word at 0xAC, for game ID lines */
+    /* .cht blocks the loader couldn't parse, written back unchanged on save so
+     * editing in the app never drops hand-written text. */
+    char kept_text[CHEAT_KEPT_TEXT];
+    uint32_t kept_len;
+    bool kept_overflow;      /* more than fits: saving would lose text, so it refuses */
+    bool backup_done;        /* the save was backed up (or there was none) this session */
 } CheatEngine;
 
 void cheat_init(CheatEngine* engine);

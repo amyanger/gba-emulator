@@ -124,6 +124,62 @@ TEST(cheat_file_save_is_atomic_over_existing) {
     remove(path);
 }
 
+static long read_file(const char* path, char* buf, size_t len) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return -1;
+    size_t n = fread(buf, 1, len - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    return (long)n;
+}
+
+TEST(cheat_file_save_writes_name_key) {
+    static CheatEngine src;
+    char err[128], text[1024];
+    cheat_init(&src);
+    cheat_add_text(&src, "82025838 03E7\n", "Max Money 999999", CHEAT_DEV_AUTO, err, sizeof(err));
+    ASSERT_TRUE(cheat_file_save(&src, "gba_cheat_name.cht"));
+    ASSERT_TRUE(read_file("gba_cheat_name.cht", text, sizeof(text)) > 0);
+    remove("gba_cheat_name.cht");
+    ASSERT_TRUE(strstr(text, "name=Max Money 999999\n") != NULL);
+}
+
+/* Blocks the loader couldn't parse are written back exactly as they were. */
+TEST(cheat_file_unparseable_blocks_survive_save) {
+    const char* block = "[CodeBreaker]\nTypo here\n82025838 3E7\n";
+    char content[256], text[2048];
+    snprintf(content, sizeof(content), "%s[CodeBreaker]\nGood\n82025838 03E7\n", block);
+    ASSERT_EQ(load(content), 1);
+    ASSERT_TRUE(cheat_file_save(&eng, "gba_cheat_kept.cht"));
+    ASSERT_TRUE(read_file("gba_cheat_kept.cht", text, sizeof(text)) > 0);
+    remove("gba_cheat_kept.cht");
+    ASSERT_TRUE(strstr(text, block) != NULL);
+    ASSERT_TRUE(strstr(text, "name=Good") != NULL);
+}
+
+TEST(cheat_file_kept_overflow_refuses_save) {
+    static char big[CHEAT_KEPT_TEXT + 512];
+    size_t n = 0;
+    while (n + 64 < sizeof(big)) n += (size_t)snprintf(big + n, sizeof(big) - n, "[CodeBreaker]\nBad\n12345678 123\n");
+    ASSERT_EQ(load(big), 0);
+    ASSERT_TRUE(!cheat_file_save(&eng, "gba_cheat_overflow.cht"));
+    FILE* f = fopen("gba_cheat_overflow.cht", "r");
+    ASSERT_TRUE(f == NULL);
+}
+
+/* Unreadable text before any [header] must not end up inside the last cheat. */
+TEST(cheat_file_headerless_kept_text_survives_two_saves) {
+    ASSERT_EQ(load("82025838 3E7\n[CodeBreaker]\nLevel 100\n32024540 0064\n"), 1);
+    for (int round = 0; round < 2; round++) {
+        ASSERT_TRUE(cheat_file_save(&eng, "gba_cheat_headerless.cht"));
+        cheat_init(&eng);
+        ASSERT_EQ(cheat_file_load(&eng, "gba_cheat_headerless.cht", &skipped), 1);
+        ASSERT_STR_EQ(eng.cheats[0].name, "Level 100");
+        ASSERT_EQ(skipped, 1);
+    }
+    remove("gba_cheat_headerless.cht");
+}
+
 void run_cheat_file_tests(void) {
     TEST_SUITE("cheat_file");
     RUN_TEST(cheat_file_load_documented_bare_name_format);
@@ -137,4 +193,8 @@ void run_cheat_file_tests(void) {
     RUN_TEST(cheat_file_missing_file_returns_minus_one);
     RUN_TEST(cheat_file_save_load_round_trip);
     RUN_TEST(cheat_file_save_is_atomic_over_existing);
+    RUN_TEST(cheat_file_save_writes_name_key);
+    RUN_TEST(cheat_file_unparseable_blocks_survive_save);
+    RUN_TEST(cheat_file_kept_overflow_refuses_save);
+    RUN_TEST(cheat_file_headerless_kept_text_survives_two_saves);
 }

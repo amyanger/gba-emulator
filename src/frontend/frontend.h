@@ -7,6 +7,7 @@
 #include "frontend/game_panel.h"
 #include "frontend/panel_layout.h"
 #include "frontend/toast.h"
+#include "frontend/settings.h"
 
 // Forward declaration
 typedef struct GBA GBA;
@@ -74,6 +75,19 @@ typedef struct Frontend {
     uint16_t controller_keys;  // bitmask of keys held by gamepad (avoids clobbering keyboard)
 
     SlotPicker slot_picker;  // F6/F7 modal slot picker and label editor
+
+    /* Settings window (⌘, / Ctrl+,): drawn over everything at window resolution. */
+    Settings settings;
+    SettingsContext settings_ctx;   /* set by main once cheats are loaded */
+    UiInput ui_input;
+    SDL_Texture* settings_texture;
+    uint32_t* settings_buffer;
+    int settings_px_w, settings_px_h;
+    float settings_density;
+    bool settings_dirty;
+    bool settings_was_paused;
+    uint32_t settings_blink;        /* caret blink phase last drawn */
+    uint32_t settings_event;        /* SDL user event type that opens/closes Settings */
 } Frontend;
 
 // Forward declaration
@@ -93,5 +107,9 @@ void frontend_toast_keyed(Frontend* fe, const char* key, ToastKind kind, const c
                           const char* detail);
 /* Updates badges from frontend state, expires toasts, redraws the HUD if needed. */
 void frontend_update_hud(Frontend* fe, uint32_t now_ms);
+void frontend_settings_open(Frontend* fe, GBA* gba);
+void frontend_settings_close(Frontend* fe, GBA* gba);
+/* Redraws Settings when input arrived and closes it when it asked to; call before presenting. */
+void frontend_update_settings(Frontend* fe, GBA* gba);
 
 #endif // FRONTEND_H

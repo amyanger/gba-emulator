@@ -108,7 +108,11 @@ bool cheat_set_device(CheatEngine* engine, uint32_t index, CheatDevice dev) {
     if (index >= engine->cheat_count || dev >= CHEAT_DEV_COUNT) return false;
     static CheatEntry trial;
     trial = engine->cheats[index];
+    bool was_broken = trial.broken;
     if (!decode_entry(&trial, dev)) return false;
+    /* A repaired cheat starts off: turning it on must go through cheat_enable,
+     * which backs the save up first. */
+    if (was_broken) trial.enabled = false;
     trial.device_override = true;
     trial.confident = true;
     engine->cheats[index] = trial;

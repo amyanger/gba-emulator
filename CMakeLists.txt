@@ -117,6 +117,7 @@ set(SOURCES
     src/cheat/cheat_decode.c
     src/cheat/cheat_backup.c
     src/cheat/cheat_report.c
+    src/cheat/cheat_session.c
     src/savestate/savestate.c
     src/screenshot/screenshot.c
     src/sio/sio.c
@@ -133,6 +134,8 @@ set(SOURCES
     src/ui/ui_canvas.c
     src/ui/ui_font.c
     src/ui/ui_widgets.c
+    src/ui/ui_input.c
+    src/ui/ui_controls.c
     src/frontend/frontend.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
@@ -141,6 +144,8 @@ set(SOURCES
     src/frontend/panel_layout.c
     src/frontend/rom_picker.c
     src/frontend/toast.c
+    src/frontend/settings.c
+    src/frontend/settings_cheats.c
     src/frontend/hud_draw.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
@@ -189,7 +194,7 @@ target_link_libraries(gba_emulator PRIVATE ${SDL2_LIBRARIES} $<$<NOT:$<PLATFORM_
 
 # Native file picker for launches without a ROM argument (double-click).
 if(APPLE)
-    target_sources(gba_emulator PRIVATE src/frontend/rom_picker_mac.m)
+    target_sources(gba_emulator PRIVATE src/frontend/rom_picker_mac.m src/frontend/macos_menu.m)
     target_link_libraries(gba_emulator PRIVATE "-framework AppKit" "-framework UniformTypeIdentifiers")
 elseif(WIN32)
     # .rc: exe icon. .manifest: UTF-8 code page so argv and fopen take Unicode paths.
@@ -261,6 +266,7 @@ set(LIB_SOURCES
     src/cheat/cheat_decode.c
     src/cheat/cheat_backup.c
     src/cheat/cheat_report.c
+    src/cheat/cheat_session.c
     src/screenshot/screenshot.c
     src/sio/sio.c
     src/sio/sio_link.c
@@ -276,6 +282,8 @@ set(LIB_SOURCES
     src/ui/ui_canvas.c
     src/ui/ui_font.c
     src/ui/ui_widgets.c
+    src/ui/ui_input.c
+    src/ui/ui_controls.c
     src/headless/fb_hash.c
     src/headless/headless.c
     src/headless/input_script.c
@@ -285,6 +293,8 @@ set(LIB_SOURCES
     src/frontend/game_panel.c
     src/frontend/panel_layout.c
     src/frontend/toast.c
+    src/frontend/settings.c
+    src/frontend/settings_cheats.c
     src/frontend/hud_draw.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
@@ -326,6 +336,7 @@ set(TEST_SOURCES
     tests/test_cheat_file.c
     tests/test_cheat_backup.c
     tests/test_cheat_report.c
+    tests/test_cheat_session.c
     tests/test_apu.c
     tests/test_ppu.c
     tests/test_input.c
@@ -349,6 +360,8 @@ set(TEST_SOURCES
     tests/test_ui_canvas.c
     tests/test_ui_font.c
     tests/test_ui_widgets.c
+    tests/test_ui_controls.c
+    tests/test_settings.c
     tests/test_panel_layout.c
     tests/test_toast.c
     tests/test_hud.c
