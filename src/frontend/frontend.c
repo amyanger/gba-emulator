@@ -75,7 +75,6 @@ bool frontend_init(Frontend* fe, int scale) {
     }
     fe->panel_visible = false;
     fe->panel_page = GAME_PAGE_AUTO;
-    frontend_apply_layout(fe);
 
     fe->running = true;
     fe->savestate_slot = 0;
@@ -100,6 +99,7 @@ bool frontend_init(Frontend* fe, int scale) {
     fe->audio_target_bytes = 0;
     fe->controller_keys = 0;
     fe->slot_picker.mode = SLOT_PICKER_CLOSED;
+    frontend_apply_layout(fe);
 
     fe->controller = NULL;
     for (int i = 0; i < SDL_NumJoysticks(); i++) {
