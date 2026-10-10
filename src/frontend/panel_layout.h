@@ -30,4 +30,10 @@ LayoutPlan panel_layout_plan(const LayoutInput* in);
 void panel_layout_rects(const LayoutPlan* plan, bool panel_visible, int out_w, int out_h,
                         PxRect* game, PxRect* panel);
 
+/* Moves a w x h window at (*x, *y) the least distance that keeps it inside usable,
+ * all in window units. top_border is the title bar height above y (0 if unknown).
+ * A window larger than usable is pinned to its top-left so the title bar stays reachable. */
+void panel_layout_clamp_window(int* x, int* y, int w, int h, int top_border,
+                               const PxRect* usable);
+
 #endif // PANEL_LAYOUT_H

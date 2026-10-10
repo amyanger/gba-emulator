@@ -187,6 +187,86 @@ TEST(layout_drawable_keeps_game_scale) {
     }
 }
 
+static PxRect rect(int x, int y, int w, int h) {
+    PxRect r;
+    r.x = x;
+    r.y = y;
+    r.w = w;
+    r.h = h;
+    return r;
+}
+
+TEST(clamp_window_already_fits) {
+    PxRect u = rect(0, 25, 1440, 875);
+    int x = 100, y = 200;
+    panel_layout_clamp_window(&x, &y, 720, 480, 28, &u);
+    ASSERT_EQ(x, 100);
+    ASSERT_EQ(y, 200);
+}
+
+TEST(clamp_window_overflows_right) {
+    PxRect u = rect(0, 25, 1440, 875);
+    int x = 900, y = 200;
+    panel_layout_clamp_window(&x, &y, 1320, 480, 28, &u);
+    ASSERT_EQ(x, 120);
+    ASSERT_EQ(y, 200);
+}
+
+TEST(clamp_window_overflows_bottom) {
+    PxRect u = rect(0, 25, 1440, 875);
+    int x = 100, y = 600;
+    panel_layout_clamp_window(&x, &y, 720, 480, 28, &u);
+    ASSERT_EQ(x, 100);
+    ASSERT_EQ(y, 900 - 480);
+}
+
+TEST(clamp_window_larger_than_usable) {
+    PxRect u = rect(0, 25, 1440, 875);
+    int x = 300, y = 300;
+    panel_layout_clamp_window(&x, &y, 2000, 1200, 28, &u);
+    ASSERT_EQ(x, 0);
+    ASSERT_EQ(y, 25 + 28);
+    ASSERT_TRUE(y - 28 >= u.y);
+}
+
+TEST(clamp_window_second_monitor) {
+    PxRect u = rect(1440, 25, 1920, 1055);
+    int x = 2500, y = 700;
+    panel_layout_clamp_window(&x, &y, 1320, 480, 28, &u);
+    ASSERT_EQ(x, 1440 + 1920 - 1320);
+    ASSERT_EQ(y, 25 + 1055 - 480);
+    x = 1500;
+    y = 100;
+    panel_layout_clamp_window(&x, &y, 1320, 480, 28, &u);
+    ASSERT_EQ(x, 1500);
+    ASSERT_EQ(y, 100);
+}
+
+TEST(clamp_window_pulled_in_from_left_and_above) {
+    PxRect u = rect(1440, 25, 1920, 1055);
+    int x = 1000, y = 10;
+    panel_layout_clamp_window(&x, &y, 720, 480, 28, &u);
+    ASSERT_EQ(x, 1440);
+    ASSERT_EQ(y, 25 + 28);
+    x = 1000;
+    y = 10;
+    panel_layout_clamp_window(&x, &y, 720, 480, -5, &u);
+    ASSERT_EQ(x, 1440);
+    ASSERT_EQ(y, 25);
+}
+
+TEST(clamp_window_unknown_bounds) {
+    PxRect u = rect(0, 0, 0, 900);
+    int x = 5000, y = -300;
+    panel_layout_clamp_window(&x, &y, 1320, 480, 28, &u);
+    ASSERT_EQ(x, 5000);
+    ASSERT_EQ(y, -300);
+    u = rect(0, 0, 1440, 0);
+    panel_layout_clamp_window(&x, &y, 1320, 480, 28, &u);
+    ASSERT_EQ(x, 5000);
+    ASSERT_EQ(y, -300);
+}
+
 void run_panel_layout_tests(void) {
     TEST_SUITE("panel_layout");
     RUN_TEST(layout_retina_scale3);
@@ -201,4 +281,11 @@ void run_panel_layout_tests(void) {
     RUN_TEST(layout_rects_stay_inside_small_drawable);
     RUN_TEST(layout_hidden_panel_window_is_shorter);
     RUN_TEST(layout_drawable_keeps_game_scale);
+    RUN_TEST(clamp_window_already_fits);
+    RUN_TEST(clamp_window_overflows_right);
+    RUN_TEST(clamp_window_overflows_bottom);
+    RUN_TEST(clamp_window_larger_than_usable);
+    RUN_TEST(clamp_window_second_monitor);
+    RUN_TEST(clamp_window_pulled_in_from_left_and_above);
+    RUN_TEST(clamp_window_unknown_bounds);
 }
