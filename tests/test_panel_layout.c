@@ -101,6 +101,63 @@ TEST(layout_recomputes_for_new_density) {
     ASSERT_EQ(b.window_w, 240 * 3 + 600);
 }
 
+static void check_inside(PxRect r, int w, int h) {
+    ASSERT_TRUE(r.x >= 0 && r.y >= 0 && r.w >= 0 && r.h >= 0);
+    ASSERT_TRUE(r.x + r.w <= w && r.y + r.h <= h);
+}
+
+TEST(layout_text_floor_on_base_density) {
+    LayoutInput in = input(2, 1.0f, 0.75f, 0, 0);
+    LayoutPlan p = panel_layout_plan(&in);
+    ASSERT_TRUE(13.0f * p.density >= 9.999f);
+    in = input(2, 0.5f, 1.0f, 0, 0);
+    p = panel_layout_plan(&in);
+    ASSERT_TRUE(13.0f * p.density >= 9.999f);
+    in = input(2, 0.5f, 1.0f, 1366, 728);
+    p = panel_layout_plan(&in);
+    ASSERT_TRUE(13.0f * p.density >= 9.999f);
+}
+
+TEST(layout_sanitizes_input) {
+    LayoutInput in = input(0, 0.0f, 0.0f, -5, -5);
+    LayoutPlan p = panel_layout_plan(&in);
+    ASSERT_TRUE(p.window_w > 0 && p.window_h > 0 && p.game_px_scale >= 1);
+    in = input(99, 1.0f, 1.0f, 0, 0);
+    p = panel_layout_plan(&in);
+    ASSERT_EQ(p.game_px_scale, 10);
+    ASSERT_EQ(p.window_w, 2400 + 600);
+    in = input(3, 0.0f / 0.0f, 1.0f, 0, 0);
+    p = panel_layout_plan(&in);
+    ASSERT_EQ(p.game_px_scale, 3);
+}
+
+TEST(layout_rects_stay_inside_small_drawable) {
+    LayoutInput in = input(2, 1.0f, 1.0f, 0, 0);
+    LayoutPlan p = panel_layout_plan(&in);
+    PxRect g, pn;
+    panel_layout_rects(&p, true, 300, 480, &g, &pn);
+    check_inside(g, 300, 480);
+    check_inside(pn, 300, 480);
+    panel_layout_rects(&p, true, 1080, 100, &g, &pn);
+    check_inside(g, 1080, 100);
+    check_inside(pn, 1080, 100);
+    panel_layout_rects(&p, true, 0, 0, &g, &pn);
+    check_inside(g, 0, 0);
+    check_inside(pn, 0, 0);
+    panel_layout_rects(&p, false, -4, -4, &g, &pn);
+    check_inside(g, 0, 0);
+}
+
+TEST(layout_hidden_panel_window_is_shorter) {
+    LayoutInput in = input(2, 1.0f, 1.0f, 0, 0);
+    LayoutPlan shown = panel_layout_plan(&in);
+    LayoutPlan hidden;
+    in.panel_visible = false;
+    hidden = panel_layout_plan(&in);
+    ASSERT_EQ(hidden.window_h, 320);
+    ASSERT_TRUE(hidden.window_h < shown.window_h);
+}
+
 void run_panel_layout_tests(void) {
     TEST_SUITE("panel_layout");
     RUN_TEST(layout_retina_scale3);
@@ -110,4 +167,8 @@ void run_panel_layout_tests(void) {
     RUN_TEST(layout_fullscreen_grows_game);
     RUN_TEST(layout_no_panel);
     RUN_TEST(layout_recomputes_for_new_density);
+    RUN_TEST(layout_text_floor_on_base_density);
+    RUN_TEST(layout_sanitizes_input);
+    RUN_TEST(layout_rects_stay_inside_small_drawable);
+    RUN_TEST(layout_hidden_panel_window_is_shorter);
 }
