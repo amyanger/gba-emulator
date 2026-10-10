@@ -82,7 +82,7 @@ static void build_world(void) {
     put_str(0x08000200 + 13 * 1, "WATER GUN");
     put_str(0x08000200 + 13 * 2, "GROWL");
     at(0x08000300 + 12 * 1)[1] = 40; at(0x08000300 + 12 * 1)[2] = 11;  /* Water Gun */
-    at(0x08000300 + 12 * 2)[1] = 0;  at(0x08000300 + 12 * 2)[2] = 0;   /* Growl */
+    at(0x08000300 + 12 * 2)[1] = 0;  at(0x08000300 + 12 * 2)[2] = 3;   /* Growl, stored type 3 */
     put_str(0x08000200 + 13 * 237, "HIDDEN POWER");
     at(0x08000300 + 12 * 237)[1] = 60; at(0x08000300 + 12 * 237)[2] = 0;  /* stored Normal */
     put_str(0x08000400 + 13 * 1, "OVERGROW");
@@ -130,6 +130,8 @@ static void build_world(void) {
     fixture_encode_mon(mon, 25, 7, plain, 0x02);
     mon[0x08] = 0xBC; mon[0x09] = 0xFF;  /* nickname "B" */
     mon[0x54] = 5;
+    fixture_put16(mon + 0x56, 17);  /* hp */
+    fixture_put16(mon + 0x58, 23);  /* max hp */
 }
 
 static void enter_wild_battle(void) {
@@ -193,6 +195,10 @@ TEST(snapshot_overworld_party_and_encounters) {
     ASSERT_EQ(p->hp_power, 70);
     ASSERT_STR_EQ(p->ability, "PICKUP");   /* abilityNum 1 -> abilities[1] */
     ASSERT_EQ(p->exp_to_next, 100);
+    ASSERT_EQ(p->type_ids[0], 12);
+    ASSERT_EQ(p->type_ids[1], 3);
+    ASSERT_EQ(p->hp, 17);
+    ASSERT_EQ(p->max_hp, 23);
     ASSERT_TRUE(gs->snap.has_encounters);
     ASSERT_EQ(gs->snap.enc_count[ENC_LAND], 1);
     ASSERT_STR_EQ(gs->snap.enc[ENC_LAND][0].species, "ZIGZAGOON");
@@ -206,8 +212,10 @@ TEST(snapshot_wild_battle_matchups_and_catch) {
     enter_wild_battle();
     GameState* gs = test_state();
     GameMem m = test_mem();
+    fixture_put16(at(0x02000E08), 0);  /* gBattlerPartyIndexes[0] */
     game_update_mem(gs, &m);
     ASSERT_EQ(gs->snap.context, GAME_CTX_BATTLE_WILD);
+    ASSERT_STR_EQ(gs->snap.active_name, "B");
     ASSERT_EQ(gs->snap.enemy_count, 1);
     const GameEnemy* e = &gs->snap.enemies[0];
     ASSERT_STR_EQ(e->species, "ZIGZAGOON");
@@ -215,10 +223,13 @@ TEST(snapshot_wild_battle_matchups_and_catch) {
     ASSERT_EQ(e->max_hp, 20);
     ASSERT_STR_EQ(e->ability, "PICKUP");
     ASSERT_STR_EQ(e->type1, "FIRE");
+    ASSERT_EQ(e->type_ids[0], 10);
+    ASSERT_EQ(e->eff[0].type, 11);
     ASSERT_EQ(e->eff_count, 2);
     ASSERT_STR_EQ(e->eff[0].move, "WATER GUN");
     ASSERT_EQ(e->eff[0].quarters, 8);
     ASSERT_TRUE(e->eff[1].status_move);
+    ASSERT_EQ(e->eff[1].type, 3);  /* power-0 move keeps its stored type */
     ASSERT_EQ(gs->snap.catch_count, 1);
     ASSERT_STR_EQ(gs->snap.catch_rows[0].ball, "POKE BALL");
     ASSERT_EQ(gs->snap.catch_rows[0].quantity, 5);
@@ -235,7 +246,22 @@ TEST(snapshot_hidden_power_uses_the_players_ivs) {
     game_update_mem(gs, &m);
     const GameEnemy* e = &gs->snap.enemies[0];
     ASSERT_STR_EQ(e->eff[0].move, "HIDDEN POWER");
+    ASSERT_EQ(e->eff[0].type, 17);
     ASSERT_EQ(e->eff[0].quarters, 8);  /* Dark vs Fire; stored Normal would be 4 */
+}
+
+TEST(snapshot_active_name_clamps_bad_party_index) {
+    build_world();
+    enter_wild_battle();
+    fixture_put16(at(0x02000E08), 9);
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.context, GAME_CTX_BATTLE_WILD);
+    ASSERT_STR_EQ(gs->snap.active_name, "");
+    fixture_put16(at(0x02000E08), 1);  /* in 0..5 but past the party count */
+    game_update_mem(gs, &m);
+    ASSERT_STR_EQ(gs->snap.active_name, "");
 }
 
 TEST(snapshot_trainer_battle_has_no_catch_rows) {
@@ -312,6 +338,7 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_overworld_party_and_encounters);
     RUN_TEST(snapshot_wild_battle_matchups_and_catch);
     RUN_TEST(snapshot_hidden_power_uses_the_players_ivs);
+    RUN_TEST(snapshot_active_name_clamps_bad_party_index);
     RUN_TEST(snapshot_trainer_battle_has_no_catch_rows);
     RUN_TEST(snapshot_battle_flag_without_enemy_is_overworld);
     RUN_TEST(snapshot_out_of_range_ids_show_unknown);

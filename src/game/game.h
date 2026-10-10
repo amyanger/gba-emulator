@@ -31,12 +31,15 @@ typedef struct {
     uint8_t friendship;
     char ability[GAME_NAME_LEN], item[GAME_NAME_LEN];
     uint32_t exp_to_next;
+    uint16_t hp, max_hp;
+    uint8_t type_ids[2]; /* 0xFF when unknown */
 } GamePartyMon;
 
 typedef struct {
     char move[GAME_NAME_LEN];
     uint8_t quarters;
     bool status_move;
+    uint8_t type; /* effective matchup type, 0xFF when unknown or a status move */
 } GameMoveEff;
 
 typedef struct {
@@ -50,6 +53,7 @@ typedef struct {
     char ability[GAME_NAME_LEN], item[GAME_NAME_LEN];
     uint32_t status1;
     char type1[GAME_NAME_LEN], type2[GAME_NAME_LEN];
+    uint8_t type_ids[2];
     uint8_t eff_count;
     GameMoveEff eff[4];
 } GameEnemy;
@@ -70,6 +74,7 @@ typedef struct {
     bool valid;
     char reason[48];
     GameContext context;
+    char active_name[GAME_NAME_LEN]; /* player's active battler, empty when unknown */
     uint8_t party_count;
     GamePartyMon party[6];
     uint8_t enemy_count;

@@ -148,11 +148,14 @@ static void fill_party_mon(const GameMem* m, const GameProfile* p, const MonData
     uint8_t info[SPECIES_INFO_SIZE];
     memset(out, 0, sizeof(*out));
     out->present = true;
+    out->type_ids[0] = out->type_ids[1] = 0xFF;
     if (d->bad) {
         out->bad = true;
         return;
     }
     out->egg = d->is_egg;
+    out->hp = d->hp;
+    out->max_hp = d->max_hp;
     gen3_decode(d->nickname_raw, sizeof(d->nickname_raw), out->nickname, GAME_NAME_LEN);
     species_name(m, p, d->species, out->species);
     out->level = d->level;
@@ -168,6 +171,8 @@ static void fill_party_mon(const GameMem* m, const GameProfile* p, const MonData
     out->gender = MON_GENDER_NONE;
     if (species_info(m, p, d->species, info)) {
         out->gender = pokemon_gender(info[SI_GENDER_RATIO], d->personality);
+        out->type_ids[0] = info[SI_TYPE1];
+        out->type_ids[1] = info[SI_TYPE2];
         ability_name(m, p, d->ability_num ? info[SI_ABILITY2] : info[SI_ABILITY1], out->ability);
         out->exp_to_next = exp_to_next(m, p, info[SI_GROWTH_RATE], d->level, d->experience);
     } else {
@@ -192,7 +197,7 @@ static void read_party(const GameMem* m, const GameProfile* p, GameSnapshot* s) 
 /* Battlers: returns enemy battle structs (up to 2) and the player's active one. */
 static uint8_t read_battlers(const GameMem* m, const GameProfile* p,
                              uint8_t enemies[2][BMON_SIZE], uint8_t player[BMON_SIZE],
-                             bool* have_player) {
+                             bool* have_player, uint8_t* player_battler) {
     uint8_t in_battle, count, n = 0;
     *have_player = false;
     if (!game_mem_read8(m, p->main_in_battle, &in_battle) || !(in_battle & 0x02)) return 0;
@@ -207,9 +212,26 @@ static uint8_t read_battlers(const GameMem* m, const GameProfile* p,
         } else if (!*have_player) {
             memcpy(player, mon, BMON_SIZE);
             *have_player = true;
+            *player_battler = b;
         }
     }
     return n;
+}
+
+/* Nickname of gPlayerParty[gBattlerPartyIndexes[battler]]; left empty when out of range. */
+static void read_active_name(const GameMem* m, const GameProfile* p, uint8_t battler,
+                             GameSnapshot* s) {
+    uint16_t idx;
+    uint8_t raw[MON_PARTY_SIZE], count;
+    MonData d;
+    if (battler >= 4 || !game_mem_read8(m, p->player_party_count, &count) ||
+        !game_mem_read16(m, p->battler_party_indexes + 2u * battler, &idx) || idx > 5 ||
+        idx >= count)
+        return;
+    if (!game_mem_copy(m, p->player_party + (uint32_t)idx * MON_PARTY_SIZE, raw, sizeof(raw)) ||
+        !pokemon_decode(raw, true, &d) || d.bad)
+        return;
+    gen3_decode(d.nickname_raw, sizeof(d.nickname_raw), s->active_name, GAME_NAME_LEN);
 }
 
 static void fill_enemy(const GameMem* m, const GameProfile* p, const uint8_t* mon,
@@ -222,6 +244,8 @@ static void fill_enemy(const GameMem* m, const GameProfile* p, const uint8_t* mo
     uint8_t t1 = mon[BMON_TYPE1], t2 = mon[BMON_TYPE2];
 
     memset(e, 0, sizeof(*e));
+    e->type_ids[0] = t1;
+    e->type_ids[1] = t2;
     species_name(m, p, species, e->species);
     e->level = mon[BMON_LEVEL];
     e->gender = species_info(m, p, species, info)
@@ -245,19 +269,25 @@ static void fill_enemy(const GameMem* m, const GameProfile* p, const uint8_t* mo
         uint8_t bm[BATTLE_MOVE_SIZE];
         if (mv == 0) continue;
         GameMoveEff* eff = &e->eff[e->eff_count++];
+        eff->type = 0xFF;
         move_name(m, p, mv, eff->move);
         if (mv >= p->move_count ||
-            !game_mem_copy(m, p->battle_moves + (uint32_t)mv * BATTLE_MOVE_SIZE, bm, sizeof(bm)) ||
-            bm[1] == 0) {
+            !game_mem_copy(m, p->battle_moves + (uint32_t)mv * BATTLE_MOVE_SIZE, bm, sizeof(bm))) {
             eff->status_move = true;
             continue;
         }
         uint8_t move_type = bm[2];
+        if (bm[1] == 0) {
+            eff->status_move = true;
+            eff->type = move_type;
+            continue;
+        }
         if (mv == MOVE_HIDDEN_POWER) {
             uint8_t ivs[6];
             pokemon_unpack_ivs(rd32(player + BMON_IVS), ivs);
             move_type = pokemon_hidden_power_type(ivs);
         }
+        eff->type = move_type;
         uint8_t q = battle_type_quarters(type_table, type_len, move_type, t1, t2, foresight);
         eff->quarters = battle_apply_ability(q, move_type, ability);
     }
@@ -354,7 +384,8 @@ void game_update_mem(GameState* gs, const GameMem* m) {
 
     uint8_t enemies[2][BMON_SIZE], player[BMON_SIZE];
     bool have_player;
-    uint8_t n = read_battlers(m, p, enemies, player, &have_player);
+    uint8_t player_battler = 0;
+    uint8_t n = read_battlers(m, p, enemies, player, &have_player, &player_battler);
     if (n == 0) {
         s->context = GAME_CTX_OVERWORLD;
         read_encounters(m, p, sb1, sb2, s);
@@ -370,6 +401,7 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     for (uint8_t i = 0; i < n; i++)
         fill_enemy(m, p, enemies[i], player, have_player, type_table, type_len, &s->enemies[i]);
     s->enemy_count = n;
+    if (have_player) read_active_name(m, p, player_battler, s);
     if (s->context == GAME_CTX_BATTLE_WILD) read_catch_rows(m, p, sb1, sb2, enemies[0], flags, s);
 }
 
