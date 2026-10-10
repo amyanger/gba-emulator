@@ -30,17 +30,41 @@ cmake .. -DENABLE_XRAY=OFF
 
 ## Game info panel
 
-Press **F9** to open a side panel next to the game. The panel has a dark dashboard look with tabs along the top, type-colored pills, IV and EV bars, colored move matchups and catch odds bars. **F10** cycles the page: Auto, Party, Route. Auto shows the battle page during a battle and the route page otherwise.
+Press **F9** to open a side panel next to the game. The panel has a dark dashboard look with tabs along the top, type-colored pills, IV and EV bars, colored move matchups and catch odds bars.
 
-- **Battle** shows the opposing Pokemon (species, level, HP, types, nature, IVs, ability, held item), move matchups, and, in wild battles, catch odds for each ball in your bag.
-- **Party** shows each Pokemon's nature, IVs, EVs and Hidden Power. Press **[** and **]** to change the selected Pokemon. These two keys only work on the Party page, and only when they are not bound to a GBA button in a custom keymap.
-- **Route** shows the encounter table for the current route.
+| Key | Panel action |
+|-----|--------------|
+| F9 | Show or hide the panel |
+| F10 | Cycle the page: Auto, Party, Route. Auto shows the battle page during a battle and the route page otherwise. |
+| [ and ] | Select the previous or next Pokemon on the Party page |
+
+On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is set to use F1, F2 and so on as standard function keys. `[` and `]` only work on the Party page, and only when they are not bound to a GBA button in a custom keymap.
+
+### Battle
+
+The opposing Pokemon's species, level, HP, types, nature, IVs, ability and held item, how your active Pokemon's moves match up against it, and, in wild battles, the catch chance for each ball in your bag.
+
+![Wild battle against a Poochyena with the battle page open](docs/screenshots/panel-battle.png)
+
+### Party
+
+Each Pokemon's nature, ability, held item, Hidden Power type and power, friendship, experience to the next level, IVs and EVs. Use `[` and `]` to move between Pokemon.
+
+![Party page showing a Torchic's stats, IVs and EVs](docs/screenshots/panel-party.png)
+
+### Route
+
+The name of the route, town or city you're in, read from the game's region map, and its wild encounter table with level ranges and odds. Pokemon you've caught are marked with a check.
+
+![Route page listing Route 101's wild Pokemon](docs/screenshots/panel-route.png)
+
+### Details
 
 The panel sizes itself to the screen's pixel density, so it stays crisp on standard monitors, Windows display scaling, Retina and 4K. `--scale` only sets the size of the game. The panel is 600 by 480 points, the window is at least 480 points tall while the panel is open, and the game is centered vertically. In fullscreen (F11) the game grows to fill the screen with the panel beside it. On Linux X11 the panel uses the display DPI only when it indicates a high-DPI screen; otherwise it uses 1.0.
 
 Supported ROM: US Emerald rev 0 (game code BPEE) only. Any other ROM shows "No game info for this ROM". Every name and number is read from your own ROM at runtime, and nothing from the game ships with the emulator. The panel only reads memory. It never writes to the game, makes no bus accesses, does not change timing, and leaves savestates untouched. Addresses come from the pret/pokeemerald decomp.
 
-Not shown yet: Safari Ball odds, mass outbreaks, Feebas tiles, roamers, Altering Cave variants, lead ability effects (Static, Magnet Pull and similar), Battle Pyramid and Battle Pike tables, and map names (the route page shows the map as group:num). Weather Ball matchups use its base type.
+Not shown yet: Safari Ball odds, mass outbreaks, Feebas tiles, roamers, Altering Cave variants, lead ability effects (Static, Magnet Pull and similar), and Battle Pyramid and Battle Pike tables. Weather Ball matchups use its base type.
 
 To check decoded state without a window, run headless with `--game-dump <file>` (see Headless mode).
 
@@ -67,7 +91,7 @@ To check decoded state without a window, run headless with `--game-dump <file>` 
 - **Flash 64K / 128K Save** — Macronix and SST/Atmel/Panasonic chip IDs (Pokemon Emerald, Ruby, Sapphire, FireRed, LeafGreen)
 - **Real-Time Clock** — S-3511A serial RTC over GPIO (0x080000C4/C6/C8) with persistent offset stored in the `.sav` trailer
 - **Cartridge** — ROM loading (up to 32MB), auto save detection, file persistence next to the ROM
-- **Game info panel (Pokemon Emerald)**: press F9 for a side panel with wild battle IVs, natures, catch odds per ball, move matchups, your party's IVs/EVs/Hidden Power, and the current route's encounter table, in a dark dashboard layout.
+- **Game info panel (Pokemon Emerald)**: press F9 for a side panel with wild battle IVs, natures, catch odds per ball, move matchups, your party's IVs/EVs/Hidden Power, and the current location's name and encounter table, in a dark dashboard layout.
 - **Save States** — 10 numbered slots (0–9), versioned and ROM-hash guarded, written next to the ROM as `<rom>.ss<N>`
 - **Cheats** — GameShark / Action Replay v1–v3 + CodeBreaker, loaded from a `.cht` file
 - **Fast-Forward** — Hold Tab or toggle with `` ` `` (skips audio, renders every Nth frame)
@@ -202,9 +226,9 @@ cmake .. -DENABLE_REWIND=OFF
 | F1 | Dump CPU registers to stderr (debug builds) |
 | F2 | Toggle Hardware X-Ray Mode |
 | F3 | Toggle input display HUD (mini-GBA overlay showing held buttons) |
-| F9 | Toggle the Pokemon Emerald game info panel |
-| F10 | Cycle the panel page: Auto, Party, Route |
-| [ and ] | Change the selected Pokemon on the Party page (unless bound to a GBA button) |
+| F9 | Show or hide the Pokemon Emerald game info panel |
+| F10 | Cycle the panel page: Auto, Party, Route (Auto shows the battle page during battles) |
+| [ and ] | Select the previous or next Pokemon on the Party page (unless bound to a GBA button) |
 | F5 | Save state to current slot |
 | F6 | Edit label of current save-state slot |
 | F7 | Open save-state slot picker |
@@ -219,6 +243,8 @@ cmake .. -DENABLE_REWIND=OFF
 | F12 | Screenshot (saved next to ROM) |
 | F11 | Toggle fullscreen |
 | Escape | Quit |
+
+On macOS, F-keys need **fn** held (for example fn+F9) unless the keyboard is set to use them as standard function keys.
 
 Save files (`<rom>.sav`) and save states (`<rom>.ss<N>`) are written next to the ROM.
 
