@@ -145,6 +145,7 @@ set(SOURCES
 
 # X-Ray source files (only compiled when ENABLE_XRAY is ON)
 set(XRAY_SOURCES
+    src/frontend/xray/xray_draw.c
     src/frontend/xray/xray.c
     src/frontend/xray/xray_cpu.c
     src/frontend/xray/xray_activity.c
@@ -276,6 +277,21 @@ if(ENABLE_REWIND)
     list(APPEND LIB_SOURCES src/rewind/rewind.c src/rewind/rewind_lz4.c)
 endif()
 
+# X-Ray drawing is pure C (no SDL window), so the tests link it directly.
+if(ENABLE_XRAY)
+    list(APPEND LIB_SOURCES
+        src/frontend/xray/xray_draw.c
+        src/frontend/xray/xray_ppu.c
+        src/frontend/xray/xray_tiles.c
+        src/frontend/xray/xray_audio.c
+        src/frontend/xray/xray_cpu.c
+        src/frontend/xray/xray_activity.c
+    )
+    if(ENABLE_REWIND)
+        list(APPEND LIB_SOURCES src/frontend/xray/xray_rewind.c)
+    endif()
+endif()
+
 set(TEST_SOURCES
     tests/test_runner.c
     tests/test_savestate.c
@@ -323,6 +339,10 @@ if(NOT WIN32)
     )
 endif()
 
+if(ENABLE_XRAY)
+    list(APPEND TEST_SOURCES tests/test_xray.c)
+endif()
+
 add_executable(gba_tests ${TEST_SOURCES} ${LIB_SOURCES})
 
 target_include_directories(gba_tests PRIVATE
@@ -344,6 +364,10 @@ endif()
 
 if(ENABLE_REWIND)
     target_compile_definitions(gba_tests PRIVATE ENABLE_REWIND)
+endif()
+
+if(ENABLE_XRAY)
+    target_compile_definitions(gba_tests PRIVATE ENABLE_XRAY)
 endif()
 
 add_test(NAME gba_tests COMMAND gba_tests)

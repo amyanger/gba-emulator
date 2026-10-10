@@ -14,13 +14,17 @@ It also includes **Emerald Companion**, a live side panel with battle, party and
 
 ## Hardware X-Ray Mode
 
-Press **F2** during gameplay to open a second window showing live hardware internals:
+Press **F2** to open a second window that shows what the GBA hardware is doing while the game runs. It reads from friendly at the top to technical at the bottom, and every card has a one-line explanation under its title.
 
-- **PPU Layer Decomposition** — Each background layer and sprites rendered separately, plus a color-coded overlay showing which layer produced every pixel on screen
-- **Tile & Palette Inspector** — VRAM tile grids for all 6 charblocks and full BG/OBJ palette color displays
-- **CPU State** — Live registers (R0-R15), CPSR flags (N/Z/C/V/I/F/T), CPU mode, pipeline state, and cycles-per-second counter
-- **Audio Monitor** — Master output waveforms (L/R oscilloscope), FIFO A/B fill meters, and legacy channel status (duty, frequency, volume, LFSR)
-- **DMA / Timer / IRQ Activity** — All 4 timers and DMA channels with live counters, plus named IRQ flags with red flash indicators on every event
+![Hardware X-Ray window on the Pokemon Emerald title screen: Rayquaza, clouds and the logo on separate background layers, live audio waveforms, CPU registers and the sound DMAs](docs/screenshots/xray.png)
+
+- **What you see**: each background layer and the sprites drawn on their own, a map of which layer drew each pixel, and each layer's scroll, priority and blending.
+- **What you hear**: the left and right speaker waveforms, how full the two sample channels are, and the four retro sound channels.
+- **Tiles and colors**: the 8x8 tiles and the color palettes the game has loaded into video memory.
+- **Processor**: the ARM CPU's registers, whether it is running ARM or Thumb code, its flags, the instruction it is on, and how much rewind history is stored.
+- **Behind the scenes**: hardware timers, DMA memory copies and interrupts. Rows and pills light up as they fire.
+
+The window sizes itself to fit your screen, opens on the same display as the game, and stays sharp on Retina displays.
 
 X-Ray Mode adds zero overhead when disabled. It's compile-time gated (`ENABLE_XRAY`, default ON) and runtime gated (null-pointer checks on every hook). The game runs identically whether X-Ray is open or closed.
 
@@ -287,7 +291,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 
 | Flag | Meaning |
 |------|---------|
-| `--headless` | Skip SDL, audio, link cable, X-Ray, and rewind. |
+| `--headless` | Skip SDL, audio, link cable, X-Ray (unless `--xray-out` is given), and rewind. |
 | `--frames <n>` | Run exactly `n` frames then exit. Required with `--headless`. |
 | `--hash-out <file>` | Write per-frame `<N> <FNV1a-hex>` lines. Defaults to stdout. |
 | `--screenshot-out <file>` | After the run, save the final framebuffer as PNG. |
@@ -296,6 +300,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--panel-density <f>` | Panel pixels per point, 0.5 to 4.0 (default 1.0). Requires `--headless`. |
 | `--panel-page <p>` | Panel page: `auto`, `party` or `route` (default `auto`). Requires `--headless`. |
 | `--panel-select <n>` | Selected party slot, 0 to 5, for the party page (default 0). Requires `--headless`. |
+| `--xray-out <file>` | After the run, render the Hardware X-Ray window to a 2400x1640 PNG. Requires `--headless` and an X-Ray build. |
 | `--game-dump <file>` | After the run, write the decoded Emerald game state (party, battle, encounters) to `file`. Requires `--headless`. |
 
 An input script has one event per line, `<frame> <press|release> <KEY>`,
@@ -493,14 +498,15 @@ src/
     debug.c                Register dumps, instruction tracing (debug builds)
     xray/
       xray.h               X-Ray state struct, public API, notification hooks
-      xray.c               SDL2 window lifecycle, panel layout, render dispatch
-      xray_draw.h/c        Drawing primitives (text, rect, line, blit, bars)
-      xray_font.h          Embedded 8x8 bitmap font (95 glyphs, no dependencies)
-      xray_cpu.c           CPU register/flag/mode panel
-      xray_ppu.c           PPU layer decomposition and overlay panel
-      xray_tiles.c         Tile grid and palette inspector panel
-      xray_audio.c         Audio waveform and FIFO monitor panel
-      xray_activity.c      DMA/Timer/IRQ activity panel with flash indicators
+      xray.c               SDL2 window: HiDPI, fit to screen, present
+      xray_draw.c          Card layout, fit-to-screen maths, drawing helpers (no SDL)
+      xray_font.h          Embedded 8x8 bitmap font used by the in-game overlays
+      xray_ppu.c           "What you see": layer capture, thumbnails, layer table
+      xray_tiles.c         "Tiles and colors": tile sheets and palettes
+      xray_audio.c         "What you hear": audio capture, waveforms, FIFOs, retro channels
+      xray_cpu.c           "Processor": registers, state, flags, pipeline
+      xray_rewind.c        Rewind status line in the Processor card
+      xray_activity.c      "Behind the scenes": timers, DMA, interrupts
 include/
   common.h                 Fixed-width types, bit manipulation macros, logging
 ```
