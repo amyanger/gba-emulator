@@ -12,6 +12,18 @@ Built around an ARM7TDMI CPU interpreter, scanline-based PPU, and an SDL2 fronte
 
 It also includes **Emerald Companion**, a live side panel with battle, party and route info for Pokemon Emerald. It only works with the original, unmodified Pokemon Emerald (US/English) ROM. See [Emerald Companion](#emerald-companion) below.
 
+## Download
+
+Ready-to-run apps for **macOS** (Apple Silicon), **Windows** and **Linux** are on the [latest release](https://github.com/amyanger/gba-emulator/releases/latest). Download the one for your system, double-click it and pick a `.gba` file. There's nothing else to install.
+
+| System | File |
+|--------|------|
+| macOS 11+ (Apple Silicon) | `gba_emulator-<version>-macOS-arm64.dmg` |
+| Windows (64-bit) | `gba_emulator-<version>-Windows-AMD64.zip` |
+| Linux (x86_64) | `gba_emulator-<version>-Linux-x86_64.AppImage` |
+
+The apps aren't signed with a paid certificate, so macOS and Windows ask you to confirm the first time you open them. [Download a pre-built binary](#download-a-pre-built-binary) below has step-by-step instructions for each system.
+
 ## Hardware X-Ray Mode
 
 Press **F2** to open a second window that shows what the GBA hardware is doing while the game runs. It reads from friendly at the top to technical at the bottom, and every card has a one-line explanation under its title.
