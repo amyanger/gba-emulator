@@ -177,15 +177,12 @@ TEST(hud_newest_toast_fits_small_area) {
 }
 
 TEST(hud_xray_badge_after_muted) {
-    ToastQueue q;
-    HudLayout l;
-    UiCanvas c;
-    static uint32_t px[600 * 200];
     toast_init(&q);
-    ui_canvas_init(&c, px, 600, 200, 1.0f);
     toast_set_badge(&q, BADGE_MUTED, true);
     toast_set_badge(&q, BADGE_XRAY, true);
-    hud_layout(&c, &q, 0, 600.0f, &l);
+    UiCanvas c = canvas(HW, HH, 1.0f);
+    HudLayout l;
+    hud_layout(&c, &q, 0, (float)HW, &l);
     ASSERT_TRUE(l.badges[BADGE_XRAY].w > 0);
     ASSERT_TRUE(l.badges[BADGE_XRAY].x > l.badges[BADGE_MUTED].x);
 }
