@@ -40,7 +40,7 @@ Supported ROM: US Emerald rev 0 (game code BPEE) only. Any other ROM shows "No g
 
 Fullscreen (F11) now letterboxes to the correct aspect ratio, with or without the panel. Before, it stretched the image.
 
-Not shown yet: Safari Ball odds, mass outbreaks, Feebas tiles, roamers, Altering Cave variants, and map names (the encounters page shows the map as group:num).
+Not shown yet: Safari Ball odds, mass outbreaks, Feebas tiles, roamers, Altering Cave variants, lead ability effects (Static, Magnet Pull and similar), Battle Pyramid and Battle Pike tables, and map names (the encounters page shows the map as group:num). Weather Ball matchups use its base type.
 
 To check decoded state without a window, run headless with `--game-dump <file>` (see Headless mode).
 

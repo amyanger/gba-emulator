@@ -151,7 +151,8 @@ static void draw_encounters(Pen* p, const GameSnapshot* s) {
         }
     }
     line(p, COL_DIM, "* caught. Not shown: outbreaks,");
-    line(p, COL_DIM, "Feebas tiles, roamers, Altering Cave.");
+    line(p, COL_DIM, "Feebas tiles, roamers, Altering Cave,");
+    line(p, COL_DIM, "lead ability effects, Pyramid/Pike.");
 }
 
 void game_panel_render(uint32_t* canvas, const GameSnapshot* snap, GamePage page) {
