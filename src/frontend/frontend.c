@@ -58,6 +58,25 @@ bool frontend_init(Frontend* fe, int scale) {
     }
     fe->overlay_dirty = false;
 
+    fe->panel_texture = SDL_CreateTexture(fe->renderer, SDL_PIXELFORMAT_ARGB8888,
+                                          SDL_TEXTUREACCESS_STREAMING, PANEL_CANVAS_W,
+                                          PANEL_CANVAS_H);
+    if (!fe->panel_texture) {
+        LOG_ERROR("Failed to create panel texture: %s", SDL_GetError());
+        return false;
+    }
+    /* Even scales map the 2x canvas to whole pixels; odd ones need filtering. */
+    SDL_SetTextureScaleMode(fe->panel_texture,
+                            (scale % 2 == 0) ? SDL_ScaleModeNearest : SDL_ScaleModeLinear);
+    fe->panel_buffer = (uint32_t*)calloc(PANEL_CANVAS_W * PANEL_CANVAS_H, sizeof(uint32_t));
+    if (!fe->panel_buffer) {
+        LOG_ERROR("Failed to allocate panel buffer");
+        return false;
+    }
+    fe->panel_visible = false;
+    fe->panel_page = GAME_PAGE_AUTO;
+    frontend_apply_layout(fe);
+
     fe->running = true;
     fe->savestate_slot = 0;
     fe->save_requested = false;
@@ -98,6 +117,13 @@ bool frontend_init(Frontend* fe, int scale) {
     return true;
 }
 
+void frontend_apply_layout(Frontend* fe) {
+    int w, h;
+    frontend_logical_size(fe->panel_visible, &w, &h);
+    SDL_RenderSetLogicalSize(fe->renderer, w, h);
+    if (!fe->fullscreen) SDL_SetWindowSize(fe->window, w * fe->scale, h * fe->scale);
+}
+
 void frontend_set_ff_indicator(Frontend* fe, bool active) {
     if (active) {
         SDL_SetWindowTitle(fe->window, "GBA Emulator [FF]");
@@ -129,6 +155,11 @@ void frontend_destroy(Frontend* fe) {
         free(fe->overlay_buffer);
         fe->overlay_buffer = NULL;
     }
+    if (fe->panel_texture) SDL_DestroyTexture(fe->panel_texture);
+    if (fe->panel_buffer) {
+        free(fe->panel_buffer);
+        fe->panel_buffer = NULL;
+    }
     if (fe->texture) SDL_DestroyTexture(fe->texture);
     if (fe->renderer) SDL_DestroyRenderer(fe->renderer);
     if (fe->window) SDL_DestroyWindow(fe->window);
@@ -141,12 +172,20 @@ void frontend_present_frame(Frontend* fe, uint16_t* framebuffer) {
     SDL_UpdateTexture(fe->texture, NULL, framebuffer,
                       SCREEN_WIDTH * sizeof(uint16_t));
     SDL_RenderClear(fe->renderer);
-    SDL_RenderCopy(fe->renderer, fe->texture, NULL, NULL);
+    SDL_Rect game_rect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+    SDL_RenderCopy(fe->renderer, fe->texture, NULL, &game_rect);
 
     if (fe->overlay_dirty) {
         SDL_UpdateTexture(fe->overlay_texture, NULL, fe->overlay_buffer,
                           SCREEN_WIDTH * sizeof(uint32_t));
-        SDL_RenderCopy(fe->renderer, fe->overlay_texture, NULL, NULL);
+        SDL_RenderCopy(fe->renderer, fe->overlay_texture, NULL, &game_rect);
+    }
+
+    if (fe->panel_visible) {
+        SDL_Rect panel_rect = {SCREEN_WIDTH, 0, PANEL_LOGICAL_W, SCREEN_HEIGHT};
+        SDL_UpdateTexture(fe->panel_texture, NULL, fe->panel_buffer,
+                          PANEL_CANVAS_W * sizeof(uint32_t));
+        SDL_RenderCopy(fe->renderer, fe->panel_texture, NULL, &panel_rect);
     }
     SDL_RenderPresent(fe->renderer);
 }
@@ -209,6 +248,14 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                          fe->input_display_enabled ? "ON" : "OFF");
             }
 
+            if (event.key.keysym.scancode == SDL_SCANCODE_F9 && !event.key.repeat) {
+                fe->panel_visible = !fe->panel_visible;
+                frontend_apply_layout(fe);
+            }
+            if (event.key.keysym.scancode == SDL_SCANCODE_F10 && !event.key.repeat) {
+                fe->panel_page = (uint8_t)game_panel_next_page((GamePage)fe->panel_page);
+            }
+
             // Save state hotkeys
             if (event.key.keysym.scancode == SDL_SCANCODE_F5) {
                 fe->save_requested = true;
@@ -266,6 +313,7 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 fe->fullscreen = !fe->fullscreen;
                 SDL_SetWindowFullscreen(fe->window,
                     fe->fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+                frontend_apply_layout(fe);
                 LOG_INFO("Fullscreen %s", fe->fullscreen ? "ON" : "OFF");
             }
 

@@ -24,11 +24,17 @@
 static XRayState s_xray_state;
 #endif
 
+static GameState s_game;
+
 /* Present one frame: clear overlay, render HUD layers, then blit to screen. */
 static void render_with_overlay(Frontend* fe, GBA* gba) {
     frontend_overlay_clear(fe);
     input_display_render(fe, gba);
     slot_picker_render(fe);
+    if (fe->panel_visible) {
+        game_update(&s_game, gba);
+        game_panel_render(fe->panel_buffer, &s_game.snap, (GamePage)fe->panel_page);
+    }
     frontend_present_frame(fe, gba->ppu.framebuffer);
 }
 
@@ -193,6 +199,8 @@ int main(int argc, char* argv[]) {
         if (link_peer) link_peer_shutdown(link_peer);
         return 1;
     }
+
+    game_init(&s_game, gba.cart.rom, gba.cart.rom_size);
 
     // Load cheat codes if provided
     if (cheat_path) {

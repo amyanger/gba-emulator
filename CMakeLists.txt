@@ -104,6 +104,7 @@ set(SOURCES
     src/frontend/frame_advance.c
     src/frontend/input_display.c
     src/frontend/slot_picker.c
+    src/frontend/game_panel.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
     src/frontend/overlay_draw.c
@@ -200,6 +201,7 @@ set(LIB_SOURCES
     src/frontend/frame_advance.c
     src/frontend/input_display.c
     src/frontend/slot_picker.c
+    src/frontend/game_panel.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
     src/frontend/overlay_draw.c
@@ -237,6 +239,7 @@ set(TEST_SOURCES
     tests/test_game_battle.c
     tests/test_game_encounters.c
     tests/test_game_snapshot.c
+    tests/test_game_panel.c
 )
 
 # Several tests rely on POSIX-only APIs (unistd.h, pthreads, AF_UNIX

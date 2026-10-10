@@ -4,6 +4,7 @@
 #include "common.h"
 #include <SDL2/SDL.h>
 #include "frontend/slot_picker.h"
+#include "frontend/game_panel.h"
 
 // Forward declaration
 typedef struct GBA GBA;
@@ -15,6 +16,10 @@ typedef struct Frontend {
     SDL_Texture* overlay_texture;
     uint32_t* overlay_buffer;     /* SCREEN_WIDTH * SCREEN_HEIGHT pixels, ARGB8888 */
     bool overlay_dirty;  /* set by overlay producers each frame; cleared by frontend_overlay_clear */
+    SDL_Texture* panel_texture;   /* PANEL_CANVAS_W x PANEL_CANVAS_H, ARGB8888 */
+    uint32_t* panel_buffer;
+    bool panel_visible;           /* F9 */
+    uint8_t panel_page;           /* GamePage, F10 */
     SDL_AudioDeviceID audio_device;
     uint32_t audio_target_bytes;  /* frame-sync queue target: 3x the device pull size */
     SDL_GameController* controller;
@@ -55,6 +60,7 @@ typedef struct APU APU;
 
 bool frontend_init(Frontend* fe, int scale);
 void frontend_destroy(Frontend* fe);
+void frontend_apply_layout(Frontend* fe);
 void frontend_present_frame(Frontend* fe, uint16_t* framebuffer);
 void frontend_poll_input(Frontend* fe, GBA* gba);
 void frontend_audio_init(Frontend* fe);
