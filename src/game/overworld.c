@@ -262,7 +262,6 @@ static void read_trainer(const OwCtx* c, int i, OverworldSnapshot* s) {
     /* The sprite, not currentCoords: that is already the destination mid-step. */
     t.x = (int16_t)(s16_at(sp + SPR_X) + s16_at(sp + SPR_X2) + c->spr_off_x - 8);
     t.y = (int16_t)(s16_at(sp + SPR_Y) + s16_at(sp + SPR_Y2) + c->spr_off_y - (int8_t)sp[SPR_CTC_Y] - 16);
-    if (!on_screen(t.x, t.y)) return;
 
     uint8_t face = o[OBJ_DIRS] & 0x0F;
     t.facing = (face >= 1 && face <= 4) ? (uint8_t)(face - 1) : OW_DIR_DOWN;
@@ -270,6 +269,12 @@ static void read_trainer(const OwCtx* c, int i, OverworldSnapshot* s) {
     t.buried = type == TRAINER_TYPE_BURIED;
     for (int d = 0; d < OW_DIR_COUNT; d++)
         if (t.buried || d == t.facing) t.clear[d] = sight_clear(c, i, (OwDir)d, range);
+
+    /* The game runs sight checks for objects a few tiles past the screen edge, so
+     * keep a trainer whose cone reaches the screen even when its sprite does not. */
+    int32_t x0 = t.x - 16 * t.clear[OW_DIR_LEFT], x1 = t.x + 16 * t.clear[OW_DIR_RIGHT];
+    int32_t y0 = t.y - 16 * t.clear[OW_DIR_UP], y1 = t.y + 16 * t.clear[OW_DIR_DOWN];
+    if (x1 <= -16 || x0 >= SCREEN_WIDTH || y1 <= -16 || y0 >= SCREEN_HEIGHT) return;
 
     uint32_t script = template_script(c, o);
     if (script >= 0x08000000u && game_mem_copy(c->m, script, head, sizeof(head)) &&

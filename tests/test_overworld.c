@@ -574,7 +574,23 @@ TEST(ow_sight_range_255_terminates) {
     ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_RIGHT], 255);
 }
 
+TEST(ow_offscreen_trainer_kept_when_cone_reaches_screen) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put_sprite(5, 64, -40);              /* 2.5 tiles above the screen, looking down 4 tiles */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.trainer_count, 1);
+    ASSERT_EQ(first_trainer(&s)->y, -40);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 4);
+    scene();
+    put_sprite(5, 64, -100);             /* cone ends at -36: never on screen */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.trainer_count, 0);
+}
+
 void run_overworld_tests(void) {
+    RUN_TEST(ow_offscreen_trainer_kept_when_cone_reaches_screen);
     RUN_TEST(ow_sight_range_255_terminates);
     RUN_TEST(ow_hidden_item_on_screen);
     RUN_TEST(ow_hidden_item_collected_is_skipped);
