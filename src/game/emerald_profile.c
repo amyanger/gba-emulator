@@ -1,9 +1,9 @@
 #include "game/emerald_profile.h"
 #include <string.h>
 
-/* Pokemon Emerald (US) rev 0, game code BPEE. Addresses from pret/pokeemerald's
- * pokeemerald.sym (symbols branch). ROM addresses were checked against the ROM
- * bytes; see docs in the project's design notes. */
+/* Pokemon Emerald (US) rev 0, game code BPEE. Addresses come from pret/pokeemerald's
+ * pokeemerald.sym (symbols branch). The ROM table addresses were checked against the
+ * bytes of a BPEE rev 0 ROM; the RAM addresses have not been checked in a running game yet. */
 const GameProfile g_emerald_profile = {
     .name = "Pokemon Emerald (US)",
 
