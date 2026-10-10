@@ -166,6 +166,27 @@ static void frontend_measure(Frontend* fe, LayoutInput* in) {
     }
 }
 
+/* Moves the window back inside the usable area of the display it was on before a resize
+ * grew it. Uses the planned size, since X11 reports the new size only later. */
+static void frontend_keep_on_screen(Frontend* fe, int display) {
+    SDL_Rect bounds;
+    if (SDL_GetDisplayUsableBounds(display, &bounds) != 0) return;
+
+    int x = 0, y = 0, top = 0;
+    SDL_GetWindowPosition(fe->window, &x, &y);
+    if (SDL_GetWindowBordersSize(fe->window, &top, NULL, NULL, NULL) != 0) {
+        /* SDL2 has no Cocoa borders getter; y there is the content top, under a 28pt title bar. */
+        const char* driver = SDL_GetCurrentVideoDriver();
+        top = (driver && strcmp(driver, "cocoa") == 0) ? 28 : 0;
+    }
+
+    PxRect usable = {bounds.x, bounds.y, bounds.w, bounds.h};
+    int new_x = x, new_y = y;
+    panel_layout_clamp_window(&new_x, &new_y, fe->plan.window_w, fe->plan.window_h, top,
+                              &usable);
+    if (new_x != x || new_y != y) SDL_SetWindowPosition(fe->window, new_x, new_y);
+}
+
 /* Recomputes the plan and rects. resize_window is false when reacting to a size change
  * the window already went through, so a window manager that clamps our request cannot
  * bounce resize events back and forth. */
@@ -180,8 +201,11 @@ static void frontend_layout(Frontend* fe, bool resize_window) {
         int cur_w = 0, cur_h = 0;
         SDL_GetWindowSize(fe->window, &cur_w, &cur_h);
         if (cur_w != fe->plan.window_w || cur_h != fe->plan.window_h) {
+            int display = SDL_GetWindowDisplayIndex(fe->window);
+            if (display < 0) display = 0;
             SDL_SetWindowSize(fe->window, fe->plan.window_w, fe->plan.window_h);
-            /* The new size can land on another display or change the pixel ratio. */
+            frontend_keep_on_screen(fe, display);
+            /* The new size or position can land on another display or change the pixel ratio. */
             frontend_measure(fe, &in);
             fe->plan = panel_layout_plan(&in);
         }

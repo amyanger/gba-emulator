@@ -122,3 +122,20 @@ void panel_layout_rects(const LayoutPlan* plan, bool panel_visible, int out_w, i
     clamp_rect(game, out_w, out_h);
     clamp_rect(panel, out_w, out_h);
 }
+
+void panel_layout_clamp_window(int* x, int* y, int w, int h, int top_border,
+                               const PxRect* usable) {
+    int top, outer_h;
+
+    if (usable->w <= 0 || usable->h <= 0) return;
+    if (top_border < 0) top_border = 0;
+
+    if (*x + w > usable->x + usable->w) *x = usable->x + usable->w - w;
+    if (*x < usable->x) *x = usable->x;
+
+    top = *y - top_border;
+    outer_h = h + top_border;
+    if (top + outer_h > usable->y + usable->h) top = usable->y + usable->h - outer_h;
+    if (top < usable->y) top = usable->y;
+    *y = top + top_border;
+}
