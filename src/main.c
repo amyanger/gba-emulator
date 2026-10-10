@@ -5,6 +5,7 @@
 #include "frontend/overlay_draw.h"
 #include "frontend/input_display.h"
 #include "frontend/slot_picker.h"
+#include "game/game.h"
 #include "headless/headless.h"
 #ifdef ENABLE_REWIND
 #include "rewind/rewind.h"
@@ -44,6 +45,7 @@ static void print_usage(const char* prog) {
     printf("  --hash-out <file>      Headless: write per-frame framebuffer hashes\n");
     printf("  --screenshot-out <f>   Headless: write final-frame screenshot to file\n");
     printf("  --input-script <file>  Headless: scripted keypad input (see README)\n");
+    printf("  --game-dump <file>     Headless: write decoded Emerald state after the run\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
@@ -75,6 +77,7 @@ int main(int argc, char* argv[]) {
     const char* hash_out_path = NULL;
     const char* screenshot_out_path = NULL;
     const char* input_script_path = NULL;
+    const char* game_dump_path = NULL;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -110,6 +113,8 @@ int main(int argc, char* argv[]) {
             screenshot_out_path = argv[++i];
         } else if (strcmp(argv[i], "--input-script") == 0 && i + 1 < argc) {
             input_script_path = argv[++i];
+        } else if (strcmp(argv[i], "--game-dump") == 0 && i + 1 < argc) {
+            game_dump_path = argv[++i];
         } else {
             /* Also catches value-taking options with the value missing:
              * they fail the i + 1 < argc guard and fall through here. */
@@ -126,6 +131,11 @@ int main(int argc, char* argv[]) {
 
     if (input_script_path && !headless) {
         LOG_ERROR("--input-script requires --headless");
+        return 1;
+    }
+
+    if (game_dump_path && !headless) {
+        LOG_ERROR("--game-dump requires --headless");
         return 1;
     }
 
@@ -227,6 +237,17 @@ int main(int argc, char* argv[]) {
                 LOG_ERROR("Failed to write screenshot: %s", screenshot_out_path);
                 rc = 1;
             }
+        }
+        if (rc == 0 && game_dump_path) {
+            static GameState dump_state;  /* large; keep off the stack */
+            FILE* f = fopen(game_dump_path, "w");
+            game_init(&dump_state, gba.cart.rom, gba.cart.rom_size);
+            game_update(&dump_state, &gba);
+            if (!f || !game_dump(&dump_state.snap, f)) {
+                LOG_ERROR("Failed to write --game-dump file: %s", game_dump_path);
+                rc = 1;
+            }
+            if (f) fclose(f);
         }
         gba_destroy(&gba);
         return rc;

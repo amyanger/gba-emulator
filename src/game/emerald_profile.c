@@ -3,7 +3,8 @@
 
 /* Pokemon Emerald (US) rev 0, game code BPEE. Addresses come from pret/pokeemerald's
  * pokeemerald.sym (symbols branch). The ROM table addresses were checked against the
- * bytes of a BPEE rev 0 ROM; the RAM addresses have not been checked in a running game yet. */
+ * bytes of a BPEE rev 0 ROM; the party, map, wild battle and
+ * enemy RAM addresses were checked live with --game-dump. */
 const GameProfile g_emerald_profile = {
     .name = "Pokemon Emerald (US)",
 
