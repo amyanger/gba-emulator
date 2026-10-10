@@ -16,6 +16,9 @@
 #define KV_SIZE     12.5f
 #define KV_LINE     18.0f
 #define SECTION_ADV 18.0f
+#define CONTENT_BOTTOM 476.0f   /* bottom of the page clip */
+#define ROUTE_LIST_Y   78.0f    /* below the tabs (end at 42) and the map title */
+#define ROUTE_LIST_END 452.0f   /* above the footer */
 
 #define TIMES "\xC3\x97"      /* × */
 #define MINUS "\xE2\x88\x92"  /* − */
@@ -126,6 +129,7 @@ static void nature_row(UiCanvas* c, float x, float y, float label_w, float w, co
     char buf[32];
     snprintf(buf, sizeof(buf), " +%s " MINUS "%s", k_nature_stat[up], k_nature_stat[down]);
     float vx = x + label_w + vw;
+    if (x + w - vx <= 0) return; /* ui_text treats max_w <= 0 as unlimited */
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, vx, y, x + w - vx, UI_ALIGN_LEFT, UI_MUTED, buf);
 }
 
@@ -228,17 +232,28 @@ static void catch_row(UiCanvas* c, float y, const GameCatchRow* r) {
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, RIGHT, y, 0, UI_ALIGN_RIGHT, UI_TEXT, buf);
 }
 
-static void enc_row(UiCanvas* c, float y, const GameEncRow* r) {
+/* Full width (568) uses the mockup's columns; a half-width column (276) packs them tighter. */
+static void enc_row(UiCanvas* c, float x, float y, float w, const GameEncRow* r) {
     char buf[24];
-    if (r->caught) ui_check(c, LEFT, y, 12.0f, UI_GOOD);
-    ui_text(c, UI_FONT_REGULAR, KV_SIZE, 38.0f, y, 302.0f, UI_ALIGN_LEFT, UI_TEXT,
+    bool wide = w > 400.0f;
+    float name_w = wide ? 302.0f : 104.0f, lv_x = x + (wide ? 332.0f : 130.0f);
+    float bar_x = x + (wide ? 410.0f : 192.0f), bar_w = wide ? 110.0f : 44.0f;
+    if (r->caught) ui_check(c, x, y, 12.0f, UI_GOOD);
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x + 22.0f, y, name_w, UI_ALIGN_LEFT, UI_TEXT,
             title(r->species).s);
     if (r->min_level == r->max_level) snprintf(buf, sizeof(buf), "Lv %u", r->min_level);
     else snprintf(buf, sizeof(buf), "Lv %u" NDASH "%u", r->min_level, r->max_level);
-    ui_text(c, UI_FONT_REGULAR, KV_SIZE, 348.0f, y, 74.0f, UI_ALIGN_LEFT, UI_MUTED, buf);
-    ui_bar(c, (UiRect){426.0f, y + 3.5f, 110.0f, 6.0f}, r->percent / 100.0f, UI_ACCENT);
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, lv_x, y, bar_x - lv_x - 4.0f, UI_ALIGN_LEFT, UI_MUTED,
+            buf);
+    ui_bar(c, (UiRect){bar_x, y + 3.5f, bar_w, 6.0f}, r->percent / 100.0f, UI_ACCENT);
     snprintf(buf, sizeof(buf), "%u%%", r->percent);
-    ui_text(c, UI_FONT_REGULAR, KV_SIZE, RIGHT, y, 0, UI_ALIGN_RIGHT, UI_TEXT, buf);
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x + w, y, 0, UI_ALIGN_RIGHT, UI_TEXT, buf);
+}
+
+static void more_line(UiCanvas* c, float x, float y, unsigned n) {
+    char buf[16];
+    snprintf(buf, sizeof(buf), "+%u more", n);
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, 0, UI_ALIGN_LEFT, UI_MUTED, buf);
 }
 
 static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
@@ -337,10 +352,15 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
     if (s->catch_count == 0)
         ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, y, 0, UI_ALIGN_LEFT, UI_MUTED,
                 "No balls in bag");
-    for (uint8_t i = 0; i < s->catch_count && i < 16; i++) {
+    /* Whole rows only (each 16 tall at a 19 pitch); the rest become "+N more". */
+    int count = s->catch_count > 16 ? 16 : s->catch_count;
+    int fit = y + 16.0f <= CONTENT_BOTTOM ? (int)((CONTENT_BOTTOM - y - 16.0f) / 19.0f) + 1 : 0;
+    int rows = count > fit ? fit - 1 : count;
+    for (int i = 0; i < rows; i++) {
         catch_row(c, y, &s->catch_rows[i]);
         y += 19.0f;
     }
+    if (rows >= 0 && rows < count) more_line(c, LEFT, y, (unsigned)(count - rows));
 }
 
 static void party_list_row(UiCanvas* c, float y, const GamePartyMon* m, bool selected) {
@@ -453,34 +473,102 @@ static void draw_party(UiCanvas* c, const GameSnapshot* s, float top, uint8_t se
     party_detail(c, &s->party[sel], top);
 }
 
+static bool rod_method(int k) { return k >= ENC_OLD_ROD; }
+
+static uint8_t enc_rows(const GameSnapshot* s, int k) {
+    return s->enc_count[k] > 12 ? 12 : s->enc_count[k];
+}
+
+/* Column heights with every row shown at the layout's pitch. */
+static void route_heights(const GameSnapshot* s, RouteLayout* l) {
+    bool any[2] = {false, false};
+    l->height[0] = l->height[1] = 0;
+    for (int k = 0; k < ENC_METHOD_COUNT; k++) {
+        uint8_t n = enc_rows(s, k);
+        if (n == 0) continue;
+        int col = l->two_columns && rod_method(k);
+        if (any[col]) l->height[col] += l->gap;
+        l->height[col] += l->section_adv + n * l->row_h;
+        any[col] = true;
+    }
+}
+
+void game_panel_route_layout(const GameSnapshot* s, RouteLayout* out) {
+    static const float pitch[2][3] = {{SECTION_ADV, 19.0f, 8.0f}, {16.0f, 16.0f, 4.0f}};
+    memset(out, 0, sizeof(*out));
+    out->avail = ROUTE_LIST_END - ROUTE_LIST_Y;
+    if (!s->has_encounters) return;
+    /* Roomy then tight in one column, then the same with rods in a second column. */
+    for (int two = 0; two < 2; two++) {
+        for (int p = 0; p < 2; p++) {
+            out->section_adv = pitch[p][0];
+            out->row_h = pitch[p][1];
+            out->gap = pitch[p][2];
+            out->two_columns = two != 0;
+            route_heights(s, out);
+            if (out->height[0] <= out->avail && out->height[1] <= out->avail) {
+                for (int k = 0; k < ENC_METHOD_COUNT; k++) out->shown[k] = enc_rows(s, k);
+                return;
+            }
+        }
+    }
+    /* Still too long (tight, two columns): keep whole rows and leave a row for "+N more". */
+    for (int col = 0; col < 2; col++) {
+        bool fits = out->height[col] <= out->avail, stop = false, any = false;
+        float used = 0, limit = out->avail - out->row_h;
+        for (int k = 0; k < ENC_METHOD_COUNT; k++) {
+            uint8_t n = enc_rows(s, k);
+            if (n == 0 || (int)rod_method(k) != col) continue;
+            if (fits) { out->shown[k] = n; continue; }
+            float y0 = used + (any ? out->gap : 0);
+            float room = limit - y0 - out->section_adv;
+            int rows = stop || room < out->row_h ? 0 : (int)(room / out->row_h);
+            if (rows > n) rows = n;
+            out->more[col] = (uint8_t)(out->more[col] + n - rows);
+            if (rows < n) stop = true;
+            if (rows == 0) continue;
+            out->shown[k] = (uint8_t)rows;
+            used = y0 + out->section_adv + rows * out->row_h;
+            any = true;
+        }
+        if (!fits) out->height[col] = used + out->row_h;
+    }
+}
+
 static void draw_route(UiCanvas* c, const GameSnapshot* s, float top) {
     char buf[32];
     float y = top + 4.0f;
     snprintf(buf, sizeof(buf), "Map %u:%u", s->map_group, s->map_num);
     ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, LEFT, y, 0, UI_ALIGN_LEFT, UI_TEXT, buf);
-    y += 32.0f;
 
-    /* Keep the list clear of the footer. */
-    ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, 452.0f - top});
-    bool any = false;
-    for (int k = 0; k < ENC_METHOD_COUNT && s->has_encounters; k++) {
-        if (s->enc_count[k] == 0) continue;
-        any = true;
+    /* The layout keeps whole rows above the footer; the clip is only a backstop. */
+    RouteLayout l;
+    game_panel_route_layout(s, &l);
+    ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, ROUTE_LIST_END - top});
+    const float cx[2] = {LEFT, COL2_X}, cw = l.two_columns ? COL_W : RIGHT - LEFT;
+    float cy[2] = {ROUTE_LIST_Y, ROUTE_LIST_Y};
+    bool any[2] = {false, false};
+    for (int k = 0; k < ENC_METHOD_COUNT; k++) {
+        if (l.shown[k] == 0) continue;
+        int col = l.two_columns && rod_method(k);
+        if (any[col]) cy[col] += l.gap;
+        any[col] = true;
         const char* name = game_method_name((EncMethod)k);
         size_t n = 0;
         for (; name[n] && n + 1 < sizeof(buf); n++)
             buf[n] = (name[n] >= 'a' && name[n] <= 'z') ? (char)(name[n] - ('a' - 'A')) : name[n];
         buf[n] = '\0';
-        section(c, LEFT, y, RIGHT - LEFT, buf);
-        y += SECTION_ADV;
-        for (uint8_t i = 0; i < s->enc_count[k] && i < 12; i++) {
-            enc_row(c, y, &s->enc[k][i]);
-            y += 19.0f;
+        section(c, cx[col], cy[col], cw, buf);
+        cy[col] += l.section_adv;
+        for (uint8_t i = 0; i < l.shown[k]; i++) {
+            enc_row(c, cx[col], cy[col], cw, &s->enc[k][i]);
+            cy[col] += l.row_h;
         }
-        y += 8.0f;
     }
-    if (!any)
-        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT, y, 0, UI_ALIGN_LEFT, UI_MUTED,
+    for (int col = 0; col < 2; col++)
+        if (l.more[col]) more_line(c, cx[col] + 22.0f, cy[col], l.more[col]);
+    if (!any[0] && !any[1] && l.more[0] + l.more[1] == 0)
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT, ROUTE_LIST_Y, 0, UI_ALIGN_LEFT, UI_MUTED,
                 "No wild Pok\xC3\xA9mon here");
 
     ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, PANEL_H - top - 4.0f});

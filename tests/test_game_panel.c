@@ -171,6 +171,63 @@ TEST(panel_invalid_snapshot_shows_reason) {
     ASSERT_TRUE(lit > 0);
 }
 
+static void fill_route(GameSnapshot* s, const uint8_t counts[ENC_METHOD_COUNT]) {
+    memset(s, 0, sizeof(*s));
+    s->valid = true;
+    s->has_encounters = true;
+    for (int k = 0; k < ENC_METHOD_COUNT; k++) {
+        s->enc_count[k] = counts[k];
+        for (int i = 0; i < counts[k]; i++) {
+            game_strcpy(s->enc[k][i].species, GAME_NAME_LEN, "ZIGZAGOON");
+            s->enc[k][i].min_level = 5; s->enc[k][i].max_level = 10;
+            s->enc[k][i].percent = 20;
+        }
+    }
+}
+
+static int layout_total(const RouteLayout* l) {
+    int n = l->more[0] + l->more[1];
+    for (int k = 0; k < ENC_METHOD_COUNT; k++) n += l->shown[k];
+    return n;
+}
+
+TEST(panel_route_busy_water_route_shows_every_row) {
+    static GameSnapshot snap;
+    static const uint8_t counts[ENC_METHOD_COUNT] = {6, 3, 0, 2, 3, 5};
+    fill_route(&snap, counts);
+    RouteLayout l;
+    game_panel_route_layout(&snap, &l);
+    for (int k = 0; k < ENC_METHOD_COUNT; k++) ASSERT_EQ(l.shown[k], counts[k]);
+    ASSERT_EQ(l.more[0] + l.more[1], 0);
+    ASSERT_TRUE(l.height[0] <= l.avail && l.height[1] <= l.avail);
+}
+
+TEST(panel_route_short_list_keeps_roomy_single_column) {
+    static GameSnapshot snap;
+    static const uint8_t counts[ENC_METHOD_COUNT] = {3, 0, 0, 2, 0, 0};
+    fill_route(&snap, counts);
+    RouteLayout l;
+    game_panel_route_layout(&snap, &l);
+    ASSERT_TRUE(!l.two_columns);
+    ASSERT_TRUE(l.row_h == 19.0f);
+    ASSERT_EQ(layout_total(&l), 5);
+    ASSERT_EQ(l.more[0] + l.more[1], 0);
+}
+
+TEST(panel_route_overflow_keeps_whole_rows_and_counts_the_rest) {
+    static GameSnapshot snap;
+    static const uint8_t counts[ENC_METHOD_COUNT] = {12, 12, 12, 12, 12, 12};
+    fill_route(&snap, counts);
+    RouteLayout l;
+    game_panel_route_layout(&snap, &l);
+    ASSERT_TRUE(l.more[0] + l.more[1] > 0);
+    ASSERT_EQ(layout_total(&l), 72);
+    ASSERT_TRUE(l.height[0] <= l.avail && l.height[1] <= l.avail);
+    UiCanvas c;
+    ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0);
+}
+
 void run_game_panel_tests(void) {
     TEST_SUITE("game_panel");
     RUN_TEST(panel_page_cycles);
@@ -180,4 +237,7 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_pages_stay_in_bounds_at_all_densities);
     RUN_TEST(panel_long_names_stay_in_columns);
     RUN_TEST(panel_invalid_snapshot_shows_reason);
+    RUN_TEST(panel_route_busy_water_route_shows_every_row);
+    RUN_TEST(panel_route_short_list_keeps_roomy_single_column);
+    RUN_TEST(panel_route_overflow_keeps_whole_rows_and_counts_the_rest);
 }
