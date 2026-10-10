@@ -112,6 +112,11 @@ set(SOURCES
     src/input/keymap.c
     src/cheat/cheat.c
     src/cheat/cheat_file.c
+    src/cheat/cheat_crypto.c
+    src/cheat/cheat_parse.c
+    src/cheat/cheat_decode.c
+    src/cheat/cheat_backup.c
+    src/cheat/cheat_report.c
     src/savestate/savestate.c
     src/screenshot/screenshot.c
     src/sio/sio.c
@@ -169,6 +174,10 @@ if(ENABLE_REWIND)
 endif()
 
 add_executable(gba_emulator ${SOURCES})
+# GBA (with its cheat tables) lives on main's stack; Windows defaults to 1 MB.
+if(MSVC)
+    target_link_options(gba_emulator PRIVATE /STACK:8388608)
+endif()
 
 target_include_directories(gba_emulator PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -247,6 +256,11 @@ set(LIB_SOURCES
     src/input/keymap.c
     src/cheat/cheat.c
     src/cheat/cheat_file.c
+    src/cheat/cheat_crypto.c
+    src/cheat/cheat_parse.c
+    src/cheat/cheat_decode.c
+    src/cheat/cheat_backup.c
+    src/cheat/cheat_report.c
     src/screenshot/screenshot.c
     src/sio/sio.c
     src/sio/sio_link.c
@@ -306,6 +320,12 @@ set(TEST_SOURCES
     tests/test_timer.c
     tests/test_flash.c
     tests/test_cheat.c
+    tests/test_cheat_crypto.c
+    tests/test_cheat_parse.c
+    tests/test_cheat_decode.c
+    tests/test_cheat_file.c
+    tests/test_cheat_backup.c
+    tests/test_cheat_report.c
     tests/test_apu.c
     tests/test_ppu.c
     tests/test_input.c

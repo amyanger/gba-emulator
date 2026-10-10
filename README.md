@@ -111,7 +111,7 @@ To check decoded state without a window, run headless with `--game-dump <file>` 
 - **Cartridge** — ROM loading (up to 32MB), auto save detection, file persistence next to the ROM
 - **Emerald Companion**: for the original Pokemon Emerald (US/English) ROM only. Press F9 for a side panel with wild battle IVs, natures, catch odds per ball, move matchups both ways (your moves and the opponent's), your party's IVs/EVs/Hidden Power, and the current location's name and encounter table, in a dark dashboard layout.
 - **Save States** — 10 numbered slots (0–9), versioned and ROM-hash guarded, written next to the ROM as `<rom>.ss<N>`
-- **Cheats** — GameShark / Action Replay v1–v3 + CodeBreaker, loaded from a `.cht` file
+- **Cheats** — CodeBreaker, GameShark v1/v2 and Action Replay v3 (GameShark v3/SP) codes pasted as found online, encrypted or raw; the device is detected automatically and the save is backed up before cheats run
 - **Fast-Forward** — Hold Tab or toggle with `` ` `` (skips audio, renders every Nth frame)
 - **Rewind** — Hold Backspace to step back through the last 60 seconds (LZ4-compressed snapshots in RAM, capped at 256 MB, audio muted while rewinding)
 - **Input** — Active-low KEYINPUT register with SDL2 keyboard mapping
@@ -225,7 +225,8 @@ cmake .. -DENABLE_REWIND=OFF
 |------|-------------|
 | `--bios <file>` | Path to GBA BIOS dump (optional, HLE fallback available) |
 | `--scale <n>` | Window scale multiplier (default: 3) |
-| `--cheats <file>` | Path to a `.cht` file with GameShark / CodeBreaker codes |
+| `--cheats <file>` | Cheat file to use instead of `<rom>.cht` |
+| `--cheat-report` | Print how each cheat was read (device, decoded codes, problems) and exit |
 | `--keymap <file>` | Path to a keymap `.ini` for custom keyboard bindings |
 | `--link-master <path>` | Listen for a peer GBA at AF_UNIX socket path (host side) |
 | `--link-client <path>` | Connect to a peer GBA at AF_UNIX socket path (client side) |
@@ -380,20 +381,26 @@ The host blocks at startup until the client connects. After both sides are up, i
 
 ## Cheats
 
-Pass `--cheats path/to/codes.cht` on the command line. The `.cht` format is plain text:
+Cheats for a game live in `<rom>.cht` next to the ROM (for example `emerald.gba.cht`) and load automatically. Copy codes from a cheat site into it as they are written there, under a device line and a name:
 
 ```ini
 # Lines starting with # are comments
-[GameShark]
-Cheat Name
-XXXXXXXX YYYYYYYY
-
 [CodeBreaker]
-Another Cheat
-XXXXXXXX YYYY
+Level 100 (first Pokemon, Emerald US)
+32024540 0064
+
+[ActionReplay]
+Code name from the site
+XXXXXXXX YYYYYYYY
+XXXXXXXX YYYYYYYY
 ```
 
-Each block starts with `[GameShark]` or `[CodeBreaker]`, followed by a name line and one or more code lines. All cheats are enabled by default.
+- **Devices:** `[CodeBreaker]`, `[GameShark]` (v1/v2), `[ActionReplay]` (v3, also sold as GameShark v3/SP), plus `[GameSharkRaw]` and `[ActionReplayRaw]` for unencrypted codes. Encrypted codes are decrypted for you.
+- **Detection:** when a block has no `device=` line, the emulator works out the device from the codes themselves (a master code's game ID line settles it). If it can't tell, the cheat is not run; add `device=override` under the name to force the section's device.
+- **On/off:** `enabled=false` under the name turns a cheat off.
+- **Master codes** ("must be on") are recognized and skipped; the emulator applies codes directly every frame, so no hook is needed. ROM patch codes, cheat-device button codes and `DEADFACE` seed changes are not supported and are reported as such.
+- **Safety:** codes may only touch RAM, palette, VRAM, OAM and I/O. Before any cheat runs, the battery save is copied to `<rom>.sav.cheatbak1` (the last 5 copies are kept, `cheatbak1` is the newest). If that copy can't be made, cheats stay off.
+- **Checking codes:** `--cheat-report` prints the detected device and the decoded operations for every cheat, which helps when a code doesn't seem to work.
 
 ## Architecture
 
@@ -469,8 +476,13 @@ src/
     sram.c                 Battery-backed SRAM
     eeprom.c               EEPROM save (bit-serial, DMA-driven)
   cheat/
-    cheat.c/h              Cheat engine (GameShark / Action Replay / CodeBreaker)
-    cheat_file.c/h         `.cht` file parser and writer
+    cheat.c/h              Cheat list and per-frame runner (RAM direct, no bus timing)
+    cheat_parse.c/h        Pulls codes out of pasted text
+    cheat_decode.c/h       Device detection and decoding into device-neutral ops
+    cheat_crypto.c/h       GameShark / Action Replay TEA and CodeBreaker ciphers
+    cheat_file.c/h         `.cht` file reader and writer
+    cheat_backup.c/h       Save backup before cheats run
+    cheat_report.c/h       `--cheat-report` output
   savestate/
     savestate.c/h          Versioned save state serialization (ROM-hash guarded)
   game/

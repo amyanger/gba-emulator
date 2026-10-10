@@ -1,180 +1,146 @@
-#include "cheat_file.h"
+#include "cheat/cheat_file.h"
+#include "cheat/cheat_parse.h"
+
+#include <ctype.h>
 #include <stdio.h>
 #include <string.h>
-#include <ctype.h>
-#include <inttypes.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
-// Maximum line length in a .cht file
 #define LINE_BUF_SIZE 512
+#define BLOCK_BUF_SIZE 8192
 
-// A code line is exactly "XXXXXXXX YYYY" or "XXXXXXXX YYYYYYYY": an
-// 8-digit hex address, one space, then a 4-8 digit hex value and nothing
-// else.  Anything looser (sscanf prefix matching) would eat cheat names
-// that happen to start with hex digits, e.g. "Feebas Fix".
-static bool parse_code_line(const char* line, uint32_t* addr, uint32_t* val) {
-    static const char hex[] = "0123456789abcdefABCDEF";
-    size_t a_len = strspn(line, hex);
-    if (a_len != 8 || line[8] != ' ') return false;
-    size_t v_len = strspn(line + 9, hex);
-    if (v_len < 4 || v_len > 8 || line[9 + v_len] != '\0') return false;
+static const char* const k_headers[CHEAT_DEV_COUNT] = {
+    "[CodeBreaker]", "[GameShark]", "[ActionReplay]", "[GameSharkRaw]", "[ActionReplayRaw]",
+};
 
-    if (sscanf(line, "%8" SCNx32 " %8" SCNx32, addr, val) != 2) return false;
-    return true;
+bool cheat_file_replace(const char* src, const char* dst) {
+#ifdef _WIN32
+    return MoveFileExA(src, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+    return rename(src, dst) == 0;
+#endif
 }
 
-// Trim leading/trailing whitespace in-place, return pointer to trimmed start
-static char* trim(char* str) {
-    while (*str && isspace((unsigned char)*str)) str++;
-    if (*str == '\0') return str;
-    char* end = str + strlen(str) - 1;
-    while (end > str && isspace((unsigned char)*end)) *end-- = '\0';
-    return str;
+static char* trim(char* s) {
+    while (*s && isspace((unsigned char)*s)) s++;
+    size_t n = strlen(s);
+    while (n > 0 && isspace((unsigned char)s[n - 1])) s[--n] = '\0';
+    return s;
 }
 
-// Flush the current cheat entry being accumulated into the engine.
-// Returns true if a cheat was added, false if nothing to flush.
-static bool flush_entry(CheatEngine* engine, const char* name,
-                        CheatFormat format, const CheatCode* codes,
-                        uint32_t code_count, bool enabled) {
-    if (code_count == 0) return false;
-    if (name[0] == '\0') {
-        LOG_WARN("[CHEAT] Cheat block with %u codes has no name, skipping",
-                 code_count);
-        return false;
+typedef struct {
+    bool open;
+    CheatDevice header;      /* device named by the [section] */
+    bool has_device_key;     /* device= present: trust the header, no detection */
+    bool override;
+    bool enabled;
+    char name[CHEAT_NAME_LEN];
+    char text[BLOCK_BUF_SIZE];   /* the block's code and label lines */
+    size_t text_len;
+} Block;
+
+static void block_start(Block* b, CheatDevice header) {
+    memset(b, 0, sizeof(*b));
+    b->open = true;
+    b->header = header;
+    b->enabled = true;
+}
+
+static void block_flush(CheatEngine* engine, Block* b, int32_t* loaded, uint32_t* skipped) {
+    static CheatRawList raw;
+    if (!b->open) return;
+    b->open = false;
+    char err[128];
+    if (!cheat_parse_text(b->text, &raw, err, sizeof(err))) {
+        if (b->text_len > 0) {
+            LOG_WARN("[CHEAT] Skipping \"%s\": %s", b->name[0] ? b->name : "(unnamed)", err);
+            (*skipped)++;
+        }
+        return;
     }
-
-    int32_t idx = cheat_add(engine, name, format, codes, code_count);
-    if (idx < 0) return false;
-
-    engine->cheats[idx].enabled = enabled;
-    return true;
+    const char* name = b->name[0] ? b->name : raw.name[0] ? raw.name : "Cheat";
+    CheatDevice dev = b->has_device_key ? b->header : CHEAT_DEV_AUTO;
+    if (cheat_add_raw(engine, name, &raw, dev, b->override, b->enabled) >= 0) (*loaded)++;
 }
 
-int32_t cheat_file_load(CheatEngine* engine, const char* path) {
-    FILE* fp = fopen(path, "r");
-    if (!fp) return -1;
+int32_t cheat_file_load(CheatEngine* engine, const char* path, uint32_t* skipped) {
+    static Block b;
+    uint32_t skipped_local = 0;
+    if (!skipped) skipped = &skipped_local;
+    *skipped = 0;
+    FILE* f = fopen(path, "r");
+    if (!f) return -1;
 
-    char line_buf[LINE_BUF_SIZE];
     int32_t loaded = 0;
-
-    // Accumulator for current cheat being parsed
-    char cur_name[CHEAT_NAME_LEN] = {0};
-    CheatFormat cur_format = CHEAT_FORMAT_GAMESHARK;
-    CheatCode cur_codes[CHEAT_MAX_LINES];
-    uint32_t cur_code_count = 0;
-    bool cur_enabled = true;
-    bool in_block = false;
-
-    while (fgets(line_buf, LINE_BUF_SIZE, fp)) {
-        char* line = trim(line_buf);
-
-        // Skip empty lines and comments
+    char buf[LINE_BUF_SIZE];
+    b.open = false;
+    while (fgets(buf, sizeof(buf), f)) {
+        char* line = trim(buf);
         if (*line == '\0' || *line == '#') continue;
-
-        // Format header starts a new block
         if (*line == '[') {
-            // Flush previous block
-            if (in_block) {
-                if (flush_entry(engine, cur_name, cur_format,
-                                cur_codes, cur_code_count, cur_enabled)) {
-                    loaded++;
-                }
-            }
-
-            // Reset accumulator
-            cur_name[0] = '\0';
-            cur_code_count = 0;
-            cur_enabled = true;
-            in_block = true;
-
-            if (strncmp(line, "[GameShark]", 11) == 0 ||
-                strncmp(line, "[ActionReplay]", 14) == 0) {
-                cur_format = CHEAT_FORMAT_GAMESHARK;
-            } else if (strncmp(line, "[CodeBreaker]", 13) == 0) {
-                cur_format = CHEAT_FORMAT_CODEBREAKER;
+            block_flush(engine, &b, &loaded, skipped);
+            CheatDevice dev = CHEAT_DEV_AUTO;
+            for (int d = 0; d < CHEAT_DEV_COUNT; d++)
+                if (strcmp(line, k_headers[d]) == 0) dev = (CheatDevice)d;
+            if (dev == CHEAT_DEV_AUTO) {
+                LOG_WARN("[CHEAT] Unknown section %s, codes will be auto-detected", line);
+                dev = CHEAT_DEV_GSA;
+                block_start(&b, dev);
             } else {
-                LOG_WARN("[CHEAT] Unknown format header: %s", line);
-                in_block = false;
+                block_start(&b, dev);
             }
             continue;
         }
-
-        if (!in_block) continue;
-
-        // name=<text>
-        if (strncmp(line, "name=", 5) == 0) {
-            strncpy(cur_name, line + 5, CHEAT_NAME_LEN - 1);
-            cur_name[CHEAT_NAME_LEN - 1] = '\0';
-            continue;
-        }
-
-        // enabled=true|false
+        if (!b.open) block_start(&b, CHEAT_DEV_GSA);   /* codes before any header */
         if (strncmp(line, "enabled=", 8) == 0) {
-            cur_enabled = (strcmp(line + 8, "true") == 0);
-            continue;
-        }
-
-        // Code line: XXXXXXXX YYYYYYYY or XXXXXXXX YYYY (strict match)
-        uint32_t addr = 0, val = 0;
-        if (parse_code_line(line, &addr, &val)) {
-            if (cur_code_count < CHEAT_MAX_LINES) {
-                cur_codes[cur_code_count].address = addr;
-                cur_codes[cur_code_count].value = val;
-                cur_code_count++;
-            }
-            continue;
-        }
-
-        // Documented format: the first free-text line of a block is the
-        // cheat's name ("[GameShark]" / name / codes).
-        if (cur_name[0] == '\0') {
-            strncpy(cur_name, line, CHEAT_NAME_LEN - 1);
-            cur_name[CHEAT_NAME_LEN - 1] = '\0';
+            b.enabled = strcmp(line + 8, "true") == 0;
+        } else if (strncmp(line, "device=", 7) == 0) {
+            b.has_device_key = true;
+            b.override = strcmp(line + 7, "override") == 0;
+        } else if (strncmp(line, "name=", 5) == 0) {
+            snprintf(b.name, sizeof(b.name), "%s", line + 5);
         } else {
-            LOG_WARN("[CHEAT] Ignoring unrecognized line: %s", line);
+            size_t n = strlen(line);
+            if (b.text_len + n + 2 < sizeof(b.text)) {
+                memcpy(b.text + b.text_len, line, n);
+                b.text_len += n;
+                b.text[b.text_len++] = '\n';
+                b.text[b.text_len] = '\0';
+            }
         }
     }
-
-    // Flush final block
-    if (in_block) {
-        if (flush_entry(engine, cur_name, cur_format,
-                        cur_codes, cur_code_count, cur_enabled)) {
-            loaded++;
-        }
-    }
-
-    fclose(fp);
+    block_flush(engine, &b, &loaded, skipped);
+    fclose(f);
     return loaded;
 }
 
 bool cheat_file_save(const CheatEngine* engine, const char* path) {
-    FILE* fp = fopen(path, "w");
-    if (!fp) return false;
+    char tmp[1024];
+    if ((size_t)snprintf(tmp, sizeof(tmp), "%s.tmp", path) >= sizeof(tmp)) return false;
+    FILE* f = fopen(tmp, "w");
+    if (!f) return false;
 
-    fprintf(fp, "# GBA Cheat File\n\n");
-
-    for (uint32_t i = 0; i < engine->cheat_count; i++) {
-        const CheatEntry* entry = &engine->cheats[i];
-
-        switch (entry->format) {
-        case CHEAT_FORMAT_GAMESHARK:
-            fprintf(fp, "[GameShark]\n");
-            break;
-        case CHEAT_FORMAT_CODEBREAKER:
-            fprintf(fp, "[CodeBreaker]\n");
-            break;
+    bool ok = fprintf(f, "# Cheats for this game. Edit in the emulator, or by hand: a [device] line,\n"
+                         "# the cheat's name, then its codes.\n") > 0;
+    for (uint32_t i = 0; i < engine->cheat_count && ok; i++) {
+        const CheatEntry* e = &engine->cheats[i];
+        CheatDevice dev = e->device < CHEAT_DEV_COUNT ? e->device : CHEAT_DEV_GSA;
+        ok = fprintf(f, "\n%s\n%s\nenabled=%s\n", k_headers[dev], e->name, e->enabled ? "true" : "false") > 0;
+        /* A broken cheat's device is only a guess, so let the next load detect again. */
+        if (ok && !e->broken) ok = fprintf(f, "device=%s\n", e->device_override ? "override" : "detected") > 0;
+        for (uint32_t k = 0; k < e->line_count && ok; k++) {
+            const CheatRawLine* l = &e->lines[k];
+            ok = (l->digits == 4 ? fprintf(f, "%08X %04X\n", (unsigned)l->a, (unsigned)l->b)
+                                 : fprintf(f, "%08X %08X\n", (unsigned)l->a, (unsigned)l->b)) > 0;
         }
-
-        fprintf(fp, "name=%s\n", entry->name);
-        fprintf(fp, "enabled=%s\n", entry->enabled ? "true" : "false");
-
-        for (uint32_t j = 0; j < entry->code_count; j++) {
-            fprintf(fp, "%08X %08X\n", entry->codes[j].address,
-                    entry->codes[j].value);
-        }
-        fprintf(fp, "\n");
     }
-
-    fclose(fp);
+    if (fflush(f) != 0) ok = false;
+    if (fclose(f) != 0) ok = false;
+    if (!ok || !cheat_file_replace(tmp, path)) {
+        remove(tmp);
+        return false;
+    }
     return true;
 }

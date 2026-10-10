@@ -1,6 +1,8 @@
 #include "gba.h"
 #include "cpu/arm7tdmi.h"
+#include "cheat/cheat_backup.h"
 #include "cheat/cheat_file.h"
+#include "cheat/cheat_report.h"
 #include "frontend/frontend.h"
 #include "frontend/overlay_draw.h"
 #include "frontend/input_display.h"
@@ -72,7 +74,8 @@ static void print_usage(const char* prog) {
     printf("Options:\n");
     printf("  --bios <file>          Load GBA BIOS ROM\n");
     printf("  --scale <n>            Window scale factor (default: 3)\n");
-    printf("  --cheats <file>        Load cheat codes from file (.cht format)\n");
+    printf("  --cheats <file>        Cheat file to use instead of <rom>.cht (.cht format)\n");
+    printf("  --cheat-report         Print how each cheat was read (device, codes) and exit\n");
     printf("  --keymap <file>        Load custom keyboard bindings\n");
     printf("  --mute                 Start with audio muted (toggle in-game with M)\n");
     printf("  --headless             Run without SDL window or audio\n");
@@ -113,6 +116,7 @@ int main(int argc, char* argv[]) {
     }
     const char* bios_path = NULL;
     const char* cheat_path = NULL;
+    bool cheat_report = false;
     const char* keymap_path = NULL;
     const char* link_master_path = NULL;
     const char* link_client_path = NULL;
@@ -156,6 +160,8 @@ int main(int argc, char* argv[]) {
             trace_to = (uint32_t)strtoul(argv[++i], NULL, 16);
         } else if (strcmp(argv[i], "--trace-frames") == 0 && i + 1 < argc) {
             trace_frames = (uint32_t)strtoul(argv[++i], NULL, 10);
+        } else if (strcmp(argv[i], "--cheat-report") == 0) {
+            cheat_report = true;
         } else if (strcmp(argv[i], "--mute") == 0) {
             start_muted = true;
         } else if (strcmp(argv[i], "--headless") == 0) {
@@ -316,14 +322,62 @@ int main(int argc, char* argv[]) {
         LOG_WARN("Emerald Companion (F9) is off: this ROM is a hack or modified copy of Pokemon "
                  "Emerald. It only supports the original Pokemon Emerald (US/English) ROM.");
 
-    // Load cheat codes if provided
+    // Cheats: --cheats FILE, else <rom>.cht next to the ROM when it exists.
+    // Game ID lines in pasted codes are checked against the header word at 0xAC.
+    if (gba.cart.rom_size >= 0xB0) {
+        const uint8_t* id = &gba.cart.rom[0xAC];
+        cheat_set_game_code(&gba.cheats, (uint32_t)id[0] | ((uint32_t)id[1] << 8) |
+                                             ((uint32_t)id[2] << 16) | ((uint32_t)id[3] << 24));
+    }
+    char auto_cheat_path[1024];
+    bool cheat_path_explicit = cheat_path != NULL;
+    if (!cheat_path && (size_t)snprintf(auto_cheat_path, sizeof(auto_cheat_path), "%s.cht", rom_path) <
+                           sizeof(auto_cheat_path)) {
+        FILE* probe = fopen(auto_cheat_path, "r");
+        if (probe) {
+            fclose(probe);
+            cheat_path = auto_cheat_path;
+        }
+    }
     int32_t cheats_loaded = -1;
+    uint32_t cheats_skipped = 0, cheats_broken = 0;
+    const char* first_broken = NULL;
     if (cheat_path) {
-        cheats_loaded = cheat_file_load(&gba.cheats, cheat_path);
+        cheats_loaded = cheat_file_load(&gba.cheats, cheat_path, &cheats_skipped);
         if (cheats_loaded < 0) {
             LOG_WARN("Failed to load cheat file: %s", cheat_path);
         } else {
             LOG_INFO("Loaded %d cheats from %s", cheats_loaded, cheat_path);
+            for (uint32_t i = 0; i < gba.cheats.cheat_count; i++) {
+                if (!gba.cheats.cheats[i].broken) continue;
+                if (!first_broken) first_broken = gba.cheats.cheats[i].name;
+                cheats_broken++;
+                LOG_WARN("Cheat \"%s\" won't run: %s", gba.cheats.cheats[i].name, gba.cheats.cheats[i].error);
+            }
+        }
+    }
+    if (cheat_report) {
+        if (cheat_path) printf("Cheat file: %s\n", cheat_path);
+        else printf("No cheat file (looked for %s.cht)\n", rom_path);
+        if (cheats_skipped) printf("%u block(s) skipped because their text is malformed (see log)\n",
+                                   (unsigned)cheats_skipped);
+        cheat_report_print(&gba.cheats, stdout);
+        gba_destroy(&gba);
+        return cheats_loaded < 0 && cheat_path_explicit ? 1 : 0;
+    }
+
+    // Back up the battery save before any cheat can touch it. If that fails,
+    // cheats stay off for this session (the file keeps their saved state).
+    CheatBackupResult cheat_backup = CHEAT_BACKUP_NO_SAVE;
+    bool cheat_backup_ran = false;
+    if (cheat_any_enabled(&gba.cheats)) {
+        cheat_backup_ran = true;
+        cheat_backup = cheat_backup_save(&gba.cart);
+        if (cheat_backup == CHEAT_BACKUP_FAILED) {
+            LOG_ERROR("Couldn't back up the save; cheats are off for this session");
+            for (uint32_t i = 0; i < gba.cheats.cheat_count; i++) gba.cheats.cheats[i].enabled = false;
+        } else if (cheat_backup == CHEAT_BACKUP_OK) {
+            LOG_INFO("Save backed up to %s.cheatbak1 before using cheats", gba.cart.save_path);
         }
     }
 
@@ -458,7 +512,17 @@ int main(int argc, char* argv[]) {
                      cheats_loaded == 1 ? "cheat" : "cheats");
             frontend_toast(&fe, TOAST_OK, title, path_base(cheat_path));
         }
+        uint32_t bad = cheats_broken + cheats_skipped;
+        if (bad > 0) {
+            char title[40];
+            snprintf(title, sizeof(title), "%u %s couldn't be read", (unsigned)bad, bad == 1 ? "cheat" : "cheats");
+            frontend_toast(&fe, TOAST_WARN, title, first_broken ? first_broken : "See the log");
+        }
     }
+    if (cheat_backup_ran && cheat_backup == CHEAT_BACKUP_OK)
+        frontend_toast(&fe, TOAST_OK, "Save backed up", "before using cheats");
+    else if (cheat_backup_ran && cheat_backup == CHEAT_BACKUP_FAILED)
+        frontend_toast(&fe, TOAST_ERROR, "Couldn't back up save", "Cheats stay off");
     if (link_peer) frontend_toast(&fe, TOAST_INFO, "Link cable connected", NULL);
 
     // Initialize audio
