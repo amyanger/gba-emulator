@@ -130,6 +130,7 @@ set(SOURCES
     src/game/battle_info.c
     src/game/encounters.c
     src/game/game.c
+    src/game/overworld.c
     src/ui/ui_stb.c
     src/ui/ui_canvas.c
     src/ui/ui_font.c
@@ -278,6 +279,7 @@ set(LIB_SOURCES
     src/game/battle_info.c
     src/game/encounters.c
     src/game/game.c
+    src/game/overworld.c
     src/ui/ui_stb.c
     src/ui/ui_canvas.c
     src/ui/ui_font.c
@@ -357,6 +359,7 @@ set(TEST_SOURCES
     tests/test_game_encounters.c
     tests/test_game_snapshot.c
     tests/test_game_panel.c
+    tests/test_overworld.c
     tests/test_ui_font_data.c
     tests/test_ui_canvas.c
     tests/test_ui_font.c

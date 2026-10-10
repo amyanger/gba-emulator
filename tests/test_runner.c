@@ -43,6 +43,7 @@ void run_game_battle_tests(void);
 void run_game_encounters_tests(void);
 void run_game_snapshot_tests(void);
 void run_game_panel_tests(void);
+void run_overworld_tests(void);
 void run_ui_font_data_tests(void);
 void run_ui_canvas_tests(void);
 void run_ui_font_tests(void);
@@ -102,6 +103,7 @@ int main(void) {
     RUN_SUITE(run_game_encounters_tests);
     RUN_SUITE(run_game_snapshot_tests);
     RUN_SUITE(run_game_panel_tests);
+    RUN_SUITE(run_overworld_tests);
     RUN_SUITE(run_ui_font_data_tests);
     RUN_SUITE(run_ui_canvas_tests);
     RUN_SUITE(run_ui_font_tests);

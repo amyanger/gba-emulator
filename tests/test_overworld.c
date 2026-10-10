@@ -1,0 +1,246 @@
+#include "test_harness.h"
+#include "game_fixture.h"
+#include "game/overworld.h"
+
+static uint8_t s_ewram[0x40000];
+static uint8_t s_iwram[0x8000];
+static uint8_t s_rom[0x8000];
+
+#define SB1        0x02010000u
+#define OBJS       0x02001000u
+#define SPRITES    0x02002000u
+#define SPR_OFF    0x02003000u
+#define FADE       0x02003100u
+#define MAP_HDR    0x02003200u   /* RAM copy of the current MapHeader */
+#define GRID       0x02020000u
+#define CAMERA     0x03000100u
+#define PAN        0x03000200u
+#define BACKUP     0x03000300u
+#define CB2        0x03000400u
+#define LOCK       0x03000500u
+#define CB2_FIELD  0x08000101u
+#define TRAINERS   0x08000400u
+#define CLASSES    0x08000800u
+#define GROUPS     0x08000C00u
+#define LAYOUT     0x08001000u
+#define TILESET1   0x08001100u
+#define TILESET2   0x08001120u
+#define ATTRS1     0x08001200u   /* u16[512] */
+#define ATTRS2     0x08001600u
+#define EVENTS     0x08001A00u
+#define BG_EVENTS  0x08001B00u
+#define SCRIPT     0x08002000u
+
+static const GameProfile k_profile = {
+    .name = "test",
+    .save_block1_ptr = 0x03000000, .save_block2_ptr = 0x03000004,
+    .map_header = MAP_HDR,
+    .object_events = OBJS, .sprites = SPRITES, .sprite_coord_offset = SPR_OFF,
+    .field_camera = CAMERA, .camera_pan = PAN,
+    .backup_map_layout = BACKUP, .backup_map_data = GRID,
+    .main_callback2 = CB2, .cb2_overworld = CB2_FIELD,
+    .palette_fade_byte = FADE, .lock_field_controls = LOCK,
+    .trainers = TRAINERS, .trainer_count = 16,
+    .trainer_class_names = CLASSES, .trainer_class_count = 4,
+    .map_groups = GROUPS, .map_group_count = 2,
+};
+
+static uint8_t* at(uint32_t a) {
+    if (a >= 0x08000000u) return s_rom + (a - 0x08000000u);
+    if (a >= 0x03000000u) return s_iwram + (a - 0x03000000u);
+    return s_ewram + (a - 0x02000000u);
+}
+static void put8(uint32_t a, uint8_t v) { *at(a) = v; }
+static void put16(uint32_t a, uint16_t v) { fixture_put16(at(a), v); }
+static void put32(uint32_t a, uint32_t v) { fixture_put32(at(a), v); }
+/* ASCII uppercase -> Gen 3 text, 0xFF-terminated. */
+static void put_name(uint32_t a, const char* s) {
+    uint8_t* p = at(a);
+    for (; *s; s++, p++) *p = (uint8_t)(0xBB + (*s - 'A'));
+    *p = 0xFF;
+}
+static GameMem mem(void) {
+    GameMem m = { s_ewram, s_iwram, s_rom, sizeof(s_rom) };
+    return m;
+}
+
+#define GRID_W 40
+#define GRID_H 40
+static void set_cell(int x, int y, uint16_t block) { put16(GRID + 2u * (uint32_t)(y * GRID_W + x), block); }
+
+/* Object slot i. cur/prev are VMap coords. dir is the game's 1..4. */
+static void put_obj(int i, bool player, uint8_t trainer_type, uint8_t local_id, uint8_t group,
+                    uint8_t num, int16_t x, int16_t y, uint8_t dir, uint8_t range, uint8_t sprite) {
+    uint32_t o = OBJS + 0x24u * (uint32_t)i;
+    memset(at(o), 0, 0x24);
+    put8(o + 0x00, 0x01);
+    put8(o + 0x02, player ? 0x01 : 0x00);
+    put8(o + 0x04, sprite);
+    put8(o + 0x07, trainer_type);
+    put8(o + 0x08, local_id);
+    put8(o + 0x09, num);
+    put8(o + 0x0A, group);
+    put8(o + 0x0B, 0x33);                 /* elevation 3 */
+    put16(o + 0x10, (uint16_t)x); put16(o + 0x12, (uint16_t)y);
+    put16(o + 0x14, (uint16_t)x); put16(o + 0x16, (uint16_t)y);
+    put16(o + 0x18, dir);
+    put8(o + 0x1D, range);
+}
+/* Sprite whose tile top-left lands on screen (x, y) with zero camera offsets
+ * (16x32 sprite: centerToCornerVecY = -16). */
+static void put_sprite(uint8_t i, int16_t x, int16_t y) {
+    uint32_t s = SPRITES + 0x44u * i;
+    memset(at(s), 0, 0x44);
+    put16(s + 0x20, (uint16_t)(x + 8));
+    put16(s + 0x22, (uint16_t)y);
+    put8(s + 0x29, 0xF0);
+}
+
+/* Camera at map pos (10, 20), no scroll in progress, default pans 0/32.
+ * A tile at VMap (vx, vy) is drawn at ((vx-10)*16, (vy-20)*16 - 40).
+ * Player at VMap (17, 27) = screen (112, 72). Youngster (trainer 10, class 2)
+ * at VMap (14, 24) = screen (64, 24), facing south, range 4. */
+static void scene(void) {
+    memset(s_ewram, 0, sizeof(s_ewram));
+    memset(s_iwram, 0, sizeof(s_iwram));
+    memset(s_rom, 0, sizeof(s_rom));
+    put32(0x03000000, SB1);
+    put16(SB1 + 0x00, 10); put16(SB1 + 0x02, 20);     /* pos */
+    put8(SB1 + 0x04, 0); put8(SB1 + 0x05, 1);         /* location group 0, num 1 */
+    put32(CB2, CB2_FIELD);
+    put16(PAN + 0, 0); put16(PAN + 2, 32);
+    put32(BACKUP + 0, GRID_W); put32(BACKUP + 4, GRID_H); put32(BACKUP + 8, GRID);
+    for (int y = 0; y < GRID_H; y++)
+        for (int x = 0; x < GRID_W; x++) set_cell(x, y, 0x3001);   /* elevation 3, metatile 1 */
+    put32(MAP_HDR + 0x00, LAYOUT);
+    put32(MAP_HDR + 0x04, EVENTS);
+    put32(LAYOUT + 0x00, GRID_W - 15); put32(LAYOUT + 0x04, GRID_H - 14);
+    put32(LAYOUT + 0x10, TILESET1); put32(LAYOUT + 0x14, TILESET2);
+    put32(TILESET1 + 0x10, ATTRS1); put32(TILESET2 + 0x10, ATTRS2);
+    put8(EVENTS + 0x00, 1);                            /* one object template */
+    put32(EVENTS + 0x10, BG_EVENTS);
+    /* Player and Youngster. */
+    put_obj(0, true, 0, 0xFF, 0, 1, 17, 27, 1, 0, 0);
+    put_sprite(0, 112, 72);
+    put_obj(1, false, 1, 3, 0, 1, 14, 24, 1, 4, 5);
+    put_sprite(5, 64, 24);
+    /* SaveBlock1 template 0: localId 3, script -> trainerbattle id 10. */
+    put8(SB1 + 0xC70, 3);
+    put32(SB1 + 0xC70 + 0x10, SCRIPT);
+    put8(SCRIPT + 0, 0x5C); put8(SCRIPT + 1, 0x00); put16(SCRIPT + 2, 10);
+    put8(TRAINERS + 10 * 0x28 + 1, 2);                 /* gTrainers[10].trainerClass = 2 */
+    put_name(CLASSES + 2 * 13, "YOUNGSTER");
+}
+
+TEST(ow_null_profile_gives_empty_snapshot) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    memset(&s, 0xAA, sizeof(s));
+    overworld_read(NULL, &m, &s);
+    ASSERT_TRUE(!s.visible);
+    ASSERT_EQ(s.trainer_count, 0);
+    ASSERT_EQ(s.hidden_count, 0);
+}
+
+TEST(ow_feed_capture_shifts_next_to_shown) {
+    static OverworldFeed f;
+    GameMem m = mem();
+    scene();
+    overworld_feed_init(&f, &k_profile);
+    overworld_feed_capture(&f, &m);
+    ASSERT_TRUE(f.next.visible);
+    ASSERT_TRUE(!f.shown.visible);
+    overworld_feed_capture(&f, &m);
+    ASSERT_TRUE(f.shown.visible);
+}
+
+TEST(ow_feed_clear_empties_both_slots) {
+    static OverworldFeed f;
+    static OverworldSnapshot zero;
+    GameMem m = mem();
+    scene();
+    overworld_feed_init(&f, &k_profile);
+    overworld_feed_capture(&f, &m);
+    overworld_feed_capture(&f, &m);
+    overworld_feed_clear(&f);
+    ASSERT_MEM_EQ(&f.next, &zero, sizeof(zero));
+    ASSERT_MEM_EQ(&f.shown, &zero, sizeof(zero));
+    ASSERT_TRUE(f.profile == &k_profile);
+}
+
+TEST(ow_visible_on_field) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(s.visible);
+}
+
+TEST(ow_hidden_when_callback_not_overworld) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put32(CB2, 0x08000201);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(!s.visible);
+    ASSERT_EQ(s.trainer_count, 0);
+}
+
+TEST(ow_hidden_during_fade) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put8(FADE, 0x80);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(!s.visible);
+    put8(FADE, 0x21);   /* other bits of that byte are not the fade flag */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(s.visible);
+}
+
+TEST(ow_hidden_while_controls_locked) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put8(LOCK, 1);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(!s.visible);
+}
+
+TEST(ow_hidden_in_pyramid_and_trainer_hill) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    const uint8_t nums[] = {26, 61, 65};
+    for (int i = 0; i < 3; i++) {
+        scene();
+        put8(SB1 + 0x04, 26); put8(SB1 + 0x05, nums[i]);
+        overworld_read(&k_profile, &m, &s);
+        ASSERT_TRUE(!s.visible);
+    }
+    scene();
+    put8(SB1 + 0x04, 26); put8(SB1 + 0x05, 60);   /* Trainer Hill entrance is a normal map */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(s.visible);
+}
+
+TEST(ow_hidden_without_save_block) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put32(0x03000000, 0);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(!s.visible);
+}
+
+void run_overworld_tests(void) {
+    RUN_TEST(ow_null_profile_gives_empty_snapshot);
+    RUN_TEST(ow_feed_capture_shifts_next_to_shown);
+    RUN_TEST(ow_feed_clear_empties_both_slots);
+    RUN_TEST(ow_visible_on_field);
+    RUN_TEST(ow_hidden_when_callback_not_overworld);
+    RUN_TEST(ow_hidden_during_fade);
+    RUN_TEST(ow_hidden_while_controls_locked);
+    RUN_TEST(ow_hidden_in_pyramid_and_trainer_hill);
+    RUN_TEST(ow_hidden_without_save_block);
+}

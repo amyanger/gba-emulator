@@ -48,6 +48,22 @@ typedef struct {
     uint32_t species_to_national;                         /* u16, index species-1 */
     uint32_t wild_mon_headers;   uint16_t wild_header_cap; /* 20-byte stride */
     uint32_t region_map_entries; uint8_t region_map_count; /* 8-byte stride */
+
+    /* Overworld X-Ray (docs/superpowers/specs/emerald-game-layer/overworld-*.md) */
+    uint32_t object_events;         /* struct ObjectEvent[16], 0x24 each */
+    uint32_t sprites;               /* struct Sprite[65], 0x44 each */
+    uint32_t sprite_coord_offset;   /* s16 gSpriteCoordOffsetX, then Y */
+    uint32_t field_camera;          /* struct CameraObject: s32 x @0x10, y @0x14 */
+    uint32_t camera_pan;            /* s16 sHorizontalCameraPan, then sVerticalCameraPan */
+    uint32_t backup_map_layout;     /* s32 width, s32 height, u16* map */
+    uint32_t backup_map_data;       /* the address backup_map_layout.map must hold */
+    uint32_t main_callback2;        /* gMain.callback2 */
+    uint32_t cb2_overworld;         /* callback2 value on the overworld (Thumb bit set) */
+    uint32_t palette_fade_byte;     /* gPaletteFade byte 7: bit 7 = fade active */
+    uint32_t lock_field_controls;   /* u8 sLockFieldControls */
+    uint32_t trainers;            uint16_t trainer_count;        /* 0x28-byte stride */
+    uint32_t trainer_class_names; uint8_t trainer_class_count;   /* 13-byte stride */
+    uint32_t map_groups;          uint8_t map_group_count;       /* pointer per group */
 } GameProfile;
 
 extern const GameProfile g_emerald_profile;
