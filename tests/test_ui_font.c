@@ -1,5 +1,6 @@
 #include "test_harness.h"
 #include "ui/ui_font.h"
+#include <string.h>
 
 #define W 400
 #define H 80
@@ -80,6 +81,56 @@ TEST(font_cache_survives_overflow) {
     ASSERT_TRUE(lit_columns(10, 100) > 30);
 }
 
+/* Sizes are em sizes, as in the CSS mockups: Inter's ascender is 0.97 em and
+ * its cap height 0.73 em. Pixel-height scaling made both about 17% smaller. */
+TEST(font_size_is_em_size) {
+    UiCanvas c = fresh(1.0f);
+    float asc = ui_text_ascent(&c, UI_FONT_REGULAR, 13);
+    ASSERT_TRUE(asc >= 12.0f && asc <= 14.0f);
+    c = fresh(4.0f);
+    ui_text(&c, UI_FONT_REGULAR, 13, 2, 0, 0, UI_ALIGN_LEFT, 0xFFFFFFFF, "H");
+    int rows = 0;
+    for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++)
+            if ((s_px[y * W + x] & 0xFF) > 0x80) { rows++; break; }
+    ASSERT_TRUE(rows >= 36 && rows <= 40); /* 0.727 * 52 px */
+}
+
+TEST(font_cap_middle_matches_cap_height) {
+    UiCanvas c = fresh(1.0f);
+    float asc = ui_text_ascent(&c, UI_FONT_REGULAR, 13);
+    float mid = ui_text_cap_middle(&c, UI_FONT_REGULAR, 13);
+    ASSERT_TRUE(asc - mid > 4.2f && asc - mid < 5.2f); /* 0.727 * 13 / 2 */
+}
+
+/* Coverage-weighted x centroid of the whole canvas. */
+static float centroid_x(void) {
+    double sum = 0, wsum = 0;
+    for (int y = 0; y < H; y++)
+        for (int x = 0; x < W; x++) {
+            uint32_t v = s_px[y * W + x] & 0xFF;
+            sum += (double)v * x;
+            wsum += v;
+        }
+    return wsum > 0 ? (float)(sum / wsum) : 0.0f;
+}
+
+TEST(font_positions_glyphs_at_subpixel_precision) {
+    float cx[3];
+    const float xs[3] = {10.0f, 10.25f, 10.5f};
+    static uint32_t first[W * H];
+    for (int i = 0; i < 3; i++) {
+        UiCanvas c = fresh(1.0f);
+        ui_text(&c, UI_FONT_REGULAR, 13, xs[i], 5, 0, UI_ALIGN_LEFT, 0xFFFFFFFF, "I");
+        cx[i] = centroid_x();
+        if (i == 0) memcpy(first, s_px, sizeof(first));
+        else ASSERT_TRUE(memcmp(first, s_px, sizeof(first)) != 0);
+    }
+    /* Whole-pixel snapping would move these by 0 and 1 px. */
+    ASSERT_TRUE(cx[1] - cx[0] > 0.1f && cx[1] - cx[0] < 0.4f);
+    ASSERT_TRUE(cx[2] - cx[0] > 0.35f && cx[2] - cx[0] < 0.65f);
+}
+
 void run_ui_font_tests(void) {
     TEST_SUITE("ui_font");
     RUN_TEST(font_init_and_width_grows);
@@ -89,4 +140,7 @@ void run_ui_font_tests(void) {
     RUN_TEST(font_unknown_codepoint_and_bad_utf8_are_safe);
     RUN_TEST(font_baseline_snaps_to_whole_pixel);
     RUN_TEST(font_cache_survives_overflow);
+    RUN_TEST(font_size_is_em_size);
+    RUN_TEST(font_cap_middle_matches_cap_height);
+    RUN_TEST(font_positions_glyphs_at_subpixel_precision);
 }

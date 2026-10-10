@@ -4,13 +4,16 @@
 #include <math.h>
 #include <string.h>
 
-#define GLYPH_SLOTS 768
-#define GLYPH_POOL_BYTES (1024 * 1024)
+#define GLYPH_SLOTS 2048
+#define GLYPH_POOL_BYTES (2 * 1024 * 1024)
+#define GLYPH_BUCKETS 256
+#define SUBPIXEL_STEPS 4  /* horizontal glyph phases: 0, .25, .5, .75 px */
 
 typedef struct {
     uint32_t codepoint;
     uint16_t size_q;      /* pixel size * 4 */
-    uint8_t font, used;
+    uint8_t font, sub;    /* sub: subpixel phase, 0..SUBPIXEL_STEPS-1 */
+    uint16_t next;        /* 1-based index of the next glyph in the bucket, 0 ends */
     int16_t w, h, xoff, yoff;
     uint32_t offset;      /* into s_pool */
 } Glyph;
@@ -18,6 +21,7 @@ typedef struct {
 static stbtt_fontinfo s_fonts[UI_FONT_COUNT];
 static bool s_ready;
 static Glyph s_glyphs[GLYPH_SLOTS];
+static uint16_t s_bucket[GLYPH_BUCKETS];   /* 1-based head index per hash bucket, 0 empty */
 static uint32_t s_glyph_count;
 static uint8_t s_pool[GLYPH_POOL_BYTES];
 static uint32_t s_pool_used;
@@ -31,6 +35,7 @@ bool ui_font_init(void) {
 
 void ui_font_cache_clear(void) {
     memset(s_glyphs, 0, sizeof(s_glyphs));
+    memset(s_bucket, 0, sizeof(s_bucket));
     s_glyph_count = 0;
     s_pool_used = 0;
 }
@@ -56,29 +61,42 @@ static float px_size(const UiCanvas* c, float size_pt) {
     return px < 1.0f ? 1.0f : px;
 }
 
-static const Glyph* glyph_get(UiFont f, uint32_t cp, float px) {
+/* Theme sizes come from CSS mockups, where font-size is the em size. */
+static float font_scale(UiFont f, float px) {
+    return stbtt_ScaleForMappingEmToPixels(&s_fonts[f], px);
+}
+
+static uint32_t glyph_hash(UiFont f, uint32_t cp, uint16_t size_q, uint8_t sub) {
+    return (cp * 31u + size_q * 7u + sub * 3u + (uint32_t)f) % GLYPH_BUCKETS;
+}
+
+static const Glyph* glyph_get(UiFont f, uint32_t cp, float px, uint8_t sub) {
     uint16_t size_q = (uint16_t)(px * 4.0f + 0.5f);
-    for (uint32_t i = 0; i < s_glyph_count; i++) {
-        const Glyph* g = &s_glyphs[i];
-        if (g->codepoint == cp && g->size_q == size_q && g->font == f) return g;
+    uint32_t h = glyph_hash(f, cp, size_q, sub);
+    for (uint16_t i = s_bucket[h]; i; i = s_glyphs[i - 1].next) {
+        const Glyph* g = &s_glyphs[i - 1];
+        if (g->codepoint == cp && g->size_q == size_q && g->font == f && g->sub == sub) return g;
     }
     stbtt_fontinfo* fi = &s_fonts[f];
-    float scale = stbtt_ScaleForPixelHeight(fi, px);
+    float scale = font_scale(f, px), shift = (float)sub / SUBPIXEL_STEPS;
     int x0, y0, x1, y1;
-    stbtt_GetCodepointBitmapBox(fi, (int)cp, scale, scale, &x0, &y0, &x1, &y1);
+    stbtt_GetCodepointBitmapBoxSubpixel(fi, (int)cp, scale, scale, shift, 0, &x0, &y0, &x1, &y1);
     uint32_t bytes = (uint32_t)((x1 - x0) * (y1 - y0));
     if (s_glyph_count >= GLYPH_SLOTS || bytes > GLYPH_POOL_BYTES - s_pool_used) ui_font_cache_clear();
     if (bytes > GLYPH_POOL_BYTES) return NULL;
     Glyph* g = &s_glyphs[s_glyph_count++];
-    g->codepoint = cp; g->size_q = size_q; g->font = (uint8_t)f; g->used = 1;
+    g->codepoint = cp; g->size_q = size_q; g->font = (uint8_t)f; g->sub = sub;
     g->w = (int16_t)(x1 - x0); g->h = (int16_t)(y1 - y0); g->xoff = (int16_t)x0; g->yoff = (int16_t)y0;
     g->offset = s_pool_used;
+    g->next = s_bucket[h];
+    s_bucket[h] = (uint16_t)s_glyph_count;
     if (bytes) {
         /* The v2 rasterizer has one unchecked allocation (the scanline buffer
          * for glyphs wider than 64 px). It is only safe because the arena is
          * always empty when a glyph starts, so reset before and after. */
         ui_stb_arena_reset();
-        stbtt_MakeCodepointBitmap(fi, s_pool + s_pool_used, g->w, g->h, g->w, scale, scale, (int)cp);
+        stbtt_MakeCodepointBitmapSubpixel(fi, s_pool + s_pool_used, g->w, g->h, g->w, scale, scale,
+                                          shift, 0, (int)cp);
         ui_stb_arena_reset();
         s_pool_used += bytes;
     }
@@ -90,14 +108,21 @@ float ui_text_ascent(const UiCanvas* c, UiFont f, float size_pt) {
     int asc, desc, gap;
     stbtt_GetFontVMetrics(&s_fonts[f], &asc, &desc, &gap);
     float px = px_size(c, size_pt);
-    float asc_px = floorf(asc * stbtt_ScaleForPixelHeight(&s_fonts[f], px) + 0.5f);
+    float asc_px = floorf(asc * font_scale(f, px) + 0.5f);
     return asc_px / c->scale;
+}
+
+float ui_text_cap_middle(const UiCanvas* c, UiFont f, float size_pt) {
+    if (!ui_font_init()) return 0;
+    int x0, y0, x1, y1;
+    if (!stbtt_GetCodepointBox(&s_fonts[f], 'H', &x0, &y0, &x1, &y1)) y1 = 0;
+    return ui_text_ascent(c, f, size_pt) - y1 * font_scale(f, size_pt) * 0.5f;
 }
 
 /* Width in pixels of the first n codepoints (n < 0: all). */
 static float width_px(UiFont f, float px, const char* s, int n) {
     stbtt_fontinfo* fi = &s_fonts[f];
-    float scale = stbtt_ScaleForPixelHeight(fi, px), w = 0;
+    float scale = font_scale(f, px), w = 0;
     uint32_t prev = 0;
     while (*s && n != 0) {
         uint32_t cp = utf8_next(&s);
@@ -124,7 +149,7 @@ static void draw_box(UiCanvas* c, int x, int y, int w, int h, uint32_t argb) {
 static float draw_run(UiCanvas* c, UiFont f, float px, float pen_x, int baseline, uint32_t argb,
                       const char* s, int n) {
     stbtt_fontinfo* fi = &s_fonts[f];
-    float scale = stbtt_ScaleForPixelHeight(fi, px);
+    float scale = font_scale(f, px);
     uint32_t prev = 0;
     while (*s && n != 0) {
         uint32_t cp = utf8_next(&s);
@@ -136,9 +161,14 @@ static float draw_run(UiCanvas* c, UiFont f, float px, float pen_x, int baseline
             draw_box(c, (int)(pen_x + 0.5f), baseline - bh, bw, bh, argb);
             pen_x += px * 0.6f;
         } else {
-            const Glyph* g = glyph_get(f, cp, px);
+            /* Whole pixels plus a quarter-pixel phase rasterized into the glyph,
+             * so spacing stays even; the baseline stays on a whole pixel. */
+            float fx = floorf(pen_x);
+            int ix = (int)fx, sub = (int)((pen_x - fx) * SUBPIXEL_STEPS + 0.5f);
+            if (sub == SUBPIXEL_STEPS) { ix++; sub = 0; }
+            const Glyph* g = glyph_get(f, cp, px, (uint8_t)sub);
             if (g && g->w > 0) {
-                int gx = (int)floorf(pen_x + 0.5f) + g->xoff, gy = baseline + g->yoff;
+                int gx = ix + g->xoff, gy = baseline + g->yoff;
                 const uint8_t* bmp = s_pool + g->offset;
                 for (int j = 0; j < g->h; j++)
                     for (int i = 0; i < g->w; i++)

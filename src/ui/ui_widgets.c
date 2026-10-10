@@ -25,8 +25,9 @@ float ui_pill(UiCanvas* c, float x, float y, const char* text, uint32_t bg) {
     float w = tw + 14.0f;
     float h = UI_SIZE_PILL + 5.0f;
     ui_fill_round_rect(c, (UiRect){x, y, w, h}, h / 2, bg);
-    ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL, x + 7.0f, y + 2.5f, 0, UI_ALIGN_LEFT,
-            pill_text_color(bg), text);
+    float ty = y + h / 2 - ui_text_cap_middle(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL);
+    ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL, x + 7.0f, ty, 0, UI_ALIGN_LEFT, pill_text_color(bg),
+            text);
     return w;
 }
 
@@ -81,11 +82,16 @@ float ui_tabs(UiCanvas* c, float x, float y, float w, const char* const* labels,
         float bw = ui_text_width(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL, badge) + 10.0f;
         float bh = UI_SIZE_PILL + 5.0f;
         ui_fill_round_rect(c, (UiRect){cx, y + 0.5f, bw, bh}, bh / 2, UI_SELECTED);
-        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL, cx + 5.0f, y + 3.0f, 0, UI_ALIGN_LEFT,
-                UI_MUTED, badge);
+        float ty = y + 0.5f + bh / 2 - ui_text_cap_middle(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL);
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL, cx + 5.0f, ty, 0, UI_ALIGN_LEFT, UI_MUTED,
+                badge);
     }
-    if (hint)
-        ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, x + w, y + 1.0f, 0, UI_ALIGN_RIGHT, UI_DIM, hint);
+    if (hint) {
+        /* Share the tab labels' baseline. */
+        float hy = y + ui_text_ascent(c, UI_FONT_REGULAR, UI_SIZE_SMALL) -
+                   ui_text_ascent(c, UI_FONT_REGULAR, UI_SIZE_LABEL);
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, x + w, hy, 0, UI_ALIGN_RIGHT, UI_DIM, hint);
+    }
     return y + 30.0f;
 }
 

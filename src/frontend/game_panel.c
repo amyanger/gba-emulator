@@ -133,12 +133,17 @@ static void nature_row(UiCanvas* c, float x, float y, float label_w, float w, co
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, vx, y, x + w - vx, UI_ALIGN_LEFT, UI_MUTED, buf);
 }
 
+/* Top of a bar of height h centered on the capitals of a text line at y. */
+static float bar_y(UiCanvas* c, float y, float size, float h) {
+    return y + ui_text_cap_middle(c, UI_FONT_REGULAR, size) - h / 2;
+}
+
 /* Bar plus a right-aligned number in a 26 point column at the right edge. */
 static void stat_bar(UiCanvas* c, float x, float y, float w, uint8_t value, float max,
                      uint32_t fill) {
     char buf[8];
     snprintf(buf, sizeof(buf), "%u", value);
-    ui_bar(c, (UiRect){x, y + 3.0f, w - 34.0f, 6.0f}, value / max, fill);
+    ui_bar(c, (UiRect){x, bar_y(c, y, UI_SIZE_SMALL, 6.0f), w - 34.0f, 6.0f}, value / max, fill);
     ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, x + w, y, 0, UI_ALIGN_RIGHT, UI_TEXT, buf);
 }
 
@@ -212,10 +217,11 @@ static void move_row(UiCanvas* c, float x, float y, float w, float pill_x, const
         default: break;
         }
     }
-    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y + 1.0f, 130.0f, UI_ALIGN_LEFT, UI_TEXT,
-            title(e->move).s);
+    /* Text centered on the pill (UI_SIZE_PILL + 5 tall). */
+    float ty = y + (UI_SIZE_PILL + 5.0f) / 2 - ui_text_cap_middle(c, UI_FONT_REGULAR, KV_SIZE);
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, ty, 130.0f, UI_ALIGN_LEFT, UI_TEXT, title(e->move).s);
     pill(c, pill_x, y, e->type);
-    ui_text(c, font, KV_SIZE, x + w, y + 1.0f, 0, UI_ALIGN_RIGHT, color, txt);
+    ui_text(c, font, KV_SIZE, x + w, ty, 0, UI_ALIGN_RIGHT, color, txt);
 }
 
 static void catch_row(UiCanvas* c, float y, const GameCatchRow* r) {
@@ -227,7 +233,8 @@ static void catch_row(UiCanvas* c, float y, const GameCatchRow* r) {
         ui_text(c, UI_FONT_REGULAR, KV_SIZE, RIGHT, y, 0, UI_ALIGN_RIGHT, UI_MUTED, "n/a");
         return;
     }
-    ui_bar(c, (UiRect){402.0f, y + 3.5f, 120.0f, 6.0f}, r->permille / 1000.0f, UI_ACCENT);
+    ui_bar(c, (UiRect){402.0f, bar_y(c, y, KV_SIZE, 6.0f), 120.0f, 6.0f}, r->permille / 1000.0f,
+           UI_ACCENT);
     snprintf(buf, sizeof(buf), "%d.%d%%", r->permille / 10, r->permille % 10);
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, RIGHT, y, 0, UI_ALIGN_RIGHT, UI_TEXT, buf);
 }
@@ -236,8 +243,8 @@ static void catch_row(UiCanvas* c, float y, const GameCatchRow* r) {
 static void enc_row(UiCanvas* c, float x, float y, float w, const GameEncRow* r) {
     char buf[24];
     bool wide = w > 400.0f;
-    float name_w = wide ? 302.0f : 104.0f, lv_x = x + (wide ? 332.0f : 130.0f);
-    float bar_x = x + (wide ? 410.0f : 192.0f), bar_w = wide ? 110.0f : 44.0f;
+    float name_w = wide ? 302.0f : 92.0f, lv_x = x + (wide ? 332.0f : 118.0f);
+    float bar_x = x + (wide ? 410.0f : 186.0f), bar_w = wide ? 110.0f : 44.0f;
     if (r->caught) ui_check(c, x, y, 12.0f, UI_GOOD);
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, x + 22.0f, y, name_w, UI_ALIGN_LEFT, UI_TEXT,
             title(r->species).s);
@@ -245,7 +252,8 @@ static void enc_row(UiCanvas* c, float x, float y, float w, const GameEncRow* r)
     else snprintf(buf, sizeof(buf), "Lv %u" NDASH "%u", r->min_level, r->max_level);
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, lv_x, y, bar_x - lv_x - 4.0f, UI_ALIGN_LEFT, UI_MUTED,
             buf);
-    ui_bar(c, (UiRect){bar_x, y + 3.5f, bar_w, 6.0f}, r->percent / 100.0f, UI_ACCENT);
+    ui_bar(c, (UiRect){bar_x, bar_y(c, y, KV_SIZE, 6.0f), bar_w, 6.0f}, r->percent / 100.0f,
+           UI_ACCENT);
     snprintf(buf, sizeof(buf), "%u%%", r->percent);
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, x + w, y, 0, UI_ALIGN_RIGHT, UI_TEXT, buf);
 }
@@ -274,7 +282,7 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
     snprintf(buf, sizeof(buf), "Lv %u", e->level);
     title_meta(c, LEFT + name_w + 8.0f, y, RIGHT - pills_w - 8.0f,
                wild ? "Wild" MDOT : "Trainer" MDOT, e->gender, buf);
-    y += 24.0f;
+    y += 28.0f;
 
     if (s->enemy_count > 1) {
         const GameEnemy* e2 = &s->enemies[1];
@@ -287,7 +295,7 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
 
     /* HP row */
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, y, 0, UI_ALIGN_LEFT, UI_MUTED, "HP");
-    ui_bar(c, (UiRect){44.0f, y + 3.5f, 456.0f, 6.0f}, hp_frac(e->hp, e->max_hp),
+    ui_bar(c, (UiRect){44.0f, bar_y(c, y, KV_SIZE, 6.0f), 456.0f, 6.0f}, hp_frac(e->hp, e->max_hp),
            hp_color(e->hp, e->max_hp));
     snprintf(buf, sizeof(buf), "%u / %u", e->hp, e->max_hp);
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, RIGHT, y, 76.0f, UI_ALIGN_RIGHT, UI_TEXT, buf);
@@ -369,7 +377,8 @@ static void party_list_row(UiCanvas* c, float y, const GamePartyMon* m, bool sel
         ui_fill_round_rect(c, (UiRect){LEFT, y + 2.0f, 2.0f, 36.0f}, 1.0f, UI_ACCENT);
     }
     float tx = LEFT + 8.0f, ty = y + 8.0f, rx = LEFT + 182.0f;
-    float mid = y + (40.0f - UI_SIZE_BODY) / 2; /* rows without an HP bar */
+    /* Rows without an HP bar center their text in the 40 point row. */
+    float mid = y + 20.0f - ui_text_cap_middle(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY);
     if (m->bad) {
         ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, tx, mid, 120.0f, UI_ALIGN_LEFT, UI_BAD,
                 "Bad data");
