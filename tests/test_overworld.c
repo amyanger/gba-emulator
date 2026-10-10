@@ -352,7 +352,134 @@ TEST(ow_template_from_rom_header_for_other_map) {
     ASSERT_EQ(first_trainer(&s)->id, 11);
 }
 
+TEST(ow_sight_clear_full_range) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 4);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_UP], 0);   /* normal trainers look one way */
+}
+
+TEST(ow_sight_stops_at_collision_and_undefined) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    set_cell(14, 27, 0x3401);                          /* collision bit, 3rd tile */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 2);
+    scene();
+    set_cell(14, 25, 0x03FF);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 0);
+}
+
+TEST(ow_sight_elevation_rules) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    set_cell(14, 26, 0x4001);                          /* elevation 4 vs trainer 3 */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 1);
+    scene();
+    set_cell(14, 26, 0xF001);                          /* 15 = multi-level, never mismatches */
+    set_cell(14, 27, 0x0001);                          /* 0 = transition, never mismatches */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 4);
+}
+
+TEST(ow_sight_blocked_by_npc_not_player) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put_obj(2, false, 0, 7, 0, 1, 14, 26, 1, 0, 9);    /* NPC on the 2nd tile */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 1);
+    scene();
+    put16(OBJS + 0x10, 14); put16(OBJS + 0x12, 26);    /* move the player there instead */
+    put16(OBJS + 0x14, 14); put16(OBJS + 0x16, 26);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 4);
+}
+
+TEST(ow_sight_one_way_tiles) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put16(ATTRS1 + 2 * 2, 0x32);                       /* metatile 2 = IMPASSABLE_NORTH */
+    set_cell(14, 25, 0x3002);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 0);
+    scene();
+    put8(OBJS + 0x24 + 0x1E, 0x33);                    /* trainer stands on IMPASSABLE_SOUTH */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 0);
+    scene();
+    put16(ATTRS1 + 2 * 3, 0x3B);                       /* MB_JUMP_SOUTH: ledges do not block */
+    set_cell(14, 25, 0x3003);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 4);
+}
+
+TEST(ow_sight_secondary_tileset) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put16(ATTRS2 + 2 * 5, 0x32);                       /* metatile 512 + 5 */
+    set_cell(14, 26, 0x3000 | (512 + 5));
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 1);
+}
+
+TEST(ow_buried_looks_all_ways) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put8(OBJS + 0x24 + 0x07, 3);
+    put8(OBJS + 0x24 + 0x1D, 1);
+    set_cell(13, 24, 0x3401);                          /* wall to the west */
+    overworld_read(&k_profile, &m, &s);
+    const OwTrainer* t = first_trainer(&s);
+    ASSERT_TRUE(t != NULL);
+    ASSERT_EQ(t->clear[OW_DIR_DOWN], 1);
+    ASSERT_EQ(t->clear[OW_DIR_UP], 1);
+    ASSERT_EQ(t->clear[OW_DIR_LEFT], 0);
+    ASSERT_EQ(t->clear[OW_DIR_RIGHT], 1);
+}
+
+TEST(ow_bad_grid_omits_cones_keeps_trainer) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put32(BACKUP + 0, 200); put32(BACKUP + 4, 200);   /* 40000 cells > 10240 */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.trainer_count, 1);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 0);
+    scene();
+    put32(BACKUP + 8, GRID + 2);                       /* not the game's buffer */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 0);
+    scene();
+    put32(BACKUP + 0, 0xFFFFFFF0u);                    /* negative width */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 0);
+}
+
 void run_overworld_tests(void) {
+    RUN_TEST(ow_sight_clear_full_range);
+    RUN_TEST(ow_sight_stops_at_collision_and_undefined);
+    RUN_TEST(ow_sight_elevation_rules);
+    RUN_TEST(ow_sight_blocked_by_npc_not_player);
+    RUN_TEST(ow_sight_one_way_tiles);
+    RUN_TEST(ow_sight_secondary_tileset);
+    RUN_TEST(ow_buried_looks_all_ways);
+    RUN_TEST(ow_bad_grid_omits_cones_keeps_trainer);
     RUN_TEST(ow_trainer_resolved_from_save_template);
     RUN_TEST(ow_trainer_beaten_flag);
     RUN_TEST(ow_trainer_position_comes_from_sprite);

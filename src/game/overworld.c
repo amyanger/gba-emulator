@@ -14,8 +14,12 @@
 #define OBJ_LOCAL_ID       0x08
 #define OBJ_MAP_NUM        0x09
 #define OBJ_MAP_GROUP      0x0A
+#define OBJ_ELEVATION      0x0B   /* low nibble: currentElevation */
+#define OBJ_CUR            0x10   /* s16 x, y in VMap coords */
+#define OBJ_PREV           0x14
 #define OBJ_DIRS           0x18   /* low nibble: facingDirection 1..4 */
 #define OBJ_RANGE          0x1D   /* trainerRange_berryTreeId */
+#define OBJ_BEHAVIOR       0x1E   /* currentMetatileBehavior */
 #define TRAINER_TYPE_NORMAL 1
 #define TRAINER_TYPE_BURIED 3
 
@@ -38,7 +42,11 @@
 #define TEMPLATE_SIZE      0x18
 #define TEMPLATE_SCRIPT    0x10
 #define MAP_HEADER_SIZE    0x1C
+#define MAP_HEADER_LAYOUT  0x00
 #define MAP_HEADER_EVENTS  0x04
+#define LAYOUT_PRIMARY     0x10
+#define LAYOUT_SECONDARY   0x14
+#define TILESET_ATTRS      0x10
 #define EVENTS_OBJ_COUNT   0x00
 #define EVENTS_OBJS        0x04
 
@@ -49,6 +57,11 @@
 #define CLASS_NAME_LEN     13
 #define CHAR_MALE          0xB5
 #define CHAR_FEMALE        0xB6
+
+#define VMAP_MAX_CELLS     10240
+#define GRID_UNDEFINED     0x03FF
+#define GRID_COLLISION     0x0C00
+#define PRIMARY_METATILES  512
 
 /* Maps with their own trainer lookup (trainer_see.c): the Battle Pyramid floor
  * and the Trainer Hill floors (data/maps/map_groups.json). */
@@ -65,6 +78,10 @@ typedef struct {
     uint8_t loc_group, loc_num;
     int32_t cam_dx, cam_dy;          /* screen px added to (tile - pos) * 16 */
     int16_t spr_off_x, spr_off_y;    /* gSpriteCoordOffsetX/Y */
+    bool grid_ok;
+    int32_t grid_w, grid_h;
+    uint32_t grid;
+    uint32_t attrs[2];               /* primary, secondary metatile attribute tables */
     uint8_t objs[OBJ_COUNT][OBJ_SIZE];
     bool obj_ok[OBJ_COUNT];
 } OwCtx;
@@ -135,6 +152,83 @@ static void class_name(const OwCtx* c, uint16_t id, char* out) {
     gen3_decode(raw, CLASS_NAME_LEN, out, OW_CLASS_LEN);
 }
 
+static bool blocked_north(uint8_t b) { return b == 0x32 || b == 0x34 || b == 0x35 || b == 0xC0; }
+static bool blocked_south(uint8_t b) { return b == 0x33 || b == 0x36 || b == 0x37 || b == 0xC0; }
+static bool blocked_west(uint8_t b) { return b == 0x31 || b == 0x35 || b == 0x37 || b == 0xC1 || b == 0xBE; }
+static bool blocked_east(uint8_t b) { return b == 0x30 || b == 0x34 || b == 0x36 || b == 0xC1 || b == 0xBE; }
+typedef bool (*OwBlockFn)(uint8_t);
+/* gOppositeDirectionBlockedMetatileFuncs / gDirectionBlockedMetatileFuncs, OwDir order. */
+static const OwBlockFn k_own_blocks[OW_DIR_COUNT] = {blocked_south, blocked_north, blocked_west, blocked_east};
+static const OwBlockFn k_dest_blocks[OW_DIR_COUNT] = {blocked_north, blocked_south, blocked_east, blocked_west};
+static const int8_t k_dx[OW_DIR_COUNT] = {0, 0, -1, 1};
+static const int8_t k_dy[OW_DIR_COUNT] = {1, -1, 0, 0};
+
+static void grid_init(OwCtx* c) {
+    uint32_t w = 0, h = 0, map = 0, layout = 0, prim = 0, sec = 0;
+    const GameMem* m = c->m;
+    c->grid_ok = false;
+    if (!game_mem_read32(m, c->p->backup_map_layout, &w) || !game_mem_read32(m, c->p->backup_map_layout + 4, &h) ||
+        !game_mem_read32(m, c->p->backup_map_layout + 8, &map))
+        return;
+    if (w == 0 || h == 0 || w > VMAP_MAX_CELLS || h > VMAP_MAX_CELLS || w * h > VMAP_MAX_CELLS ||
+        map != c->p->backup_map_data || !game_mem_ok(m, map, w * h * 2u))
+        return;
+    if (!game_mem_read32(m, c->p->map_header + MAP_HEADER_LAYOUT, &layout) ||
+        !game_mem_read32(m, layout + LAYOUT_PRIMARY, &prim) || !game_mem_read32(m, layout + LAYOUT_SECONDARY, &sec) ||
+        !game_mem_read32(m, prim + TILESET_ATTRS, &c->attrs[0]) || !game_mem_read32(m, sec + TILESET_ATTRS, &c->attrs[1]))
+        return;
+    c->grid_w = (int32_t)w;
+    c->grid_h = (int32_t)h;
+    c->grid = map;
+    c->grid_ok = true;
+}
+
+/* False outside the grid or on an undefined cell; the game treats both as walls. */
+static bool grid_cell(const OwCtx* c, int32_t x, int32_t y, uint16_t* block) {
+    if (x < 0 || y < 0 || x >= c->grid_w || y >= c->grid_h) return false;
+    if (!game_mem_read16(c->m, c->grid + 2u * (uint32_t)(y * c->grid_w + x), block)) return false;
+    return *block != GRID_UNDEFINED;
+}
+
+/* Strip cells use the current map's tilesets too, like GetMetatileAttributesById. */
+static uint8_t behavior_of(const OwCtx* c, uint16_t block) {
+    uint16_t id = block & 0x03FF, attr = 0xFF;
+    uint32_t table = id < PRIMARY_METATILES ? c->attrs[0] : c->attrs[1];
+    uint32_t index = id < PRIMARY_METATILES ? id : (uint32_t)(id - PRIMARY_METATILES);
+    if (!game_mem_read16(c->m, table + 2u * index, &attr)) return 0xFF;
+    return (uint8_t)(attr & 0xFF);
+}
+
+static bool object_blocks(const OwCtx* c, int self, int32_t x, int32_t y, uint8_t elev) {
+    for (int i = 0; i < OBJ_COUNT; i++) {
+        const uint8_t* o = c->objs[i];
+        if (i == self || !c->obj_ok[i] || !(o[OBJ_FLAGS0] & 1) || (o[OBJ_FLAGS2] & 1)) continue;
+        bool here = (s16_at(o + OBJ_CUR) == x && s16_at(o + OBJ_CUR + 2) == y) ||
+                    (s16_at(o + OBJ_PREV) == x && s16_at(o + OBJ_PREV + 2) == y);
+        uint8_t oe = o[OBJ_ELEVATION] & 0x0F;
+        if (here && (elev == 0 || oe == 0 || elev == oe)) return true;
+    }
+    return false;
+}
+
+/* CheckPathBetweenTrainerAndPlayer, walked outward: tiles a player could be seen on. */
+static uint8_t sight_clear(const OwCtx* c, int self, OwDir d, uint8_t range) {
+    const uint8_t* o = c->objs[self];
+    if (!c->grid_ok || k_own_blocks[d](o[OBJ_BEHAVIOR])) return 0;
+    int32_t x = s16_at(o + OBJ_CUR), y = s16_at(o + OBJ_CUR + 2);
+    uint8_t elev = o[OBJ_ELEVATION] & 0x0F;
+    for (uint8_t k = 1; k <= range; k++) {
+        int32_t tx = x + k_dx[d] * k, ty = y + k_dy[d] * k;
+        uint16_t block = 0;
+        if (!grid_cell(c, tx, ty, &block) || (block & GRID_COLLISION)) return (uint8_t)(k - 1);
+        if (k_dest_blocks[d](behavior_of(c, block))) return (uint8_t)(k - 1);
+        uint8_t te = (uint8_t)(block >> 12);
+        if (elev != 0 && te != 0 && te != 15 && te != elev) return (uint8_t)(k - 1);
+        if (object_blocks(c, self, tx, ty, elev)) return (uint8_t)(k - 1);
+    }
+    return range;
+}
+
 static void read_trainer(const OwCtx* c, int i, OverworldSnapshot* s) {
     const uint8_t* o = c->objs[i];
     uint8_t type = o[OBJ_TRAINER_TYPE], range = o[OBJ_RANGE], spr = o[OBJ_SPRITE];
@@ -155,6 +249,8 @@ static void read_trainer(const OwCtx* c, int i, OverworldSnapshot* s) {
     t.facing = (face >= 1 && face <= 4) ? (uint8_t)(face - 1) : OW_DIR_DOWN;
     t.range = range;
     t.buried = type == TRAINER_TYPE_BURIED;
+    for (int d = 0; d < OW_DIR_COUNT; d++)
+        if (t.buried || d == t.facing) t.clear[d] = sight_clear(c, i, (OwDir)d, range);
 
     uint32_t script = template_script(c, o);
     if (script >= 0x08000000u && game_mem_copy(c->m, script, head, sizeof(head)) &&
@@ -210,6 +306,7 @@ void overworld_read(const GameProfile* p, const GameMem* m, OverworldSnapshot* o
     c.spr_off_x = (int16_t)off[0];
     c.spr_off_y = (int16_t)off[1];
     out->visible = true;
+    grid_init(&c);
 
     for (int i = 0; i < OBJ_COUNT; i++)
         c.obj_ok[i] = game_mem_copy(m, p->object_events + (uint32_t)i * OBJ_SIZE, c.objs[i], OBJ_SIZE);
