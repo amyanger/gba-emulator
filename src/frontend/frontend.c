@@ -472,25 +472,32 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 fe->panel_sel = game_panel_select(fe->panel_sel, delta, fe->last_snap.party_count);
             }
 
+            // Save state and screenshot files are named after the ROM; main.c clears
+            // rom_path when it was too long to keep.
+            bool has_rom_path = fe->rom_path[0] != '\0';
+            SDL_Scancode scan = event.key.keysym.scancode;
+            if (!has_rom_path && !event.key.repeat &&
+                (scan == SDL_SCANCODE_F5 || scan == SDL_SCANCODE_F6 || scan == SDL_SCANCODE_F7 ||
+                 scan == SDL_SCANCODE_F8 || scan == SDL_SCANCODE_F12)) {
+                frontend_toast(fe, TOAST_WARN, "Savestates are off", "ROM path is too long");
+            }
+
             // Save state hotkeys
-            if (event.key.keysym.scancode == SDL_SCANCODE_F5) {
+            if (has_rom_path && scan == SDL_SCANCODE_F5) {
                 fe->save_requested = true;
             }
-            if (event.key.keysym.scancode == SDL_SCANCODE_F6 &&
-                !event.key.repeat) {
+            if (has_rom_path && scan == SDL_SCANCODE_F6 && !event.key.repeat) {
                 slot_picker_open_label_edit(fe);
             }
-            if (event.key.keysym.scancode == SDL_SCANCODE_F7 &&
-                !event.key.repeat) {
+            if (has_rom_path && scan == SDL_SCANCODE_F7 && !event.key.repeat) {
                 slot_picker_open_list(fe);
             }
-            if (event.key.keysym.scancode == SDL_SCANCODE_F8) {
+            if (has_rom_path && scan == SDL_SCANCODE_F8) {
                 fe->load_requested = true;
             }
 
             // Screenshot hotkey
-            if (event.key.keysym.scancode == SDL_SCANCODE_F12 &&
-                !event.key.repeat) {
+            if (has_rom_path && scan == SDL_SCANCODE_F12 && !event.key.repeat) {
                 fe->screenshot_requested = true;
             }
 

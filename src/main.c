@@ -431,7 +431,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    snprintf(fe.rom_path, sizeof(fe.rom_path), "%s", rom_path);
+    int rom_path_len = snprintf(fe.rom_path, sizeof(fe.rom_path), "%s", rom_path);
+    if (rom_path_len < 0 || (size_t)rom_path_len >= sizeof(fe.rom_path)) {
+        // Slot and screenshot names would be built from a cut-off path, so leave them off.
+        LOG_WARN("ROM path too long; savestates and screenshots are disabled for this run");
+        fe.rom_path[0] = '\0';
+    }
     fe.muted = start_muted;
 
     // Keyboard bindings (must come after frontend_init so SDL is up)
