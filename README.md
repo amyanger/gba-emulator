@@ -30,17 +30,17 @@ cmake .. -DENABLE_XRAY=OFF
 
 ## Game info panel
 
-Press **F9** to open a side panel next to the game. The window widens from 240 to 440 logical pixels while the panel is open. **F10** cycles the page: Auto, Party, Encounters. Auto shows the battle page during a battle and the encounters page otherwise.
+Press **F9** to open a side panel next to the game. The panel has a dark dashboard look with tabs along the top, type-colored pills, IV and EV bars, colored move matchups and catch odds bars. **F10** cycles the page: Auto, Party, Route. Auto shows the battle page during a battle and the route page otherwise.
 
 - **Battle** shows the opposing Pokemon (species, level, HP, types, nature, IVs, ability, held item), move matchups, and, in wild battles, catch odds for each ball in your bag.
-- **Party** shows each Pokemon's nature, IVs, EVs and Hidden Power.
-- **Encounters** shows the encounter table for the current route.
+- **Party** shows each Pokemon's nature, IVs, EVs and Hidden Power. Press **[** and **]** to change the selected Pokemon. These two keys only work on the Party page, and only when they are not bound to a GBA button in a custom keymap.
+- **Route** shows the encounter table for the current route.
+
+The panel sizes itself to the screen's pixel density, so it stays crisp on standard monitors, Windows display scaling, Retina and 4K. `--scale` only sets the size of the game. The panel is 600 by 480 points, the window is at least 480 points tall while the panel is open, and the game is centered vertically. In fullscreen (F11) the game grows to fill the screen with the panel beside it.
 
 Supported ROM: US Emerald rev 0 (game code BPEE) only. Any other ROM shows "No game info for this ROM". Every name and number is read from your own ROM at runtime, and nothing from the game ships with the emulator. The panel only reads memory. It never writes to the game, makes no bus accesses, does not change timing, and leaves savestates untouched. Addresses come from the pret/pokeemerald decomp.
 
-Fullscreen (F11) now letterboxes to the correct aspect ratio, with or without the panel. Before, it stretched the image.
-
-Not shown yet: Safari Ball odds, mass outbreaks, Feebas tiles, roamers, Altering Cave variants, lead ability effects (Static, Magnet Pull and similar), Battle Pyramid and Battle Pike tables, and map names (the encounters page shows the map as group:num). Weather Ball matchups use its base type.
+Not shown yet: Safari Ball odds, mass outbreaks, Feebas tiles, roamers, Altering Cave variants, lead ability effects (Static, Magnet Pull and similar), Battle Pyramid and Battle Pike tables, and map names (the route page shows the map as group:num). Weather Ball matchups use its base type.
 
 To check decoded state without a window, run headless with `--game-dump <file>` (see Headless mode).
 
@@ -67,7 +67,7 @@ To check decoded state without a window, run headless with `--game-dump <file>` 
 - **Flash 64K / 128K Save** — Macronix and SST/Atmel/Panasonic chip IDs (Pokemon Emerald, Ruby, Sapphire, FireRed, LeafGreen)
 - **Real-Time Clock** — S-3511A serial RTC over GPIO (0x080000C4/C6/C8) with persistent offset stored in the `.sav` trailer
 - **Cartridge** — ROM loading (up to 32MB), auto save detection, file persistence next to the ROM
-- **Game info panel (Pokemon Emerald)**: press F9 for a side panel with wild battle IVs, natures, catch odds per ball, move matchups, your party's IVs/EVs/Hidden Power, and the current route's encounter table.
+- **Game info panel (Pokemon Emerald)**: press F9 for a side panel with wild battle IVs, natures, catch odds per ball, move matchups, your party's IVs/EVs/Hidden Power, and the current route's encounter table, in a dark dashboard layout.
 - **Save States** — 10 numbered slots (0–9), versioned and ROM-hash guarded, written next to the ROM as `<rom>.ss<N>`
 - **Cheats** — GameShark / Action Replay v1–v3 + CodeBreaker, loaded from a `.cht` file
 - **Fast-Forward** — Hold Tab or toggle with `` ` `` (skips audio, renders every Nth frame)
@@ -203,7 +203,8 @@ cmake .. -DENABLE_REWIND=OFF
 | F2 | Toggle Hardware X-Ray Mode |
 | F3 | Toggle input display HUD (mini-GBA overlay showing held buttons) |
 | F9 | Toggle the Pokemon Emerald game info panel |
-| F10 | Cycle the panel page: Auto, Party, Encounters |
+| F10 | Cycle the panel page: Auto, Party, Route |
+| [ and ] | Change the selected Pokemon on the Party page (unless bound to a GBA button) |
 | F5 | Save state to current slot |
 | F6 | Edit label of current save-state slot |
 | F7 | Open save-state slot picker |
@@ -237,6 +238,10 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--hash-out <file>` | Write per-frame `<N> <FNV1a-hex>` lines. Defaults to stdout. |
 | `--screenshot-out <file>` | After the run, save the final framebuffer as PNG. |
 | `--input-script <file>` | Replay scripted keypad input. Headless only. Format below. |
+| `--panel-out <file>` | After the run, render the game panel to a PNG. Requires `--headless`. |
+| `--panel-density <f>` | Panel pixels per point, 0.5 to 4.0 (default 1.0). Requires `--headless`. |
+| `--panel-page <p>` | Panel page: `auto`, `party` or `route` (default `auto`). Requires `--headless`. |
+| `--panel-select <n>` | Selected party slot, 0 to 5, for the party page (default 0). Requires `--headless`. |
 | `--game-dump <file>` | After the run, write the decoded Emerald game state (party, battle, encounters) to `file`. Requires `--headless`. |
 
 An input script has one event per line, `<frame> <press|release> <KEY>`,
@@ -417,11 +422,20 @@ src/
     battle_info.c/h        Catch odds and move matchups for the current battle
     encounters.c/h         Wild encounter tables for the current map
     gen3_text.c/h          Gen 3 character set to ASCII
+  ui/
+    ui_canvas.c/h          Software canvas: rects, rounded shapes, alpha blending
+    ui_font.c/h            Text measuring and drawing from the embedded Inter font
+    ui_widgets.c/h         Pills, bars, tabs and other panel widgets
+    ui_theme.h             Colors and spacing for the panel
+    ui_stb.c/h             Static-arena allocation wrapper for stb_truetype
+    font_inter.h           Embedded Inter subset (generated by tools/embed_font.sh)
+    stb_truetype.h         Vendored stb_truetype (public domain)
   input/
     input.c/h              Keypad registers
   frontend/
     frontend.c/h           SDL2 window, rendering, input polling, audio
-    game_panel.c/h         Game info panel drawn beside the screen (F9/F10)
+    game_panel.c/h         Game info panel pages (battle, party, route), drawn with src/ui
+    panel_layout.c/h       Window, game and panel rectangles from display density
     debug.c                Register dumps, instruction tracing (debug builds)
     xray/
       xray.h               X-Ray state struct, public API, notification hooks
@@ -531,6 +545,8 @@ Place test ROMs in the `roms/` directory (not tracked by git):
 - [awesome-gbadev](https://github.com/gbadev-org/awesome-gbadev) — Curated GBA development resources
 - [mGBA](https://github.com/mgba-emu/mgba) — Reference emulator source
 - [Tonc](https://www.coranac.com/tonc/text/hardware.htm) — GBA hardware programming tutorial
+- [Inter](https://rsms.me/inter/) 4.1 — Font for the game info panel, under the SIL Open Font License 1.1 (`fonts/Inter-LICENSE.txt`). `tools/embed_font.sh` regenerates `src/ui/font_inter.h` from it.
+- [stb_truetype](https://github.com/nothings/stb) — Glyph rasterizer for the panel font, public domain
 
 ## License
 
