@@ -27,6 +27,7 @@ void run_apu_tests(void);
 void run_ppu_tests(void);
 void run_input_tests(void);
 void run_rewind_tests(void);
+void run_vblank_observer_tests(void);
 void run_screenshot_tests(void);
 void run_trace_tests(void);
 void run_cartridge_autosave_tests(void);
@@ -42,6 +43,7 @@ void run_game_battle_tests(void);
 void run_game_encounters_tests(void);
 void run_game_snapshot_tests(void);
 void run_game_panel_tests(void);
+void run_overworld_tests(void);
 void run_ui_font_data_tests(void);
 void run_ui_canvas_tests(void);
 void run_ui_font_tests(void);
@@ -51,7 +53,9 @@ void run_panel_layout_tests(void);
 void run_xray_tests(void);
 #endif
 void run_toast_tests(void);
+void run_prefs_tests(void);
 void run_hud_tests(void);
+void run_overworld_draw_tests(void);
 #ifndef _WIN32
 // These suites depend on POSIX APIs (unistd.h, pthreads, AF_UNIX socketpair)
 // and are not compiled into the Windows test binary.
@@ -85,6 +89,7 @@ int main(void) {
     RUN_SUITE(run_ppu_tests);
     RUN_SUITE(run_input_tests);
     RUN_SUITE(run_rewind_tests);
+    RUN_SUITE(run_vblank_observer_tests);
     RUN_SUITE(run_screenshot_tests);
     RUN_SUITE(run_trace_tests);
     RUN_SUITE(run_cartridge_autosave_tests);
@@ -100,6 +105,7 @@ int main(void) {
     RUN_SUITE(run_game_encounters_tests);
     RUN_SUITE(run_game_snapshot_tests);
     RUN_SUITE(run_game_panel_tests);
+    RUN_SUITE(run_overworld_tests);
     RUN_SUITE(run_ui_font_data_tests);
     RUN_SUITE(run_ui_canvas_tests);
     RUN_SUITE(run_ui_font_tests);
@@ -109,7 +115,9 @@ int main(void) {
     RUN_SUITE(run_xray_tests);
 #endif
     RUN_SUITE(run_toast_tests);
+    RUN_SUITE(run_prefs_tests);
     RUN_SUITE(run_hud_tests);
+    RUN_SUITE(run_overworld_draw_tests);
 #ifndef _WIN32
     RUN_SUITE(run_rtc_tests);
     RUN_SUITE(run_sio_tests);

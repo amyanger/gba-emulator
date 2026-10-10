@@ -130,6 +130,7 @@ set(SOURCES
     src/game/battle_info.c
     src/game/encounters.c
     src/game/game.c
+    src/game/overworld.c
     src/ui/ui_stb.c
     src/ui/ui_canvas.c
     src/ui/ui_font.c
@@ -144,9 +145,11 @@ set(SOURCES
     src/frontend/panel_layout.c
     src/frontend/rom_picker.c
     src/frontend/toast.c
+    src/frontend/prefs.c
     src/frontend/settings.c
     src/frontend/settings_cheats.c
     src/frontend/hud_draw.c
+    src/frontend/overworld_draw.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
     src/frontend/overlay_draw.c
@@ -278,6 +281,7 @@ set(LIB_SOURCES
     src/game/battle_info.c
     src/game/encounters.c
     src/game/game.c
+    src/game/overworld.c
     src/ui/ui_stb.c
     src/ui/ui_canvas.c
     src/ui/ui_font.c
@@ -293,9 +297,11 @@ set(LIB_SOURCES
     src/frontend/game_panel.c
     src/frontend/panel_layout.c
     src/frontend/toast.c
+    src/frontend/prefs.c
     src/frontend/settings.c
     src/frontend/settings_cheats.c
     src/frontend/hud_draw.c
+    src/frontend/overworld_draw.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
     src/frontend/overlay_draw.c
@@ -341,6 +347,7 @@ set(TEST_SOURCES
     tests/test_ppu.c
     tests/test_input.c
     tests/test_rewind.c
+    tests/test_vblank_observer.c
     tests/test_screenshot.c
     tests/test_trace.c
     tests/test_cartridge_autosave.c
@@ -356,6 +363,7 @@ set(TEST_SOURCES
     tests/test_game_encounters.c
     tests/test_game_snapshot.c
     tests/test_game_panel.c
+    tests/test_overworld.c
     tests/test_ui_font_data.c
     tests/test_ui_canvas.c
     tests/test_ui_font.c
@@ -364,7 +372,9 @@ set(TEST_SOURCES
     tests/test_settings.c
     tests/test_panel_layout.c
     tests/test_toast.c
+    tests/test_prefs.c
     tests/test_hud.c
+    tests/test_overworld_draw.c
 )
 
 # Several tests rely on POSIX-only APIs (unistd.h, pthreads, AF_UNIX

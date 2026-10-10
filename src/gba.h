@@ -24,6 +24,12 @@ typedef struct XRayState XRayState;
 
 typedef struct LinkPeer LinkPeer;
 
+/* Called once per frame when vcount reaches 160, before the CPU services the
+ * VBlank IRQ. RAM then holds exactly what the next displayed frame shows.
+ * Read-only by contract (const). Not emulated state: never saved. */
+struct GBA;
+typedef void (*GbaVblankObserver)(const struct GBA* gba, void* ctx);
+
 struct GBA {
     ARM7TDMI cpu;
     Bus bus;
@@ -47,6 +53,8 @@ struct GBA {
     int32_t cycle_carry;
     bool frame_complete;
     bool running;
+    GbaVblankObserver vblank_observer;   /* NULL = none */
+    void* vblank_observer_ctx;
 
 #ifdef ENABLE_XRAY
     XRayState* xray;
@@ -73,6 +81,9 @@ void gba_run_frame(GBA* gba);
 //
 // Public so test code can drive sub-scanline state directly.
 void gba_run_cycles(GBA* gba, int cycles);
+
+// Install or clear (fn = NULL) the line-160 observer.
+void gba_set_vblank_observer(GBA* gba, GbaVblankObserver fn, void* ctx);
 
 // Advance the system by one full scanline (1232 cycles), running
 // the orchestrator's per-line state machine: HDraw cycles, HBlank

@@ -21,8 +21,8 @@
 #define BADGE_PT      UI_SIZE_LABEL
 #define ICON_PT       11.0f
 
-static const char* const k_badge_label[BADGE_COUNT] = {"PAUSED", "FAST", "REWIND", "MUTED"};
-static const uint32_t k_badge_color[BADGE_COUNT] = {UI_MID, UI_ACCENT, UI_ACCENT, UI_MUTED};
+static const char* const k_badge_label[BADGE_COUNT] = {"PAUSED", "FAST", "REWIND", "MUTED", "X-RAY"};
+static const uint32_t k_badge_color[BADGE_COUNT] = {UI_MID, UI_ACCENT, UI_ACCENT, UI_MUTED, UI_BAD};
 static const uint32_t k_kind_color[] = {UI_GOOD, UI_ACCENT, UI_WARN, UI_BAD};
 static const char* const k_kind_glyph[] = {"\xE2\x9C\x93", "i", "!", "!"};
 

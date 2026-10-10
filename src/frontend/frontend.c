@@ -3,6 +3,7 @@
 #include "input_display.h"
 #include "slot_picker.h"
 #include "frontend/hud_draw.h"
+#include "frontend/overworld_draw.h"
 #include "frontend/macos_menu.h"
 #include "gba.h"
 #include "apu/apu.h"
@@ -323,6 +324,33 @@ static void frontend_layout(Frontend* fe, bool resize_window) {
         }
     }
     fe->hud_dirty = true;
+
+    int ow_w = fe->game_rect.w, ow_h = fe->game_rect.h;
+    if (ow_w != fe->ow_px_w || ow_h != fe->ow_px_h) {
+        if (fe->ow_texture) SDL_DestroyTexture(fe->ow_texture);
+        fe->ow_texture = NULL;
+        free(fe->ow_buffer);
+        fe->ow_buffer = NULL;
+        fe->ow_px_w = fe->ow_px_h = 0;
+        if (ow_w > 0 && ow_h > 0) {
+            fe->ow_buffer = (uint32_t*)calloc((size_t)ow_w * (size_t)ow_h, sizeof(uint32_t));
+            fe->ow_texture = SDL_CreateTexture(fe->renderer, SDL_PIXELFORMAT_ARGB8888,
+                                               SDL_TEXTUREACCESS_STREAMING, ow_w, ow_h);
+            if (!fe->ow_buffer || !fe->ow_texture) {
+                LOG_ERROR("Failed to create the overworld texture: %s", SDL_GetError());
+                if (fe->ow_texture) SDL_DestroyTexture(fe->ow_texture);
+                fe->ow_texture = NULL;
+                free(fe->ow_buffer);
+                fe->ow_buffer = NULL;
+            } else {
+                SDL_SetTextureBlendMode(fe->ow_texture, SDL_BLENDMODE_BLEND);
+                SDL_SetTextureScaleMode(fe->ow_texture, SDL_ScaleModeNearest);
+                fe->ow_px_w = ow_w;
+                fe->ow_px_h = ow_h;
+            }
+        }
+    }
+    fe->ow_dirty = true;
     if (fe->settings.open) settings_alloc(fe);
 }
 
@@ -344,6 +372,7 @@ void frontend_update_hud(Frontend* fe, uint32_t now_ms) {
     toast_set_badge(&fe->toasts, BADGE_PAUSED, badges && fe->paused);
     toast_set_badge(&fe->toasts, BADGE_FAST, badges && (fe->ff_hold || fe->ff_toggle));
     toast_set_badge(&fe->toasts, BADGE_MUTED, badges && fe->muted);
+    toast_set_badge(&fe->toasts, BADGE_XRAY, badges && fe->overworld_xray);
     toast_tick(&fe->toasts, now_ms);
     fe->hud_shown = fe->hud_texture && hud_visible(&fe->toasts);
     if (!fe->hud_shown) {
@@ -362,7 +391,44 @@ void frontend_update_hud(Frontend* fe, uint32_t now_ms) {
     }
 }
 
+void frontend_toggle_overworld(Frontend* fe, GBA* gba) {
+    if (!fe->ow_feed) {
+        frontend_toast_keyed(fe, "owxray", TOAST_INFO, "Overworld X-Ray needs Pokemon Emerald",
+                             "Original US ROM only");
+        return;
+    }
+    fe->overworld_xray = !fe->overworld_xray;
+    overworld_feed_clear(fe->ow_feed);
+    gba_set_vblank_observer(gba, fe->overworld_xray ? overworld_capture : NULL, fe->ow_feed);
+    frontend_toast_keyed(fe, "owxray", TOAST_INFO,
+                         fe->overworld_xray ? "Overworld X-Ray on" : "Overworld X-Ray off", NULL);
+    if (fe->prefs) {
+        prefs_set_bool(fe->prefs, "overworld_xray", fe->overworld_xray);
+        if (!prefs_save(fe->prefs)) LOG_WARN("Couldn't save preferences to %s", fe->prefs->path);
+    }
+}
+
+void frontend_update_overworld(Frontend* fe, const OverworldSnapshot* s) {
+    fe->ow_shown = s && s->visible && fe->ow_texture && !fe->settings.open;
+    if (!fe->ow_shown) {
+        fe->ow_dirty = true;   /* repaint when it shows again */
+        return;
+    }
+    if (!fe->ow_dirty && memcmp(&fe->ow_last, s, sizeof(*s)) == 0) return;
+    UiCanvas canvas;
+    ui_canvas_init(&canvas, fe->ow_buffer, fe->ow_px_w, fe->ow_px_h, fe->plan.density);
+    canvas.keep_alpha = true;
+    ui_canvas_clear(&canvas, 0x00000000u);
+    overworld_draw(&canvas, s, (float)fe->ow_px_w / (float)SCREEN_WIDTH / fe->plan.density);
+    SDL_UpdateTexture(fe->ow_texture, NULL, fe->ow_buffer, fe->ow_px_w * (int)sizeof(uint32_t));
+    memcpy(&fe->ow_last, s, sizeof(*s));
+    fe->ow_dirty = false;
+}
+
 void frontend_destroy(Frontend* fe) {
+    if (fe->ow_texture) SDL_DestroyTexture(fe->ow_texture);
+    free(fe->ow_buffer);
+    fe->ow_buffer = NULL;
     if (fe->overlay_texture) SDL_DestroyTexture(fe->overlay_texture);
     if (fe->overlay_buffer) {
         free(fe->overlay_buffer);
@@ -394,6 +460,7 @@ void frontend_present_frame(Frontend* fe, uint16_t* framebuffer) {
     SDL_RenderClear(fe->renderer);
     SDL_Rect game_rect = {fe->game_rect.x, fe->game_rect.y, fe->game_rect.w, fe->game_rect.h};
     SDL_RenderCopy(fe->renderer, fe->texture, NULL, &game_rect);
+    if (fe->ow_shown && fe->ow_texture) SDL_RenderCopy(fe->renderer, fe->ow_texture, NULL, &game_rect);
 
     if (fe->overlay_dirty) {
         SDL_UpdateTexture(fe->overlay_texture, NULL, fe->overlay_buffer,
@@ -665,6 +732,9 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                                      fe->input_display_enabled ? "Input display on" : "Input display off",
                                      NULL);
             }
+
+            if (event.key.keysym.scancode == SDL_SCANCODE_F4 && !event.key.repeat)
+                frontend_toggle_overworld(fe, gba);
 
             if (event.key.keysym.scancode == SDL_SCANCODE_F9 && !event.key.repeat) {
                 fe->panel_visible = !fe->panel_visible;

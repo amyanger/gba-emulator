@@ -124,6 +124,7 @@ void gba_run_scanline(GBA* gba) {
     }
 
     if (gba->ppu.vcount == VDRAW_LINES) {
+        if (gba->vblank_observer) gba->vblank_observer(gba, gba->vblank_observer_ctx);
         ppu_set_vblank(&gba->ppu, true);
         interrupt_request_if_enabled(&gba->interrupts, &gba->ppu, IRQ_VBLANK,
                                      gba->cycle_carry);
@@ -159,6 +160,11 @@ void gba_run_frame(GBA* gba) {
      * have completed and the GBA struct represents a consistent state. */
     rewind_record_frame(&gba->rewind, gba);
 #endif
+}
+
+void gba_set_vblank_observer(GBA* gba, GbaVblankObserver fn, void* ctx) {
+    gba->vblank_observer = fn;
+    gba->vblank_observer_ctx = fn ? ctx : NULL;
 }
 
 void gba_set_link_peer(GBA* gba, LinkPeer* peer) {

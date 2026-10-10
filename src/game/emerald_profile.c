@@ -39,6 +39,21 @@ const GameProfile g_emerald_profile = {
     .species_to_national = 0x0831DC82,
     .wild_mon_headers = 0x08552D48, .wild_header_cap = 200,
     .region_map_entries = 0x085A147C, .region_map_count = 213,
+
+    .object_events = 0x02037350,
+    .sprites = 0x02020630,
+    .sprite_coord_offset = 0x02021BBC,
+    .field_camera = 0x03005DD0,
+    .camera_pan = 0x03000E28,
+    .backup_map_layout = 0x03005DC0,
+    .backup_map_data = 0x02032318,
+    .main_callback2 = 0x030022C4,
+    .cb2_overworld = 0x08085E5D,
+    .palette_fade_byte = 0x02037FDB,
+    .lock_field_controls = 0x03000F2C,
+    .trainers = 0x08310030, .trainer_count = 855,
+    .trainer_class_names = 0x0830FCD4, .trainer_class_count = 66,
+    .map_groups = 0x08486578, .map_group_count = 34,
 };
 
 uint32_t game_crc32(const uint8_t* data, uint32_t len) {

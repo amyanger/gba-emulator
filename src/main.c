@@ -11,7 +11,10 @@
 #include "frontend/toast.h"
 #include "frontend/game_panel.h"
 #include "frontend/rom_picker.h"
+#include "frontend/overworld_draw.h"
+#include "frontend/prefs.h"
 #include "game/game.h"
+#include "game/overworld.h"
 #include "headless/headless.h"
 #ifdef ENABLE_REWIND
 #include "rewind/rewind.h"
@@ -32,6 +35,8 @@ static XRayState s_xray_state;
 #endif
 
 static GameState s_game;
+static OverworldFeed s_ow;
+static Prefs s_prefs;
 
 /* File name without its directory, for short toast details. */
 static const char* path_base(const char* p) {
@@ -71,6 +76,7 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
         }
     }
     frontend_update_settings(fe, gba);
+    frontend_update_overworld(fe, fe->overworld_xray && fe->ow_feed ? &fe->ow_feed->shown : NULL);
     frontend_update_hud(fe, SDL_GetTicks());
     frontend_present_frame(fe, gba->ppu.framebuffer);
 }
@@ -95,6 +101,7 @@ static void print_usage(const char* prog) {
     printf("  --panel-page <p>       Headless: panel page, auto|party|route (default: auto)\n");
     printf("  --panel-select <n>     Headless: selected party slot on the party page (default: 0)\n");
     printf("  --xray-out <file>      Headless: render the Hardware X-Ray window to a PNG after the run\n");
+    printf("  --overworld-out <f>    Headless: final frame at 3x with the Overworld X-Ray drawn, as PNG\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
@@ -143,6 +150,7 @@ int main(int argc, char* argv[]) {
     const char* panel_density_arg = NULL;
     const char* panel_select_arg = NULL;
     const char* xray_out_path = NULL;
+    const char* overworld_out_path = NULL;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -190,6 +198,8 @@ int main(int argc, char* argv[]) {
             panel_page_arg = argv[++i];
         } else if (strcmp(argv[i], "--xray-out") == 0 && i + 1 < argc) {
             xray_out_path = argv[++i];
+        } else if (strcmp(argv[i], "--overworld-out") == 0 && i + 1 < argc) {
+            overworld_out_path = argv[++i];
         } else if (strcmp(argv[i], "--panel-select") == 0 && i + 1 < argc) {
             panel_select_arg = argv[++i];
         } else {
@@ -222,6 +232,10 @@ int main(int argc, char* argv[]) {
     }
     if (xray_out_path && !headless) {
         LOG_ERROR("--xray-out requires --headless");
+        return 1;
+    }
+    if (overworld_out_path && !headless) {
+        LOG_ERROR("--overworld-out requires --headless");
         return 1;
     }
 #ifndef ENABLE_XRAY
@@ -324,6 +338,7 @@ int main(int argc, char* argv[]) {
     }
 
     game_init(&s_game, gba.cart.rom, gba.cart.rom_size);
+    overworld_feed_init(&s_ow, s_game.profile);
     if (s_game.support == GAME_SUPPORT_MODIFIED)
         LOG_WARN("Emerald Companion (F9) is off: this ROM is a hack or modified copy of Pokemon "
                  "Emerald. It only supports the original Pokemon Emerald (US/English) ROM.");
@@ -424,6 +439,10 @@ int main(int argc, char* argv[]) {
             g_xray = &s_xray_state;
         }
 #endif
+        if (s_game.profile && (game_dump_path || overworld_out_path))
+            gba_set_vblank_observer(&gba, overworld_capture, &s_ow);
+        if (overworld_out_path && !s_game.profile)
+            LOG_WARN("--overworld-out: not the original Pokemon Emerald (US), drawing the game only");
         int rc = headless_run(&gba, headless_frames, hash_out,
                               input_script_path ? &input_script : NULL);
         if (hash_out != stdout) fclose(hash_out);
@@ -440,7 +459,7 @@ int main(int argc, char* argv[]) {
         }
         if (rc == 0 && game_dump_path) {
             FILE* f = fopen(game_dump_path, "w");
-            if (!f || !game_dump(&dump_state.snap, f)) {
+            if (!f || !game_dump(&dump_state.snap, f) || (s_game.profile && !overworld_dump(&s_ow.shown, f))) {
                 LOG_ERROR("Failed to write --game-dump file: %s", game_dump_path);
                 rc = 1;
             }
@@ -459,6 +478,28 @@ int main(int argc, char* argv[]) {
                 game_panel_draw(&canvas, &dump_state.snap, panel_page, panel_select);
                 if (!screenshot_save_argb(px, w, h, panel_out_path)) {
                     LOG_ERROR("Failed to write --panel-out file: %s", panel_out_path);
+                    rc = 1;
+                }
+                free(px);
+            }
+        }
+        if (rc == 0 && overworld_out_path) {
+            enum { OW_OUT_SCALE = 3 };
+            int w = SCREEN_WIDTH * OW_OUT_SCALE, h = SCREEN_HEIGHT * OW_OUT_SCALE;
+            uint32_t* px = (uint32_t*)calloc((size_t)w * (size_t)h, sizeof(uint32_t));
+            if (!px) {
+                LOG_ERROR("Out of memory rendering --overworld-out");
+                rc = 1;
+            } else {
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++)
+                        px[y * w + x] = gba_to_argb(
+                            gba.ppu.framebuffer[(y / OW_OUT_SCALE) * SCREEN_WIDTH + x / OW_OUT_SCALE]);
+                UiCanvas canvas;
+                ui_canvas_init(&canvas, px, w, h, 1.0f);
+                overworld_draw(&canvas, &s_ow.shown, (float)OW_OUT_SCALE);
+                if (!screenshot_save_argb(px, w, h, overworld_out_path)) {
+                    LOG_ERROR("Failed to write --overworld-out file: %s", overworld_out_path);
                     rc = 1;
                 }
                 free(px);
@@ -506,6 +547,23 @@ int main(int argc, char* argv[]) {
     keymap_reset_defaults();
     if (keymap_path) {
         keymap_load(keymap_path);
+    }
+
+    char prefs_path[PREFS_PATH_LEN] = "";
+    char* pref_dir = SDL_GetPrefPath("", "GBA Emulator");
+    if (pref_dir) {
+        int n = snprintf(prefs_path, sizeof(prefs_path), "%sprefs.ini", pref_dir);
+        if (n < 0 || (size_t)n >= sizeof(prefs_path)) prefs_path[0] = '\0';
+        SDL_free(pref_dir);
+    }
+    prefs_init(&s_prefs, prefs_path);
+    prefs_load(&s_prefs);
+    LOG_INFO("Preferences: %s", prefs_path[0] ? prefs_path : "(none)");
+    fe.prefs = &s_prefs;
+    fe.ow_feed = s_game.profile ? &s_ow : NULL;
+    if (fe.ow_feed && prefs_get_bool(&s_prefs, "overworld_xray", false)) {
+        fe.overworld_xray = true;
+        gba_set_vblank_observer(&gba, overworld_capture, &s_ow);
     }
 
     if (!bios_loaded)
@@ -607,6 +665,7 @@ int main(int argc, char* argv[]) {
                     LOG_INFO("State loaded from slot %d", fe.savestate_slot);
                     frontend_toast(&fe, TOAST_OK, "State loaded", slot_detail);
                     SDL_ClearQueuedAudio(fe.audio_device);
+                    overworld_feed_clear(&s_ow);
 #ifdef ENABLE_REWIND
                     rewind_clear(&gba.rewind);   // past is no longer valid
 #endif
@@ -650,6 +709,7 @@ int main(int argc, char* argv[]) {
             if (!rewind_step(&gba.rewind, &gba)) {
                 // Hit oldest frame — freeze on screen until release.
             }
+            overworld_feed_clear(&s_ow);
             render_with_overlay(&fe, &gba);
 #ifdef ENABLE_XRAY
             xray_render(&s_xray_state, &gba);

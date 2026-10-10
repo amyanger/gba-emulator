@@ -176,7 +176,22 @@ TEST(hud_newest_toast_fits_small_area) {
     ASSERT_EQ(l.toasts[0].w, 0);                       /* oldest hidden */
 }
 
+TEST(hud_xray_badge_after_muted) {
+    ToastQueue q;
+    HudLayout l;
+    UiCanvas c;
+    static uint32_t px[600 * 200];
+    toast_init(&q);
+    ui_canvas_init(&c, px, 600, 200, 1.0f);
+    toast_set_badge(&q, BADGE_MUTED, true);
+    toast_set_badge(&q, BADGE_XRAY, true);
+    hud_layout(&c, &q, 0, 600.0f, &l);
+    ASSERT_TRUE(l.badges[BADGE_XRAY].w > 0);
+    ASSERT_TRUE(l.badges[BADGE_XRAY].x > l.badges[BADGE_MUTED].x);
+}
+
 void run_hud_tests(void) {
+    RUN_TEST(hud_xray_badge_after_muted);
     TEST_SUITE("hud");
     RUN_TEST(hud_strip_fits_badges_and_cap_toasts);
     RUN_TEST(hud_visible_needs_toast_or_badge);

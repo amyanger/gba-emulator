@@ -98,6 +98,14 @@ Not shown yet: Safari Ball odds, mass outbreaks, Feebas tiles, roamers, Altering
 
 To check decoded state without a window, run headless with `--game-dump <file>` (see Headless mode).
 
+### Overworld X-Ray
+
+Press F4 to draw what the game knows about the map on top of it. Each trainer gets a cone showing the tiles where they will spot you. A red cone means they still want to battle, and the label above them shows their class and sight range ("Youngster · 4 tiles"). A grey cone and a "Beaten" label mean you already won. Cones stop where the game's own line of sight stops, at walls, one-way tiles, height changes and other people. Hidden items you have not picked up yet get a small sparkle on their tile, including those just across a route border.
+
+The overlay hides itself in menus, dialog, battles, cutscenes and screen fades, and comes back when you can walk again. An X-RAY badge shows while it is on, and the setting is remembered the next time you open the emulator. Like the panel, it only reads memory and never changes the game.
+
+For a picture without a window, run headless with `--overworld-out <file>`.
+
 ## Features
 
 - **ARM7TDMI CPU** — Full ARM (32-bit) and Thumb (16-bit) instruction set
@@ -271,6 +279,7 @@ cmake .. -DENABLE_REWIND=OFF
 | F1 | Dump CPU registers to stderr (debug builds) |
 | F2 | Toggle Hardware X-Ray Mode |
 | F3 | Toggle input display HUD (mini-GBA overlay showing held buttons) |
+| F4 | Show or hide Overworld X-Ray: trainer sight lines and hidden items on the map (original Pokemon Emerald US/English ROM only, remembered between launches) |
 | F9 | Show or hide Emerald Companion (original Pokemon Emerald US/English ROM only) |
 | F10 | Cycle the Emerald Companion page: Auto, Party, Route (Auto shows the battle page during battles; a battle switches to Auto and the old page returns afterwards) |
 | [ and ] | Select the previous or next Pokemon on the Party page (unless bound to a GBA button) |
@@ -314,6 +323,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--panel-page <p>` | Panel page: `auto`, `party` or `route` (default `auto`). Requires `--headless`. |
 | `--panel-select <n>` | Selected party slot, 0 to 5, for the party page (default 0). Requires `--headless`. |
 | `--xray-out <file>` | After the run, render the Hardware X-Ray window to a 2400x1640 PNG. Requires `--headless` and an X-Ray build. |
+| `--overworld-out <file>` | After the run, write the final frame at 3x (720x480 PNG) with the Overworld X-Ray drawn on it. With `--game-dump`, the dump gains an `[overworld]` section. Requires `--headless`; original Pokemon Emerald (US) only. |
 | `--game-dump <file>` | After the run, write the decoded Emerald game state (party, battle, encounters) to `file`. Requires `--headless`. |
 
 An input script has one event per line, `<frame> <press|release> <KEY>`,

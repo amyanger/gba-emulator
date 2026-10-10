@@ -9,7 +9,7 @@
  * game is paused, fast-forwarding or rewinding. hud_draw.c paints this state. */
 
 typedef enum { TOAST_OK, TOAST_INFO, TOAST_WARN, TOAST_ERROR } ToastKind;
-typedef enum { BADGE_PAUSED, BADGE_FAST, BADGE_REWIND, BADGE_MUTED, BADGE_COUNT } BadgeId;
+typedef enum { BADGE_PAUSED, BADGE_FAST, BADGE_REWIND, BADGE_MUTED, BADGE_XRAY, BADGE_COUNT } BadgeId;
 
 #define TOAST_MAX          4      /* non-fading toasts on screen */
 #define TOAST_CAP          6      /* storage, so a new toast shows while old ones fade */
