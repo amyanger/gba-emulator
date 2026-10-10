@@ -27,6 +27,7 @@ void run_apu_tests(void);
 void run_ppu_tests(void);
 void run_input_tests(void);
 void run_rewind_tests(void);
+void run_vblank_observer_tests(void);
 void run_screenshot_tests(void);
 void run_trace_tests(void);
 void run_cartridge_autosave_tests(void);
@@ -85,6 +86,7 @@ int main(void) {
     RUN_SUITE(run_ppu_tests);
     RUN_SUITE(run_input_tests);
     RUN_SUITE(run_rewind_tests);
+    RUN_SUITE(run_vblank_observer_tests);
     RUN_SUITE(run_screenshot_tests);
     RUN_SUITE(run_trace_tests);
     RUN_SUITE(run_cartridge_autosave_tests);

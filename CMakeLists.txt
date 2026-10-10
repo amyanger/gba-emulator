@@ -341,6 +341,7 @@ set(TEST_SOURCES
     tests/test_ppu.c
     tests/test_input.c
     tests/test_rewind.c
+    tests/test_vblank_observer.c
     tests/test_screenshot.c
     tests/test_trace.c
     tests/test_cartridge_autosave.c
