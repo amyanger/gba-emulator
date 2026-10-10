@@ -10,6 +10,8 @@ No other GBA emulator offers this. Every emulator is a black box. This one lets 
 
 Built around an ARM7TDMI CPU interpreter, scanline-based PPU, and an SDL2 frontend. No external libraries beyond SDL2. Pokemon Emerald is fully playable end-to-end.
 
+It also includes **Emerald Companion**, a live side panel with battle, party and route info for Pokemon Emerald. It only works with the original, unmodified Pokemon Emerald (US/English) ROM. See [Emerald Companion](#emerald-companion) below.
+
 ## Hardware X-Ray Mode
 
 Press **F2** during gameplay to open a second window showing live hardware internals:
@@ -28,9 +30,19 @@ X-Ray Mode adds zero overhead when disabled. It's compile-time gated (`ENABLE_XR
 cmake .. -DENABLE_XRAY=OFF
 ```
 
-## Game info panel
+## Emerald Companion
 
-Press **F9** to open a side panel next to the game. The panel has a dark dashboard look with tabs along the top, type-colored pills, IV and EV bars, colored move matchups and catch odds bars.
+Emerald Companion is a side panel that shows live info from your Pokemon Emerald game: the wild Pokemon you're fighting, your party's hidden stats, and the encounter table for where you are. Press **F9** to open it next to the game.
+
+> [!IMPORTANT]
+> **Emerald Companion only works with the original, unmodified Pokemon Emerald (US/English) ROM.** This is the version it was built and tested with. It's the retail cartridge release, game code `BPEE`, sold in North America and Europe.
+>
+> - **ROM hacks are not supported**, even ones based on Emerald. The panel shows "ROM hack not supported" instead of guessing.
+> - **Other languages** (Japanese, French, German, Spanish, Italian) and **other Pokemon games** (Ruby, Sapphire, FireRed, LeafGreen) are not supported. The panel shows "Game not supported".
+>
+> In every case the game itself still runs normally. Only the panel is unavailable.
+>
+> The check compares your whole ROM file against the original's CRC32 checksum, `1F1C08FB`. If you're not sure which version you have, load your game and press F9. If the panel doesn't say "not supported", your ROM works.
 
 | Key | Panel action |
 |-----|--------------|
@@ -62,7 +74,7 @@ The name of the route, town or city you're in, read from the game's region map, 
 
 The panel sizes itself to the screen's pixel density, so it stays crisp on standard monitors, Windows display scaling, Retina and 4K. `--scale` only sets the size of the game. The panel is 600 by 480 points, the window is at least 480 points tall while the panel is open, and the game is centered vertically. In fullscreen (F11) the game grows to fill the screen with the panel beside it. On Linux X11 the panel uses the display DPI only when it indicates a high-DPI screen; otherwise it uses 1.0.
 
-Supported ROM: US Emerald rev 0 (game code BPEE) only. Any other ROM shows "No game info for this ROM". Every name and number is read from your own ROM at runtime, and nothing from the game ships with the emulator. The panel only reads memory. It never writes to the game, makes no bus accesses, does not change timing, and leaves savestates untouched. Addresses come from the pret/pokeemerald decomp.
+Every name and number is read from your own ROM at runtime, and nothing from the game ships with the emulator. The panel only reads memory. It never writes to the game, makes no bus accesses, does not change timing, and leaves savestates untouched. Addresses come from the pret/pokeemerald decomp.
 
 Not shown yet: Safari Ball odds, mass outbreaks, Feebas tiles, roamers, Altering Cave variants, lead ability effects (Static, Magnet Pull and similar), and Battle Pyramid and Battle Pike tables. Weather Ball matchups use its base type.
 
@@ -91,7 +103,7 @@ To check decoded state without a window, run headless with `--game-dump <file>` 
 - **Flash 64K / 128K Save** — Macronix and SST/Atmel/Panasonic chip IDs (Pokemon Emerald, Ruby, Sapphire, FireRed, LeafGreen)
 - **Real-Time Clock** — S-3511A serial RTC over GPIO (0x080000C4/C6/C8) with persistent offset stored in the `.sav` trailer
 - **Cartridge** — ROM loading (up to 32MB), auto save detection, file persistence next to the ROM
-- **Game info panel (Pokemon Emerald)**: press F9 for a side panel with wild battle IVs, natures, catch odds per ball, move matchups, your party's IVs/EVs/Hidden Power, and the current location's name and encounter table, in a dark dashboard layout.
+- **Emerald Companion**: for the original Pokemon Emerald (US/English) ROM only. Press F9 for a side panel with wild battle IVs, natures, catch odds per ball, move matchups, your party's IVs/EVs/Hidden Power, and the current location's name and encounter table, in a dark dashboard layout.
 - **Save States** — 10 numbered slots (0–9), versioned and ROM-hash guarded, written next to the ROM as `<rom>.ss<N>`
 - **Cheats** — GameShark / Action Replay v1–v3 + CodeBreaker, loaded from a `.cht` file
 - **Fast-Forward** — Hold Tab or toggle with `` ` `` (skips audio, renders every Nth frame)
@@ -226,8 +238,8 @@ cmake .. -DENABLE_REWIND=OFF
 | F1 | Dump CPU registers to stderr (debug builds) |
 | F2 | Toggle Hardware X-Ray Mode |
 | F3 | Toggle input display HUD (mini-GBA overlay showing held buttons) |
-| F9 | Show or hide the Pokemon Emerald game info panel |
-| F10 | Cycle the panel page: Auto, Party, Route (Auto shows the battle page during battles) |
+| F9 | Show or hide Emerald Companion (original Pokemon Emerald US/English ROM only) |
+| F10 | Cycle the Emerald Companion page: Auto, Party, Route (Auto shows the battle page during battles) |
 | [ and ] | Select the previous or next Pokemon on the Party page (unless bound to a GBA button) |
 | F5 | Save state to current slot |
 | F6 | Edit label of current save-state slot |
@@ -264,7 +276,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--hash-out <file>` | Write per-frame `<N> <FNV1a-hex>` lines. Defaults to stdout. |
 | `--screenshot-out <file>` | After the run, save the final framebuffer as PNG. |
 | `--input-script <file>` | Replay scripted keypad input. Headless only. Format below. |
-| `--panel-out <file>` | After the run, render the game panel to a PNG. Requires `--headless`. |
+| `--panel-out <file>` | After the run, render the Emerald Companion panel to a PNG. Requires `--headless`. |
 | `--panel-density <f>` | Panel pixels per point, 0.5 to 4.0 (default 1.0). Requires `--headless`. |
 | `--panel-page <p>` | Panel page: `auto`, `party` or `route` (default `auto`). Requires `--headless`. |
 | `--panel-select <n>` | Selected party slot, 0 to 5, for the party page (default 0). Requires `--headless`. |
@@ -460,7 +472,7 @@ src/
     input.c/h              Keypad registers
   frontend/
     frontend.c/h           SDL2 window, rendering, input polling, audio
-    game_panel.c/h         Game info panel pages (battle, party, route), drawn with src/ui
+    game_panel.c/h         Emerald Companion pages (battle, party, route), drawn with src/ui
     panel_layout.c/h       Window, game and panel rectangles from display density
     debug.c                Register dumps, instruction tracing (debug builds)
     xray/
@@ -571,7 +583,7 @@ Place test ROMs in the `roms/` directory (not tracked by git):
 - [awesome-gbadev](https://github.com/gbadev-org/awesome-gbadev) — Curated GBA development resources
 - [mGBA](https://github.com/mgba-emu/mgba) — Reference emulator source
 - [Tonc](https://www.coranac.com/tonc/text/hardware.htm) — GBA hardware programming tutorial
-- [Inter](https://rsms.me/inter/) 4.1: Font for the game info panel, under the SIL Open Font License 1.1 (`fonts/Inter-LICENSE.txt`). `tools/embed_font.sh` regenerates `src/ui/font_inter.h` from it.
+- [Inter](https://rsms.me/inter/) 4.1: Font for Emerald Companion, under the SIL Open Font License 1.1 (`fonts/Inter-LICENSE.txt`). `tools/embed_font.sh` regenerates `src/ui/font_inter.h` from it.
 - [stb_truetype](https://github.com/nothings/stb): Glyph rasterizer for the panel font, public domain
 
 ## License
