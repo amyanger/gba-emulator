@@ -25,6 +25,11 @@ bool frontend_init(Frontend* fe, int scale) {
 #ifdef SDL_HINT_WINDOWS_DPI_SCALING
     SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
 #endif
+#ifdef _WIN32
+    /* Use the exe's icon resource (ID 1, res/gba_emulator.rc) for the window. */
+    SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON, "1");
+    SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON_SMALL, "1");
+#endif
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0) {
         LOG_ERROR("SDL init failed: %s", SDL_GetError());
