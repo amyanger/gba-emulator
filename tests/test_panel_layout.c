@@ -128,7 +128,8 @@ TEST(layout_sanitizes_input) {
     p = panel_layout_plan(&in);
     ASSERT_EQ(p.game_px_scale, 10);
     ASSERT_EQ(p.window_w, 2400 + 600);
-    in = input(3, 0.0f / 0.0f, 1.0f, 0, 0);
+    volatile float zero = 0.0f; /* MSVC rejects a constant 0.0f / 0.0f (C2124) */
+    in = input(3, zero / zero, 1.0f, 0, 0);
     p = panel_layout_plan(&in);
     ASSERT_EQ(p.game_px_scale, 3);
 }
