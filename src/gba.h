@@ -27,6 +27,7 @@ typedef struct LinkPeer LinkPeer;
 /* Called once per frame when vcount reaches 160, before the CPU services the
  * VBlank IRQ. RAM then holds exactly what the next displayed frame shows.
  * Read-only by contract (const). Not emulated state: never saved. */
+struct GBA;
 typedef void (*GbaVblankObserver)(const struct GBA* gba, void* ctx);
 
 struct GBA {
