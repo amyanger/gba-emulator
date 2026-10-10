@@ -3,13 +3,10 @@
 #include <SDL2/SDL.h>
 #include <string.h>
 
-/* macOS delivers "ROM dropped on the app icon" as SDL_DROPFILE right after
- * video init. Other OSes pass it as argv, so they skip the wait. */
 #ifdef __APPLE__
+/* macOS delivers "ROM dropped on the app icon" as SDL_DROPFILE right after
+ * video init. Other OSes pass it as argv, so only macOS waits for it. */
 #define LAUNCH_DROP_WAIT_MS 200
-#else
-#define LAUNCH_DROP_WAIT_MS 0
-#endif
 
 static bool take_launch_drop(char* out, size_t out_size) {
     uint32_t start = SDL_GetTicks();
@@ -27,13 +24,16 @@ static bool take_launch_drop(char* out, size_t out_size) {
     } while (SDL_GetTicks() - start < LAUNCH_DROP_WAIT_MS);
     return false;
 }
+#endif
 
 bool rom_picker_launch(char* out, size_t out_size) {
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         LOG_ERROR("SDL init failed: %s", SDL_GetError());
         return false;
     }
+#ifdef __APPLE__
     if (take_launch_drop(out, out_size)) return true;
+#endif
 
     switch (rom_picker_choose(out, out_size)) {
     case ROM_PICK_OK:
