@@ -25,11 +25,6 @@
 #define NDASH "\xE2\x80\x93"  /* – */
 #define MDOT  " \xC2\xB7 "    /* " · " */
 
-void frontend_logical_size(bool panel_visible, int* w, int* h) {
-    *w = SCREEN_WIDTH + (panel_visible ? PANEL_LOGICAL_W : 0);
-    *h = SCREEN_HEIGHT;
-}
-
 GamePage game_panel_next_page(GamePage page) {
     return (GamePage)((page + 1) % GAME_PAGE_COUNT);
 }
@@ -609,10 +604,4 @@ void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8
         draw_battle(c, snap, top);
     }
     ui_canvas_unclip(c);
-}
-
-void game_panel_render(uint32_t* canvas, const GameSnapshot* snap, GamePage page) {
-    UiCanvas c;
-    ui_canvas_init(&c, canvas, PANEL_CANVAS_W, PANEL_CANVAS_H, (float)PANEL_CANVAS_W / PANEL_W);
-    game_panel_draw(&c, snap, page, 0);
 }

@@ -7,14 +7,8 @@
 #include "game/game.h"
 #include "ui/ui_canvas.h"
 
-/* Old fixed-size panel canvas, still used by frontend.c. Removed in Task 9. */
-#define PANEL_LOGICAL_W 200
-#define PANEL_CANVAS_W  400
-#define PANEL_CANVAS_H  320
-
 typedef enum { GAME_PAGE_AUTO, GAME_PAGE_PARTY, GAME_PAGE_ENCOUNTERS, GAME_PAGE_COUNT } GamePage;
 
-void frontend_logical_size(bool panel_visible, int* w, int* h); /* removed in Task 9 */
 GamePage game_panel_next_page(GamePage page);
 /* GAME_PAGE_COUNT means "show the battle page". */
 GamePage game_panel_resolve_page(GamePage page, GameContext ctx);
@@ -34,7 +28,5 @@ typedef struct {
     float height[2], avail;          /* column heights including any "+N more" line */
 } RouteLayout;
 void game_panel_route_layout(const GameSnapshot* s, RouteLayout* out);
-/* Draws into the old PANEL_CANVAS_W x PANEL_CANVAS_H buffer. Removed in Task 9. */
-void game_panel_render(uint32_t* canvas, const GameSnapshot* snap, GamePage page);
 
 #endif // GAME_PANEL_H

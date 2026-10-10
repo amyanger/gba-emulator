@@ -6,12 +6,26 @@
 #include "apu/apu.h"
 #include "input/input.h"
 #include "input/keymap.h"
+#include "ui/ui_theme.h"
+#include <stdlib.h>
+#include <string.h>
 
 #ifdef ENABLE_XRAY
 #include "frontend/xray/xray.h"
 #endif
 
 bool frontend_init(Frontend* fe, int scale) {
+    memset(fe, 0, sizeof(*fe));
+
+    /* Per-monitor DPI awareness so Windows does not bitmap-stretch the window.
+     * With DPI scaling on, SDL reports window sizes in points like macOS. */
+#ifdef SDL_HINT_WINDOWS_DPI_AWARENESS
+    SDL_SetHint(SDL_HINT_WINDOWS_DPI_AWARENESS, "permonitorv2");
+#endif
+#ifdef SDL_HINT_WINDOWS_DPI_SCALING
+    SDL_SetHint(SDL_HINT_WINDOWS_DPI_SCALING, "1");
+#endif
+
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0) {
         LOG_ERROR("SDL init failed: %s", SDL_GetError());
         return false;
@@ -20,7 +34,8 @@ bool frontend_init(Frontend* fe, int scale) {
     fe->scale = scale;
     fe->window = SDL_CreateWindow("GBA Emulator", SDL_WINDOWPOS_CENTERED,
                                   SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH * scale,
-                                  SCREEN_HEIGHT * scale, SDL_WINDOW_SHOWN);
+                                  SCREEN_HEIGHT * scale,
+                                  SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
     if (!fe->window) {
         LOG_ERROR("SDL window creation failed: %s", SDL_GetError());
         return false;
@@ -31,6 +46,8 @@ bool frontend_init(Frontend* fe, int scale) {
         LOG_ERROR("SDL renderer creation failed: %s", SDL_GetError());
         return false;
     }
+    /* Rects are computed in drawable pixels, so logical scaling stays off. */
+    SDL_RenderSetLogicalSize(fe->renderer, 0, 0);
 
     // 15-bit color texture (ABGR1555)
     fe->texture = SDL_CreateTexture(fe->renderer, SDL_PIXELFORMAT_ABGR1555,
@@ -39,6 +56,7 @@ bool frontend_init(Frontend* fe, int scale) {
         LOG_ERROR("SDL texture creation failed: %s", SDL_GetError());
         return false;
     }
+    SDL_SetTextureScaleMode(fe->texture, SDL_ScaleModeNearest);
 
     fe->overlay_texture = SDL_CreateTexture(fe->renderer,
         SDL_PIXELFORMAT_ARGB8888,
@@ -58,21 +76,7 @@ bool frontend_init(Frontend* fe, int scale) {
     }
     fe->overlay_dirty = false;
 
-    fe->panel_texture = SDL_CreateTexture(fe->renderer, SDL_PIXELFORMAT_ARGB8888,
-                                          SDL_TEXTUREACCESS_STREAMING, PANEL_CANVAS_W,
-                                          PANEL_CANVAS_H);
-    if (!fe->panel_texture) {
-        LOG_ERROR("Failed to create panel texture: %s", SDL_GetError());
-        return false;
-    }
-    /* Even scales map the 2x canvas to whole pixels; odd ones need filtering. */
-    SDL_SetTextureScaleMode(fe->panel_texture,
-                            (scale % 2 == 0) ? SDL_ScaleModeNearest : SDL_ScaleModeLinear);
-    fe->panel_buffer = (uint32_t*)calloc(PANEL_CANVAS_W * PANEL_CANVAS_H, sizeof(uint32_t));
-    if (!fe->panel_buffer) {
-        LOG_ERROR("Failed to allocate panel buffer");
-        return false;
-    }
+    /* The panel texture and buffer are sized by frontend_apply_layout. */
     fe->panel_visible = false;
     fe->panel_page = GAME_PAGE_AUTO;
 
@@ -117,11 +121,105 @@ bool frontend_init(Frontend* fe, int scale) {
     return true;
 }
 
+/* Fills the density and display fields of a layout input for the window's current display. */
+static void frontend_measure(Frontend* fe, LayoutInput* in) {
+    int win_w = 0, win_h = 0, out_w = 0, out_h = 0;
+    SDL_GetWindowSize(fe->window, &win_w, &win_h);
+    SDL_GetRendererOutputSize(fe->renderer, &out_w, &out_h);
+    in->pt_to_px = (win_w > 0 && out_w > 0) ? (float)out_w / (float)win_w : 1.0f;
+
+    /* X11 has no point/pixel split; the desktop scale is only visible as DPI. */
+    in->os_scale = 1.0f;
+    int display = SDL_GetWindowDisplayIndex(fe->window);
+    if (display < 0) display = 0;
+    const char* driver = SDL_GetCurrentVideoDriver();
+    float hdpi = 0.0f;
+    if (driver && strcmp(driver, "x11") == 0 &&
+        SDL_GetDisplayDPI(display, NULL, &hdpi, NULL) == 0 && hdpi > 0.0f) {
+        float s = (float)(int)(hdpi / 96.0f * 4.0f + 0.5f) / 4.0f;
+        if (s < 1.0f) s = 1.0f;
+        if (s > 3.0f) s = 3.0f;
+        in->os_scale = s;
+    }
+
+    SDL_Rect usable;
+    if (SDL_GetDisplayUsableBounds(display, &usable) == 0) {
+        in->usable_w_pt = usable.w;
+        in->usable_h_pt = usable.h;
+    } else {
+        in->usable_w_pt = in->usable_h_pt = 0;
+    }
+}
+
+/* Recomputes the plan and rects. resize_window is false when reacting to a size change
+ * the window already went through, so a window manager that clamps our request cannot
+ * bounce resize events back and forth. */
+static void frontend_layout(Frontend* fe, bool resize_window) {
+    LayoutInput in;
+    in.game_scale = fe->scale;
+    in.panel_visible = fe->panel_visible;
+    frontend_measure(fe, &in);
+    fe->plan = panel_layout_plan(&in);
+
+    if (resize_window && !fe->fullscreen) {
+        int cur_w = 0, cur_h = 0;
+        SDL_GetWindowSize(fe->window, &cur_w, &cur_h);
+        if (cur_w != fe->plan.window_w || cur_h != fe->plan.window_h) {
+            SDL_SetWindowSize(fe->window, fe->plan.window_w, fe->plan.window_h);
+            /* The new size can land on another display or change the pixel ratio. */
+            frontend_measure(fe, &in);
+            fe->plan = panel_layout_plan(&in);
+        }
+    }
+
+    int out_w = 0, out_h = 0;
+    SDL_GetRendererOutputSize(fe->renderer, &out_w, &out_h);
+    panel_layout_rects(&fe->plan, fe->panel_visible, out_w, out_h, &fe->game_rect,
+                       &fe->panel_rect);
+
+    /* The canvas density follows the rect, which can be smaller than the plan when the
+     * drawable is too small for the panel. */
+    int full_w = (int)(PANEL_W_PT * fe->plan.density + 0.5f);
+    int full_h = (int)(PANEL_H_PT * fe->plan.density + 0.5f);
+    if (fe->panel_rect.w == full_w && fe->panel_rect.h == full_h) {
+        fe->panel_density = fe->plan.density;
+    } else {
+        float dw = (float)fe->panel_rect.w / PANEL_W_PT;
+        float dh = (float)fe->panel_rect.h / PANEL_H_PT;
+        fe->panel_density = dw < dh ? dw : dh;
+    }
+
+    if (fe->panel_rect.w != fe->panel_px_w || fe->panel_rect.h != fe->panel_px_h) {
+        if (fe->panel_texture) SDL_DestroyTexture(fe->panel_texture);
+        fe->panel_texture = NULL;
+        free(fe->panel_buffer);
+        fe->panel_buffer = NULL;
+        fe->panel_px_w = fe->panel_px_h = 0;
+        if (fe->panel_rect.w > 0 && fe->panel_rect.h > 0) {
+            fe->panel_buffer = (uint32_t*)calloc((size_t)fe->panel_rect.w * (size_t)fe->panel_rect.h,
+                                                 sizeof(uint32_t));
+            fe->panel_texture = SDL_CreateTexture(fe->renderer, SDL_PIXELFORMAT_ARGB8888,
+                                                  SDL_TEXTUREACCESS_STREAMING,
+                                                  fe->panel_rect.w, fe->panel_rect.h);
+            if (!fe->panel_buffer || !fe->panel_texture) {
+                LOG_ERROR("Failed to create the panel texture: %s", SDL_GetError());
+                if (fe->panel_texture) SDL_DestroyTexture(fe->panel_texture);
+                fe->panel_texture = NULL;
+                free(fe->panel_buffer);
+                fe->panel_buffer = NULL;
+            } else {
+                /* Drawn 1:1, so nearest keeps every pixel as rendered. */
+                SDL_SetTextureScaleMode(fe->panel_texture, SDL_ScaleModeNearest);
+                fe->panel_px_w = fe->panel_rect.w;
+                fe->panel_px_h = fe->panel_rect.h;
+            }
+        }
+    }
+    fe->panel_dirty = true;
+}
+
 void frontend_apply_layout(Frontend* fe) {
-    int w, h;
-    frontend_logical_size(fe->panel_visible, &w, &h);
-    SDL_RenderSetLogicalSize(fe->renderer, w, h);
-    if (!fe->fullscreen) SDL_SetWindowSize(fe->window, w * fe->scale, h * fe->scale);
+    frontend_layout(fe, true);
 }
 
 void frontend_set_ff_indicator(Frontend* fe, bool active) {
@@ -171,8 +269,11 @@ void frontend_destroy(Frontend* fe) {
 void frontend_present_frame(Frontend* fe, uint16_t* framebuffer) {
     SDL_UpdateTexture(fe->texture, NULL, framebuffer,
                       SCREEN_WIDTH * sizeof(uint16_t));
+    /* Letterbox areas use the panel background so the window reads as one surface. */
+    SDL_SetRenderDrawColor(fe->renderer, (UI_BG >> 16) & 0xFF, (UI_BG >> 8) & 0xFF,
+                           UI_BG & 0xFF, 0xFF);
     SDL_RenderClear(fe->renderer);
-    SDL_Rect game_rect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+    SDL_Rect game_rect = {fe->game_rect.x, fe->game_rect.y, fe->game_rect.w, fe->game_rect.h};
     SDL_RenderCopy(fe->renderer, fe->texture, NULL, &game_rect);
 
     if (fe->overlay_dirty) {
@@ -181,10 +282,8 @@ void frontend_present_frame(Frontend* fe, uint16_t* framebuffer) {
         SDL_RenderCopy(fe->renderer, fe->overlay_texture, NULL, &game_rect);
     }
 
-    if (fe->panel_visible) {
-        SDL_Rect panel_rect = {SCREEN_WIDTH, 0, PANEL_LOGICAL_W, SCREEN_HEIGHT};
-        SDL_UpdateTexture(fe->panel_texture, NULL, fe->panel_buffer,
-                          PANEL_CANVAS_W * sizeof(uint32_t));
+    if (fe->panel_visible && fe->panel_texture) {
+        SDL_Rect panel_rect = {fe->panel_rect.x, fe->panel_rect.y, fe->panel_px_w, fe->panel_px_h};
         SDL_RenderCopy(fe->renderer, fe->panel_texture, NULL, &panel_rect);
     }
     SDL_RenderPresent(fe->renderer);
@@ -213,15 +312,25 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
         }
 
         switch (event.type) {
-#ifdef ENABLE_XRAY
         case SDL_WINDOWEVENT:
+#ifdef ENABLE_XRAY
             /* Handle X-Ray window close button */
             if (event.window.event == SDL_WINDOWEVENT_CLOSE &&
                 g_xray && g_xray->window_id == event.window.windowID) {
                 xray_toggle(g_xray);
             }
-            break;
 #endif
+            if (event.window.windowID == SDL_GetWindowID(fe->window)) {
+                if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+                    frontend_layout(fe, false);
+                }
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+                if (event.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) {
+                    frontend_layout(fe, true);
+                }
+#endif
+            }
+            break;
 
         case SDL_KEYDOWN: {
             uint16_t key = sdl_to_gba_key(event.key.keysym.scancode);
@@ -254,6 +363,15 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             }
             if (event.key.keysym.scancode == SDL_SCANCODE_F10 && !event.key.repeat) {
                 fe->panel_page = (uint8_t)game_panel_next_page((GamePage)fe->panel_page);
+            }
+            /* [ and ] move the party selection unless the keymap binds them. */
+            if ((event.key.keysym.scancode == SDL_SCANCODE_LEFTBRACKET ||
+                 event.key.keysym.scancode == SDL_SCANCODE_RIGHTBRACKET) &&
+                fe->panel_visible && keymap_lookup(event.key.keysym.scancode) == 0 &&
+                game_panel_resolve_page((GamePage)fe->panel_page, fe->last_snap.context) ==
+                    GAME_PAGE_PARTY) {
+                int delta = event.key.keysym.scancode == SDL_SCANCODE_LEFTBRACKET ? -1 : 1;
+                fe->panel_sel = game_panel_select(fe->panel_sel, delta, fe->last_snap.party_count);
             }
 
             // Save state hotkeys

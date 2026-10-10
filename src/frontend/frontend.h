@@ -5,6 +5,7 @@
 #include <SDL2/SDL.h>
 #include "frontend/slot_picker.h"
 #include "frontend/game_panel.h"
+#include "frontend/panel_layout.h"
 
 // Forward declaration
 typedef struct GBA GBA;
@@ -16,10 +17,20 @@ typedef struct Frontend {
     SDL_Texture* overlay_texture;
     uint32_t* overlay_buffer;     /* SCREEN_WIDTH * SCREEN_HEIGHT pixels, ARGB8888 */
     bool overlay_dirty;  /* set by overlay producers each frame; cleared by frontend_overlay_clear */
-    SDL_Texture* panel_texture;   /* PANEL_CANVAS_W x PANEL_CANVAS_H, ARGB8888 */
+    SDL_Texture* panel_texture;   /* panel_px_w x panel_px_h, ARGB8888, drawn 1:1 */
     uint32_t* panel_buffer;
+    int panel_px_w, panel_px_h;
+    float panel_density;          /* canvas pixels per point */
     bool panel_visible;           /* F9 */
     uint8_t panel_page;           /* GamePage, F10 */
+    uint8_t panel_sel;            /* selected party slot, [ and ] */
+    LayoutPlan plan;
+    PxRect game_rect, panel_rect; /* drawable pixels */
+
+    /* What the panel buffer currently shows, so unchanged frames skip the redraw. */
+    GameSnapshot last_snap;
+    uint8_t last_page, last_sel;
+    bool panel_dirty;
     SDL_AudioDeviceID audio_device;
     uint32_t audio_target_bytes;  /* frame-sync queue target: 3x the device pull size */
     SDL_GameController* controller;

@@ -33,9 +33,22 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
     frontend_overlay_clear(fe);
     input_display_render(fe, gba);
     slot_picker_render(fe);
-    if (fe->panel_visible) {
+    if (fe->panel_visible && fe->panel_buffer) {
         game_update(&s_game, gba);
-        game_panel_render(fe->panel_buffer, &s_game.snap, (GamePage)fe->panel_page);
+        /* Redraw only when something on the panel can have changed. */
+        if (fe->panel_dirty || fe->last_page != fe->panel_page || fe->last_sel != fe->panel_sel ||
+            memcmp(&fe->last_snap, &s_game.snap, sizeof(s_game.snap)) != 0) {
+            UiCanvas canvas;
+            ui_canvas_init(&canvas, fe->panel_buffer, fe->panel_px_w, fe->panel_px_h,
+                           fe->panel_density);
+            game_panel_draw(&canvas, &s_game.snap, (GamePage)fe->panel_page, fe->panel_sel);
+            SDL_UpdateTexture(fe->panel_texture, NULL, fe->panel_buffer,
+                              fe->panel_px_w * (int)sizeof(uint32_t));
+            fe->last_snap = s_game.snap;
+            fe->last_page = fe->panel_page;
+            fe->last_sel = fe->panel_sel;
+            fe->panel_dirty = false;
+        }
     }
     frontend_present_frame(fe, gba->ppu.framebuffer);
 }
