@@ -8,6 +8,8 @@
 #include "frontend/panel_layout.h"
 #include "frontend/toast.h"
 #include "frontend/settings.h"
+#include "frontend/prefs.h"
+#include "game/overworld.h"
 
 // Forward declaration
 typedef struct GBA GBA;
@@ -42,6 +44,17 @@ typedef struct Frontend {
     int hud_px_w, hud_px_h;
     bool hud_dirty;               /* size changed: redraw even if the queue did not */
     bool hud_shown;               /* draw the texture this frame */
+
+    /* Overworld X-Ray (F4): trainer sight and hidden items over the game, full resolution. */
+    bool overworld_xray;
+    OverworldFeed* ow_feed;       /* set by main; NULL when the ROM is not supported */
+    Prefs* prefs;                 /* set by main; NULL in headless runs */
+    SDL_Texture* ow_texture;      /* game_rect size, ARGB8888 straight alpha */
+    uint32_t* ow_buffer;
+    int ow_px_w, ow_px_h;
+    bool ow_dirty;                /* size changed: repaint even if the snapshot did not */
+    bool ow_shown;
+    OverworldSnapshot ow_last;    /* what ow_buffer shows */
     SDL_AudioDeviceID audio_device;
     uint32_t audio_target_bytes;  /* frame-sync queue target: 3x the device pull size */
     SDL_GameController* controller;
@@ -107,6 +120,10 @@ void frontend_toast_keyed(Frontend* fe, const char* key, ToastKind kind, const c
                           const char* detail);
 /* Updates badges from frontend state, expires toasts, redraws the HUD if needed. */
 void frontend_update_hud(Frontend* fe, uint32_t now_ms);
+/* F4: turns the overlay on or off, (un)registers the line-160 observer, saves prefs. */
+void frontend_toggle_overworld(Frontend* fe, GBA* gba);
+/* Repaints the overlay when s changed; s = NULL or !s->visible hides it. */
+void frontend_update_overworld(Frontend* fe, const OverworldSnapshot* s);
 void frontend_settings_open(Frontend* fe, GBA* gba);
 void frontend_settings_close(Frontend* fe, GBA* gba);
 /* Redraws Settings when input arrived and closes it when it asked to; call before presenting. */
