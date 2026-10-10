@@ -118,19 +118,25 @@ To check decoded state without a window, run headless with `--game-dump <file>` 
 
 Pre-built binaries for Linux (x86_64), macOS (Apple Silicon), and Windows (x86_64) are attached to every tagged release on the [Releases page](https://github.com/amyanger/gba-emulator/releases/latest).
 
-The Linux and macOS binaries are dynamically linked against SDL2, so you'll need SDL2 installed on your system before running them. The Windows zip bundles `SDL2.dll`.
+Each download includes everything it needs, SDL2 included.
 
-### macOS (Apple Silicon — M1/M2/M3/M4/M5)
+### macOS (Apple Silicon, macOS 11 or newer)
+
+1. Download `gba_emulator-0.3.1-macOS-arm64.dmg` from the Releases page and open it.
+2. Drag **GBA Emulator** into **Applications**.
+3. Double-click **GBA Emulator** and choose a `.gba` file. You can also drop a ROM onto the app icon.
+
+The app isn't signed with a paid Apple certificate, so the first launch is blocked with a "can't be opened" message. Open **System Settings > Privacy & Security**, scroll down and click **Open Anyway**. You only need to do this once. From Terminal, this does the same:
 
 ```bash
-brew install sdl2
-curl -L -O https://github.com/amyanger/gba-emulator/releases/latest/download/gba_emulator-0.3.1-Darwin-arm64.tar.gz
-tar -xzf gba_emulator-0.3.1-Darwin-arm64.tar.gz
-xattr -d com.apple.quarantine gba_emulator-0.3.1-Darwin-arm64/bin/gba_emulator
-./gba_emulator-0.3.1-Darwin-arm64/bin/gba_emulator path/to/rom.gba --scale 3
+xattr -dr com.apple.quarantine "/Applications/GBA Emulator.app"
 ```
 
-The `xattr` line clears the Gatekeeper quarantine flag so macOS will run the unsigned binary. Skip it on your own risk and you'll see a "developer cannot be verified" prompt instead.
+Saves are written next to the ROM. To use command-line options, run the binary inside the app:
+
+```bash
+"/Applications/GBA Emulator.app/Contents/MacOS/GBA Emulator" path/to/rom.gba --scale 4
+```
 
 ### Linux (x86_64)
 
@@ -160,7 +166,7 @@ No pre-built binaries for Intel Macs yet. Build from source — see below.
 | Dependency | Version | Install |
 |------------|---------|---------|
 | SDL2 | 2.0+ | `brew install sdl2` (macOS) / `apt install libsdl2-dev` (Linux) |
-| CMake | 3.16+ | `brew install cmake` (macOS) / `apt install cmake` (Linux) |
+| CMake | 3.21+ | `brew install cmake` (macOS) / `apt install cmake` (Linux) |
 
 No other external libraries are required.
 

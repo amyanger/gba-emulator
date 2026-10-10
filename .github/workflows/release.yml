@@ -24,9 +24,13 @@ jobs:
           - os: macos-latest
             asset_suffix: macos-arm64
             install: brew install sdl2
-            cmake_extra: ""
-            cpack_generator: TGZ
-            artifact_glob: build/gba_emulator-*.tar.gz
+            cmake_extra: >-
+              -DMACOS_APP_BUNDLE=ON
+              -DMACOS_SDL2_FRAMEWORK=$RUNNER_TEMP/sdl2/SDL2.framework
+              -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+              -DCMAKE_OSX_ARCHITECTURES=arm64
+            cpack_generator: DragNDrop
+            artifact_glob: build/gba_emulator-*.dmg
           - os: windows-latest
             asset_suffix: windows-x86_64
             install: vcpkg install sdl2:x64-windows
@@ -46,6 +50,10 @@ jobs:
       - name: Install SDL2
         run: ${{ matrix.install }}
 
+      - name: Fetch SDL2 framework (macOS)
+        if: runner.os == 'macOS'
+        run: tools/fetch_sdl2_framework.sh "$RUNNER_TEMP/sdl2"
+
       - name: Configure (Release)
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release ${{ matrix.cmake_extra }}
 
@@ -62,6 +70,14 @@ jobs:
       - name: Package
         working-directory: build
         run: cpack -G ${{ matrix.cpack_generator }} -C Release
+
+      - name: Check app bundle (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          MNT=$(mktemp -d)
+          hdiutil attach -nobrowse -readonly -mountpoint "$MNT" build/gba_emulator-*.dmg
+          tools/check_mac_bundle.sh "$MNT/GBA Emulator.app"
+          hdiutil detach "$MNT"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -86,6 +102,7 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.dmg
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
