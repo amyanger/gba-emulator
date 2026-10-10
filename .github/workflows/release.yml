@@ -78,9 +78,11 @@ jobs:
           ldd "$RUNNER_TEMP/squashfs-root/usr/bin/gba_emulator" | tee ldd.log
           grep -q "libSDL2.*squashfs-root" ldd.log || { echo "SDL2 not bundled"; exit 1; }
           # No zenity/kdialog on PATH and no display: must exit 0 quickly, not hang.
-          SDL_VIDEODRIVER=dummy PATH=/usr/bin/nonexistent timeout 20 \
-            "$RUNNER_TEMP/squashfs-root/usr/bin/gba_emulator"; echo "exit $?" | tee rc.log
-          grep -qx "exit 0" rc.log
+          rc=0
+          SDL_VIDEODRIVER=dummy timeout 20 env PATH=/usr/bin/nonexistent \
+            "$RUNNER_TEMP/squashfs-root/usr/bin/gba_emulator" || rc=$?
+          echo "exit $rc"
+          test "$rc" -eq 0
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

@@ -7,8 +7,8 @@
 /* Desktop dialog tools, tried in order. They are optional programs found at
  * runtime, not libraries we link. Fixed strings: no user input reaches the shell. */
 static const char* const dialog_cmds[] = {
-    "zenity --file-selection --title='Choose a GBA ROM' --file-filter='GBA ROMs | *.gba' 2>/dev/null",
-    "kdialog --title 'Choose a GBA ROM' --getopenfilename . 'GBA ROMs (*.gba)' 2>/dev/null",
+    "zenity --file-selection --title='Choose a GBA ROM' --file-filter='GBA ROMs | *.gba *.GBA' 2>/dev/null",
+    "kdialog --title 'Choose a GBA ROM' --getopenfilename . 'GBA ROMs (*.gba *.GBA)' 2>/dev/null",
 };
 
 RomPickResult rom_picker_choose(char* out, size_t out_size) {
