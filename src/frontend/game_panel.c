@@ -42,6 +42,31 @@ uint8_t game_panel_select(uint8_t sel, int delta, uint8_t party_count) {
     return (uint8_t)s;
 }
 
+static bool title_sep(char ch) { return ch == ' ' || ch == '-' || ch == '.'; }
+
+/* Restores Gen 3 spellings that plain title case loses: the whole words "Poke"
+ * (the ROM's "POKe", decoded as "POKE") -> "Poké", and "Hp"/"Pp" -> "HP"/"PP".
+ * Words that only contain them, like "Pokemon", are left alone. */
+static void title_fix_tokens(char* out, size_t out_size) {
+    size_t len = strlen(out);
+    size_t i = 0;
+    while (i < len) {
+        size_t j = i;
+        while (j < len && !title_sep(out[j])) j++;
+        if (j - i == 2 && (memcmp(out + i, "Hp", 2) == 0 || memcmp(out + i, "Pp", 2) == 0)) {
+            out[i + 1] = 'P';
+        } else if (j - i == 4 && memcmp(out + i, "Poke", 4) == 0 && len + 2 <= out_size) {
+            /* "e" becomes the two-byte UTF-8 "\xC3\xA9"; skip it if it would not fit. */
+            memmove(out + j + 1, out + j, len - j + 1);
+            out[i + 3] = (char)0xC3;
+            out[i + 4] = (char)0xA9;
+            len++;
+            j++;
+        }
+        i = j + 1;
+    }
+}
+
 void game_panel_title_case(const char* in, char* out, size_t out_size) {
     if (out_size == 0) return;
     size_t n = 0;
@@ -50,13 +75,14 @@ void game_panel_title_case(const char* in, char* out, size_t out_size) {
         char ch = in[n];
         if (ch >= 'A' && ch <= 'Z') ch = (char)(ch + ('a' - 'A'));
         if (word_start && ch >= 'a' && ch <= 'z') ch = (char)(ch - ('a' - 'A'));
-        word_start = ch == ' ' || ch == '-' || ch == '.';
+        word_start = title_sep(ch);
         out[n] = ch;
     }
     /* Never end on a partial UTF-8 sequence when truncating. */
     if (in[n])
         while (n > 0 && ((unsigned char)in[n] & 0xC0) == 0x80) n--;
     out[n] = '\0';
+    title_fix_tokens(out, out_size);
 }
 
 /* Gen 3 type ids; the pills use these instead of the ROM's 6-letter names. */
@@ -113,13 +139,16 @@ static float kv_row(UiCanvas* c, float x, float y, float label_w, float w, const
 static void item_row(UiCanvas* c, float x, float y, float label_w, float w, const char* item) {
     if (strcmp(item, "--") == 0 || item[0] == '\0')
         kv_row(c, x, y, label_w, w, "Item", "None", UI_MUTED);
-    else
-        kv_row(c, x, y, label_w, w, "Item", title(item).s, UI_TEXT);
+    else {
+        Name n = title(item);
+        kv_row(c, x, y, label_w, w, "Item", n.s, UI_TEXT);
+    }
 }
 
 static void nature_row(UiCanvas* c, float x, float y, float label_w, float w, const char* nature,
                        int8_t up, int8_t down) {
-    float vw = kv_row(c, x, y, label_w, w, "Nature", title(nature).s, UI_TEXT);
+    Name n = title(nature);
+    float vw = kv_row(c, x, y, label_w, w, "Nature", n.s, UI_TEXT);
     if (up < 0 || down < 0 || up > 4 || down > 4) return;
     char buf[32];
     snprintf(buf, sizeof(buf), " +%s " MINUS "%s", k_nature_stat[up], k_nature_stat[down]);
@@ -214,14 +243,16 @@ static void move_row(UiCanvas* c, float x, float y, float w, float pill_x, const
     }
     /* Text centered on the pill (UI_SIZE_PILL + 5 tall). */
     float ty = y + (UI_SIZE_PILL + 5.0f) / 2 - ui_text_cap_middle(c, UI_FONT_REGULAR, KV_SIZE);
-    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, ty, 130.0f, UI_ALIGN_LEFT, UI_TEXT, title(e->move).s);
+    Name move = title(e->move);
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, ty, 130.0f, UI_ALIGN_LEFT, UI_TEXT, move.s);
     pill(c, pill_x, y, e->type);
     ui_text(c, font, KV_SIZE, x + w, ty, 0, UI_ALIGN_RIGHT, color, txt);
 }
 
 static void catch_row(UiCanvas* c, float y, const GameCatchRow* r) {
     char buf[16];
-    ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, y, 326.0f, UI_ALIGN_LEFT, UI_TEXT, title(r->ball).s);
+    Name ball = title(r->ball);
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, y, 326.0f, UI_ALIGN_LEFT, UI_TEXT, ball.s);
     snprintf(buf, sizeof(buf), TIMES "%u", r->quantity);
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, 352.0f, y, 44.0f, UI_ALIGN_LEFT, UI_MUTED, buf);
     if (r->permille < 0) {
@@ -240,9 +271,10 @@ static void enc_row(UiCanvas* c, float x, float y, float w, const GameEncRow* r)
     bool wide = w > 400.0f;
     float name_w = wide ? 302.0f : 92.0f, lv_x = x + (wide ? 332.0f : 118.0f);
     float bar_x = x + (wide ? 410.0f : 186.0f), bar_w = wide ? 110.0f : 44.0f;
+    Name species = title(r->species);
     if (r->caught) ui_check(c, x, y, 12.0f, UI_GOOD);
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, x + 22.0f, y, name_w, UI_ALIGN_LEFT, UI_TEXT,
-            title(r->species).s);
+            species.s);
     if (r->min_level == r->max_level) snprintf(buf, sizeof(buf), "Lv %u", r->min_level);
     else snprintf(buf, sizeof(buf), "Lv %u" NDASH "%u", r->min_level, r->max_level);
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, lv_x, y, bar_x - lv_x - 4.0f, UI_ALIGN_LEFT, UI_MUTED,
@@ -272,8 +304,9 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
 
     /* Title row */
     float pills_w = type_pills(c, RIGHT, y + 3.0f, e->type_ids, true);
+    Name species = title(e->species);
     float name_w = ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, LEFT, y, 220.0f, UI_ALIGN_LEFT,
-                           UI_TEXT, title(e->species).s);
+                           UI_TEXT, species.s);
     snprintf(buf, sizeof(buf), "Lv %u", e->level);
     title_meta(c, LEFT + name_w + 8.0f, y, RIGHT - pills_w - 8.0f,
                wild ? "Wild" MDOT : "Trainer" MDOT, e->gender, buf);
@@ -281,7 +314,8 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
 
     if (s->enemy_count > 1) {
         const GameEnemy* e2 = &s->enemies[1];
-        snprintf(buf, sizeof(buf), "Also: %s Lv %u, HP %u/%u", title(e2->species).s, e2->level,
+        Name species2 = title(e2->species);
+        snprintf(buf, sizeof(buf), "Also: %s Lv %u, HP %u/%u", species2.s, e2->level,
                  e2->hp, e2->max_hp);
         ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, LEFT, y, RIGHT - LEFT, UI_ALIGN_LEFT, UI_MUTED,
                 buf);
@@ -300,7 +334,8 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
     float ly = y;
     nature_row(c, LEFT, ly, 84.0f, COL_W, e->nature, e->nature_up, e->nature_down);
     ly += KV_LINE;
-    kv_row(c, LEFT, ly, 84.0f, COL_W, "Ability", title(e->ability).s, UI_TEXT);
+    Name ability = title(e->ability);
+    kv_row(c, LEFT, ly, 84.0f, COL_W, "Ability", ability.s, UI_TEXT);
     ly += KV_LINE;
     item_row(c, LEFT, ly, 84.0f, COL_W, e->item);
     ly += KV_LINE;
@@ -420,7 +455,8 @@ static void party_detail(UiCanvas* c, const GamePartyMon* m, float top) {
 
     float name_w = ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, x, y, 170.0f, UI_ALIGN_LEFT, UI_TEXT,
                            m->nickname);
-    snprintf(buf, sizeof(buf), "%s" MDOT, title(m->species).s);
+    Name species = title(m->species);
+    snprintf(buf, sizeof(buf), "%s" MDOT, species.s);
     char lv[16];
     snprintf(lv, sizeof(lv), "Lv %u", m->level);
     title_meta(c, x + name_w + 8.0f, y, RIGHT, buf, m->gender, lv);
@@ -432,14 +468,15 @@ static void party_detail(UiCanvas* c, const GamePartyMon* m, float top) {
 
     nature_row(c, x, y, 96.0f, w, m->nature, m->nature_up, m->nature_down);
     y += KV_LINE;
-    kv_row(c, x, y, 96.0f, w, "Ability", title(m->ability).s, UI_TEXT);
+    Name ability = title(m->ability);
+    kv_row(c, x, y, 96.0f, w, "Ability", ability.s, UI_TEXT);
     y += KV_LINE;
     item_row(c, x, y, 96.0f, w, m->item);
     y += KV_LINE;
     /* The ROM's type names are abbreviated ("ELECTR"), so name the type from the IVs. */
     uint8_t hp_type = pokemon_hidden_power_type(m->ivs);
-    snprintf(buf, sizeof(buf), "%s" MDOT "%u", hp_type < 18 ? title(k_type_names[hp_type]).s : "?",
-             m->hp_power);
+    Name hp_name = title(hp_type < 18 ? k_type_names[hp_type] : "?");
+    snprintf(buf, sizeof(buf), "%s" MDOT "%u", hp_name.s, m->hp_power);
     kv_row(c, x, y, 96.0f, w, "Hidden Power", buf, UI_TEXT);
     y += KV_LINE;
     snprintf(buf, sizeof(buf), "%u", m->friendship);

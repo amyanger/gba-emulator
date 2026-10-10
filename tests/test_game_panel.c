@@ -39,6 +39,23 @@ TEST(panel_title_case) {
     char small[5];
     game_panel_title_case("POK\xC3\xA9", small, sizeof(small));
     ASSERT_STR_EQ(small, "Pok");
+    /* The ROM's "POKe BALL" decodes as "POKE BALL"; whole-word POKE, HP and PP
+     * are fixed up, other words containing them are not. */
+    game_panel_title_case("POKE BALL", out, sizeof(out));
+    ASSERT_STR_EQ(out, "Pok\xC3\xA9 Ball");
+    game_panel_title_case("HP UP", out, sizeof(out));
+    ASSERT_STR_EQ(out, "HP Up");
+    game_panel_title_case("PP MAX", out, sizeof(out));
+    ASSERT_STR_EQ(out, "PP Max");
+    game_panel_title_case("POKEMON", out, sizeof(out));
+    ASSERT_STR_EQ(out, "Pokemon");
+    game_panel_title_case("POKEBLOCK", out, sizeof(out));
+    ASSERT_STR_EQ(out, "Pokeblock");
+    game_panel_title_case("SHARP BEAK", out, sizeof(out));
+    ASSERT_STR_EQ(out, "Sharp Beak");
+    /* No room for the extra UTF-8 byte: keep the plain spelling. */
+    game_panel_title_case("POKE", small, sizeof(small));
+    ASSERT_STR_EQ(small, "Poke");
 }
 
 TEST(panel_select_wraps) {

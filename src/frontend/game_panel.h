@@ -16,7 +16,9 @@ GamePage game_panel_resolve_page(GamePage page, GameContext ctx);
 void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel);
 /* Moves the party selection by delta; wraps, and returns 0 when the party is empty. */
 uint8_t game_panel_select(uint8_t sel, int delta, uint8_t party_count);
-/* "POKé BALL" -> "Poké Ball". */
+/* "WATER GUN" -> "Water Gun". The whole words POKE, HP and PP become "Poké", "HP" and
+ * "PP", so the ROM's "POKe BALL" (decoded as "POKE BALL") reads "Poké Ball"; longer
+ * words such as "POKEMON" are only title-cased. */
 void game_panel_title_case(const char* in, char* out, size_t out_size);
 /* How the Route page fits its encounter list into the space above the footer.
  * Exposed for tests. */
