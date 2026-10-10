@@ -1,5 +1,7 @@
 #include "frontend/panel_layout.h"
 
+#include <math.h>
+
 #define GBA_W 240
 #define GBA_H 160
 #define MIN_BODY_PX 10.0f
@@ -7,15 +9,17 @@
 
 static int round_px(float v) { return (int)(v + 0.5f); }
 
-/* Window size in window units for a game scale and panel density. */
+/* Window size in window units for a game scale and panel density. Rounds up
+ * (with a small float tolerance) so the drawable is never 1 px short of the
+ * planned content, which would drop the game to the next integer scale down. */
 static void window_units(const LayoutInput* in, int gps, float density, int* w, int* h) {
     float pw = in->panel_visible ? PANEL_W_PT * density : 0.0f;
     float ph = in->panel_visible ? PANEL_H_PT * density : 0.0f;
     float gw = (float)(GBA_W * gps);
     float gh = (float)(GBA_H * gps);
     float hh = gh > ph ? gh : ph;
-    *w = round_px((gw + pw) / in->pt_to_px);
-    *h = round_px(hh / in->pt_to_px);
+    *w = (int)ceilf((gw + pw) / in->pt_to_px - 0.001f);
+    *h = (int)ceilf(hh / in->pt_to_px - 0.001f);
 }
 
 LayoutPlan panel_layout_plan(const LayoutInput* in) {

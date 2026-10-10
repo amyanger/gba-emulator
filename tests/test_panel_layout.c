@@ -1,6 +1,8 @@
 #include "test_harness.h"
 #include "frontend/panel_layout.h"
 
+#include <math.h>
+
 static LayoutInput input(int scale, float pt_to_px, float os_scale, int uw, int uh) {
     LayoutInput in;
     in.game_scale = scale;
@@ -158,6 +160,32 @@ TEST(layout_hidden_panel_window_is_shorter) {
     ASSERT_TRUE(hidden.window_h < shown.window_h);
 }
 
+/* The planned window, once the OS turns it into a drawable (floored or rounded),
+ * must still hold the planned integer game scale. Rounding the window size down
+ * used to leave the drawable 1 px short, so the game dropped to gps - 1. */
+TEST(layout_drawable_keeps_game_scale) {
+    static const float ratios[] = {1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 3.0f};
+    for (int r = 0; r < 7; r++) {
+        for (int s = 1; s <= 6; s++) {
+            for (int pv = 0; pv < 2; pv++) {
+                LayoutInput in = input(s, ratios[r], 1.0f, 0, 0);
+                LayoutPlan p;
+                in.panel_visible = pv != 0;
+                p = panel_layout_plan(&in);
+                for (int mode = 0; mode < 2; mode++) {
+                    float fw = (float)p.window_w * ratios[r];
+                    float fh = (float)p.window_h * ratios[r];
+                    int ow = mode ? (int)lroundf(fw) : (int)fw;
+                    int oh = mode ? (int)lroundf(fh) : (int)fh;
+                    PxRect g, pn;
+                    panel_layout_rects(&p, in.panel_visible, ow, oh, &g, &pn);
+                    ASSERT_EQ(g.w / 240, p.game_px_scale);
+                }
+            }
+        }
+    }
+}
+
 void run_panel_layout_tests(void) {
     TEST_SUITE("panel_layout");
     RUN_TEST(layout_retina_scale3);
@@ -171,4 +199,5 @@ void run_panel_layout_tests(void) {
     RUN_TEST(layout_sanitizes_input);
     RUN_TEST(layout_rects_stay_inside_small_drawable);
     RUN_TEST(layout_hidden_panel_window_is_shorter);
+    RUN_TEST(layout_drawable_keeps_game_scale);
 }
