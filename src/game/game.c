@@ -57,6 +57,8 @@
 #define MAP_HEADER_MAP_TYPE 0x17
 #define MAP_TYPE_UNDERWATER 5
 #define TYPE_TABLE_MAX 512
+/* Move id from the ROM's move-name table; its matchup type comes from the user's IVs. */
+#define MOVE_HIDDEN_POWER 237
 
 static uint16_t rd16(const uint8_t* p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 static uint32_t rd32(const uint8_t* p) {
@@ -250,8 +252,14 @@ static void fill_enemy(const GameMem* m, const GameProfile* p, const uint8_t* mo
             eff->status_move = true;
             continue;
         }
-        uint8_t q = battle_type_quarters(type_table, type_len, bm[2], t1, t2, foresight);
-        eff->quarters = battle_apply_ability(q, bm[2], ability);
+        uint8_t move_type = bm[2];
+        if (mv == MOVE_HIDDEN_POWER) {
+            uint8_t ivs[6];
+            pokemon_unpack_ivs(rd32(player + BMON_IVS), ivs);
+            move_type = pokemon_hidden_power_type(ivs);
+        }
+        uint8_t q = battle_type_quarters(type_table, type_len, move_type, t1, t2, foresight);
+        eff->quarters = battle_apply_ability(q, move_type, ability);
     }
 }
 
@@ -356,7 +364,7 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     uint32_t flags = 0;
     game_mem_read32(m, p->battle_type_flags, &flags);
     s->context = (flags & BATTLE_TYPE_TRAINER) ? GAME_CTX_BATTLE_TRAINER : GAME_CTX_BATTLE_WILD;
-    static uint8_t type_table[TYPE_TABLE_MAX];
+    uint8_t type_table[TYPE_TABLE_MAX];
     uint32_t type_len = p->type_effectiveness_len <= TYPE_TABLE_MAX ? p->type_effectiveness_len : 0;
     if (type_len && !game_mem_copy(m, p->type_effectiveness, type_table, type_len)) type_len = 0;
     for (uint8_t i = 0; i < n; i++)

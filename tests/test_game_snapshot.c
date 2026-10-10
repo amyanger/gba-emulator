@@ -20,11 +20,11 @@ static const GameProfile k_test_profile = {
     .save_block1_ptr = 0x03000000, .save_block2_ptr = 0x03000004,
     .map_header = 0x02000E20,
     .species_names = 0x08000100, .species_count = 4,
-    .move_names = 0x08000200, .move_count = 4,
+    .move_names = 0x08000200, .move_count = 240,
     .battle_moves = 0x08000300,
     .ability_names = 0x08000400, .ability_count = 4,
     .type_names = 0x08000500, .type_count = 18,
-    .type_effectiveness = 0x08000600, .type_effectiveness_len = 12,
+    .type_effectiveness = 0x08000600, .type_effectiveness_len = 15,
     .items = 0x08000700, .item_count = 13,
     .nature_name_ptrs = 0x08000A00,
     .species_info = 0x08000C00,
@@ -83,13 +83,15 @@ static void build_world(void) {
     put_str(0x08000200 + 13 * 2, "GROWL");
     at(0x08000300 + 12 * 1)[1] = 40; at(0x08000300 + 12 * 1)[2] = 11;  /* Water Gun */
     at(0x08000300 + 12 * 2)[1] = 0;  at(0x08000300 + 12 * 2)[2] = 0;   /* Growl */
+    put_str(0x08000200 + 13 * 237, "HIDDEN POWER");
+    at(0x08000300 + 12 * 237)[1] = 60; at(0x08000300 + 12 * 237)[2] = 0;  /* stored Normal */
     put_str(0x08000400 + 13 * 1, "OVERGROW");
     put_str(0x08000400 + 13 * 2, "PICKUP");
     put_str(0x08000500 + 7 * 0, "NORMAL");
     put_str(0x08000500 + 7 * 10, "FIRE");
     put_str(0x08000500 + 7 * 11, "WATER");
     put_str(0x08000500 + 7 * 17, "DARK");
-    const uint8_t eff[12] = {11, 10, 20, 10, 11, 5, 0xFF, 0xFF, 0, 0, 0, 0};
+    const uint8_t eff[15] = {11, 10, 20, 10, 11, 5, 17, 10, 20, 0xFF, 0xFF, 0, 0, 0, 0};
     memcpy(at(0x08000600), eff, sizeof(eff));
     put_str(0x08000700 + 44 * 4, "POKE BALL");
     put_str(0x08000700 + 44 * 12, "PREMIER BALL");
@@ -223,6 +225,19 @@ TEST(snapshot_wild_battle_matchups_and_catch) {
     ASSERT_EQ(gs->snap.catch_rows[0].permille, 123);
 }
 
+TEST(snapshot_hidden_power_uses_the_players_ivs) {
+    build_world();
+    enter_wild_battle();
+    fixture_put16(at(0x02000C00 + 0x0C), 237);
+    fixture_put32(at(0x02000C00 + 0x14), 0x3FFFFFFF);  /* all IVs 31 -> Dark */
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    const GameEnemy* e = &gs->snap.enemies[0];
+    ASSERT_STR_EQ(e->eff[0].move, "HIDDEN POWER");
+    ASSERT_EQ(e->eff[0].quarters, 8);  /* Dark vs Fire; stored Normal would be 4 */
+}
+
 TEST(snapshot_trainer_battle_has_no_catch_rows) {
     build_world();
     enter_wild_battle();
@@ -296,6 +311,7 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_waits_when_save_pointers_invalid);
     RUN_TEST(snapshot_overworld_party_and_encounters);
     RUN_TEST(snapshot_wild_battle_matchups_and_catch);
+    RUN_TEST(snapshot_hidden_power_uses_the_players_ivs);
     RUN_TEST(snapshot_trainer_battle_has_no_catch_rows);
     RUN_TEST(snapshot_battle_flag_without_enemy_is_overworld);
     RUN_TEST(snapshot_out_of_range_ids_show_unknown);
