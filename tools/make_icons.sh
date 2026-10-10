@@ -1,6 +1,6 @@
 #!/bin/bash
 # Regenerates the committed app icons in res/icon/ from tools/mac_app_icon.swift.
-# macOS only (needs swift, sips, iconutil). Run after changing the drawing.
+# macOS only (needs swift, sips, iconutil, python3). Run after changing the drawing.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"

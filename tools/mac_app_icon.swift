@@ -1,4 +1,4 @@
-// Draws the 1024x1024 app icon used by tools/make_mac_app.sh.
+// Draws the 1024x1024 app icon used by tools/make_icons.sh.
 // Usage: swift tools/mac_app_icon.swift out.png
 import AppKit
 

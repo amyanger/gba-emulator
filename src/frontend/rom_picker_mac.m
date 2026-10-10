@@ -30,4 +30,4 @@ RomPickResult rom_picker_choose(char* out, size_t out_size) {
     }
 }
 
-void rom_picker_hide_console(void) {}
+bool rom_picker_hide_console(void) { return false; }

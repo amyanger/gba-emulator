@@ -14,9 +14,8 @@
 #include "frontend/xray/xray.h"
 #endif
 
-bool frontend_init(Frontend* fe, int scale) {
-    memset(fe, 0, sizeof(*fe));
-
+/* SDL reads these at video init, so call before the first SDL_Init. */
+void frontend_set_hints(void) {
     /* Per-monitor DPI awareness so Windows does not bitmap-stretch the window.
      * With DPI scaling on, SDL reports window sizes in points like macOS. */
 #ifdef SDL_HINT_WINDOWS_DPI_AWARENESS
@@ -30,6 +29,12 @@ bool frontend_init(Frontend* fe, int scale) {
     SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON, "1");
     SDL_SetHint(SDL_HINT_WINDOWS_INTRESOURCE_ICON_SMALL, "1");
 #endif
+}
+
+bool frontend_init(Frontend* fe, int scale) {
+    memset(fe, 0, sizeof(*fe));
+
+    frontend_set_hints();
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) < 0) {
         LOG_ERROR("SDL init failed: %s", SDL_GetError());

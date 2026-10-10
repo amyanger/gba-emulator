@@ -70,6 +70,7 @@ typedef struct Frontend {
 // Forward declaration
 typedef struct APU APU;
 
+void frontend_set_hints(void);
 bool frontend_init(Frontend* fe, int scale);
 void frontend_destroy(Frontend* fe);
 void frontend_apply_layout(Frontend* fe);

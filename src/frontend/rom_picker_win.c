@@ -21,7 +21,9 @@ RomPickResult rom_picker_choose(char* out, size_t out_size) {
 
 /* Launched from Explorer (double-click or a ROM dropped on the .exe), the
  * console belongs to us alone; from a terminal it is shared. */
-void rom_picker_hide_console(void) {
+bool rom_picker_hide_console(void) {
     DWORD pids[2];
-    if (GetConsoleProcessList(pids, 2) == 1) FreeConsole();
+    if (GetConsoleProcessList(pids, 2) != 1) return false;
+    FreeConsole();
+    return true;
 }

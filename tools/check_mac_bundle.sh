@@ -14,7 +14,7 @@ fail() { echo "FAIL: $*"; exit 1; }
 [ -f "$APP/Contents/Resources/app.icns" ] || fail "missing icon"
 [ -f "$APP/Contents/Frameworks/SDL2.framework/Versions/A/SDL2" ] || fail "SDL2.framework not bundled"
 [ -L "$APP/Contents/Frameworks/SDL2.framework/SDL2" ] || fail "framework symlinks were flattened"
-if otool -L "$BIN" | grep -E "/opt/homebrew|/usr/local"; then fail "links outside the bundle"; fi
+if otool -L "$BIN" | tail -n +2 | grep -E "/opt/homebrew|/usr/local"; then fail "links outside the bundle"; fi
 otool -L "$BIN" | grep -q "@rpath/SDL2.framework" || fail "SDL2 not linked through @rpath"
 otool -l "$BIN" | grep -A2 LC_RPATH | grep -q "@executable_path/../Frameworks" || fail "rpath missing"
 minos=$(otool -l "$BIN" | awk '/LC_BUILD_VERSION/{f=1} f && /minos/{print $2; exit}')

@@ -84,13 +84,16 @@ static void print_usage(const char* prog) {
 }
 
 int main(int argc, char* argv[]) {
-    rom_picker_hide_console();
+    bool console_hidden = rom_picker_hide_console();
 
     /* No arguments means a double-click: ask for a ROM instead of printing usage. */
     static char picked_rom[1024];
     bool gui_launch = argc < 2;
+    /* No terminal to read stderr: report failures in a dialog instead. */
+    bool no_terminal = gui_launch || console_hidden;
     const char* rom_path = argv[1];
     if (gui_launch) {
+        frontend_set_hints();
         if (!rom_picker_launch(picked_rom, sizeof(picked_rom))) {
             print_usage(argv[0]);
             return 0;
@@ -274,7 +277,7 @@ int main(int argc, char* argv[]) {
 
     if (!gba_load_rom(&gba, rom_path)) {
         LOG_ERROR("Failed to load ROM: %s", rom_path);
-        if (gui_launch) rom_picker_alert("Couldn't load that file as a GBA ROM.");
+        if (no_terminal) rom_picker_alert("Couldn't load that file as a GBA ROM.");
         // Mirror the normal-cleanup path so a failed ROM load doesn't leak
         // the link socket fd or leave a stray socket file behind.
         if (link_peer) link_peer_shutdown(link_peer);
@@ -369,6 +372,7 @@ int main(int argc, char* argv[]) {
     Frontend fe;
     if (!frontend_init(&fe, scale)) {
         LOG_ERROR("Failed to initialize frontend");
+        if (no_terminal) rom_picker_alert("Couldn't open the game window.");
         if (link_peer) link_peer_shutdown(link_peer);
         gba_destroy(&gba);
         return 1;

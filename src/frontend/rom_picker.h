@@ -13,8 +13,9 @@ typedef enum {
 /* Per-OS file picker filtered to .gba. Writes a UTF-8 path on ROM_PICK_OK. */
 RomPickResult rom_picker_choose(char* out, size_t out_size);
 
-/* Windows: drop the console when launched from Explorer. No-op elsewhere. */
-void rom_picker_hide_console(void);
+/* Windows: drop the console when launched from Explorer. Returns true if it
+ * did (stderr is then invisible). No-op returning false elsewhere. */
+bool rom_picker_hide_console(void);
 
 /* Startup without a ROM argument. Takes a ROM dropped on the app icon at
  * launch (macOS), otherwise shows the picker. Leaves SDL video initialized on

@@ -19,11 +19,10 @@ jobs:
             asset_suffix: linux-x86_64
             install: sudo apt-get update && sudo apt-get install -y libsdl2-dev
             cmake_extra: ""
-            cpack_generator: TGZ
             artifact_glob: build/gba_emulator-*.AppImage
           - os: macos-latest
             asset_suffix: macos-arm64
-            install: brew install sdl2
+            install: echo "SDL2 comes from the official framework"
             cmake_extra: >-
               -DMACOS_APP_BUNDLE=ON
               -DMACOS_SDL2_FRAMEWORK=$RUNNER_TEMP/sdl2/SDL2.framework
@@ -81,6 +80,7 @@ jobs:
           if ! grep -q "ROM loaded:" smoke.log; then echo "Unicode path failed to open"; exit 1; fi
 
       - name: Package
+        if: runner.os != 'Linux'
         working-directory: build
         run: cpack -G ${{ matrix.cpack_generator }} -C Release
 
@@ -88,9 +88,10 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           MNT=$(mktemp -d)
+          trap 'hdiutil detach "$MNT" || true' EXIT
           hdiutil attach -nobrowse -readonly -mountpoint "$MNT" build/gba_emulator-*.dmg
-          tools/check_mac_bundle.sh "$MNT/GBA Emulator.app"
-          hdiutil detach "$MNT"
+          printf 'x%.0s' $(seq 1 192) > "$RUNNER_TEMP/tiny.gba"
+          tools/check_mac_bundle.sh "$MNT/GBA Emulator.app" "$RUNNER_TEMP/tiny.gba"
 
       - name: Build AppImage (Linux)
         if: runner.os == 'Linux'
