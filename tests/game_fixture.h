@@ -27,7 +27,7 @@ static inline void fixture_order(uint32_t n, uint8_t order[4]) {
 /* plain[type] is the decrypted 12-byte substruct of that type.
  * flags: byte 0x13 (bit1 hasSpecies, bit2 isEgg, bit0 isBadEgg). */
 static inline void fixture_encode_mon(uint8_t raw[100], uint32_t personality, uint32_t ot_id,
-                               const uint8_t plain[4][12], uint8_t flags) {
+                               uint8_t plain[4][12], uint8_t flags) {
     uint8_t order[4];
     uint8_t secure[48];
     uint16_t sum = 0;
