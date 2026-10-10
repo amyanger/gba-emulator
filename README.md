@@ -126,7 +126,7 @@ Each download includes everything it needs, SDL2 included.
 
 ### macOS (Apple Silicon, macOS 11 or newer)
 
-1. Download `gba_emulator-0.3.1-macOS-arm64.dmg` from the Releases page and open it.
+1. Download `gba_emulator-0.4.0-macOS-arm64.dmg` from the Releases page and open it.
 2. Drag **GBA Emulator** into **Applications**.
 3. Double-click **GBA Emulator** and choose a `.gba` file. You can also drop a ROM onto the app icon.
 
@@ -144,19 +144,19 @@ Saves are written next to the ROM. To use command-line options, run the binary i
 
 ### Linux (x86_64)
 
-1. Download `gba_emulator-0.3.1-Linux-x86_64.AppImage` from the Releases page.
-2. Make it executable: right-click it, open **Properties** and allow running it as a program, or run `chmod +x gba_emulator-0.3.1-Linux-x86_64.AppImage`.
+1. Download `gba_emulator-0.4.0-Linux-x86_64.AppImage` from the Releases page.
+2. Make it executable: right-click it, open **Properties** and allow running it as a program, or run `chmod +x gba_emulator-0.4.0-Linux-x86_64.AppImage`.
 3. Double-click it and choose a `.gba` file.
 
 The file picker uses `zenity` (GNOME and most desktops) or `kdialog` (KDE). If neither is installed, pass the ROM on the command line:
 
 ```bash
-./gba_emulator-0.3.1-Linux-x86_64.AppImage path/to/rom.gba --scale 3
+./gba_emulator-0.4.0-Linux-x86_64.AppImage path/to/rom.gba --scale 3
 ```
 
 ### Windows (x86_64)
 
-1. Download `gba_emulator-0.3.1-Windows-AMD64.zip` from the Releases page and extract it.
+1. Download `gba_emulator-0.4.0-Windows-AMD64.zip` from the Releases page and extract it.
 2. Double-click `gba_emulator.exe` in the `bin` folder and choose a `.gba` file. Dragging a ROM onto the `.exe` also works.
 
 Windows SmartScreen may warn that the app is from an unknown publisher, because it isn't signed with a paid certificate. Click **More info**, then **Run anyway**.
@@ -164,7 +164,7 @@ Windows SmartScreen may warn that the app is from an unknown publisher, because 
 Command-line options still work from a terminal:
 
 ```
-gba_emulator-0.3.1-Windows-AMD64\bin\gba_emulator.exe path\to\rom.gba --scale 3
+gba_emulator-0.4.0-Windows-AMD64\bin\gba_emulator.exe path\to\rom.gba --scale 3
 ```
 
 ### Other platforms
