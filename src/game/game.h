@@ -39,7 +39,7 @@ typedef struct {
     char move[GAME_NAME_LEN];
     uint8_t quarters;
     bool status_move;
-    uint8_t type; /* effective matchup type, 0xFF when unknown or a status move */
+    uint8_t type; /* effective matchup type, 0xFF when the move id is out of range or unreadable */
 } GameMoveEff;
 
 typedef struct {

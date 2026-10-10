@@ -11,7 +11,7 @@ void ui_stb_arena_reset(void);
 
 #define UI_STB_ARENA_SIZE (512 * 1024)
 
-static uint8_t s_arena[UI_STB_ARENA_SIZE];
+static _Alignas(16) uint8_t s_arena[UI_STB_ARENA_SIZE];
 static size_t s_used;
 
 void* ui_stb_arena_alloc(size_t n) {
