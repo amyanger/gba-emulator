@@ -2,6 +2,8 @@
 #define XRAY_H
 
 #include "common.h"
+#include "ui/ui_canvas.h"
+#include "ui/ui_font.h"
 #ifdef ENABLE_REWIND
 #include "rewind/rewind.h"
 #endif
@@ -16,9 +18,14 @@ typedef struct Timer Timer;
 typedef struct DMAController DMAController;
 typedef struct InterruptController InterruptController;
 
-/* X-Ray window dimensions */
-#define XRAY_WIDTH  1280
-#define XRAY_HEIGHT 960
+/* Layout is designed in points and drawn at a density (pixels per point). */
+#define XRAY_W_PT          1200
+#define XRAY_H_PT          820
+#define XRAY_TITLEBAR_PT   28
+#define XRAY_MIN_TEXT_PT   10.0f   /* smallest text drawn: pills (UI_SIZE_PILL) */
+#define XRAY_MAX_DENSITY   2.0f
+#define XRAY_FB_MAX_W      2400
+#define XRAY_FB_MAX_H      1640
 
 /* GBA screen dimensions for layer buffers */
 #define XRAY_LAYER_W SCREEN_WIDTH   /* 240 */
@@ -30,39 +37,47 @@ typedef struct InterruptController InterruptController;
 /* Activity flash duration in frames */
 #define XRAY_FLASH_FRAMES 8
 
-/* Color scheme */
-#define XRAY_COL_BG        0xFF0A0A2E  /* Dark navy background */
-#define XRAY_COL_PANEL_BG  0xFF0D0D36  /* Slightly lighter panel bg */
-#define XRAY_COL_BORDER    0xFF334466  /* Panel border */
-#define XRAY_COL_HEADER    0xFF00FFFF  /* Cyan panel headers */
-#define XRAY_COL_LABEL     0xFF88AACC  /* Muted blue-gray labels */
-#define XRAY_COL_VALUE     0xFF00FF88  /* Green values */
-#define XRAY_COL_DIM       0xFF445566  /* Dimmed/inactive text */
-#define XRAY_COL_FLASH     0xFFFF2222  /* Bright red activity flash */
-#define XRAY_COL_WHITE     0xFFFFFFFF
-#define XRAY_COL_BLACK     0xFF000000
+/* Text sizes and spacing in points */
+#define XRAY_SIZE_TITLE    14.0f
+#define XRAY_SIZE_TEXT     11.5f
+#define XRAY_SIZE_CAPTION  11.0f
+#define XRAY_SIZE_HEAD     10.5f
+#define XRAY_ROW           16.0f
+#define XRAY_PAD           14.0f
 
-/* Layer overlay colors */
-#define XRAY_COL_BG0       0xFFFF4444  /* Red */
-#define XRAY_COL_BG1       0xFF44FF44  /* Green */
-#define XRAY_COL_BG2       0xFF4444FF  /* Blue */
-#define XRAY_COL_BG3       0xFFFFFF44  /* Yellow */
-#define XRAY_COL_OBJ       0xFFFF44FF  /* Magenta */
-#define XRAY_COL_BACKDROP  0xFF888888  /* Gray */
+/* Layer accent colors, matched between thumbnails and the layer table */
+#define XRAY_COL_BG0       0xFFFF6B6Bu
+#define XRAY_COL_BG1       0xFF3DDC97u
+#define XRAY_COL_BG2       0xFF6FA8FFu
+#define XRAY_COL_BG3       0xFFF2C94Cu
+#define XRAY_COL_OBJ       0xFFFF7AA8u
+#define XRAY_COL_BACKDROP  0xFF7D8494u
+
+typedef enum {
+    XRAY_CARD_SEE,
+    XRAY_CARD_HEAR,
+    XRAY_CARD_TILES,
+    XRAY_CARD_CPU,
+    XRAY_CARD_SCENES,
+    XRAY_CARD_COUNT
+} XRayCard;
 
 struct XRayState {
     /* SDL2 resources */
     SDL_Window* window;
     SDL_Renderer* renderer;
     SDL_Texture* texture;
+    int tex_w, tex_h;
     uint32_t window_id;
 
     /* State */
-    bool active;        /* Currently visible */
+    bool active;        /* Currently visible (or feeding a headless export) */
     bool ever_opened;   /* Track first open for window creation */
 
-    /* Main framebuffer (1280x960, ARGB8888) */
-    uint32_t framebuffer[XRAY_WIDTH * XRAY_HEIGHT];
+    /* Canvas pixels, sized for the largest density (ARGB8888) */
+    uint32_t framebuffer[XRAY_FB_MAX_W * XRAY_FB_MAX_H];
+    /* Native-resolution staging for tile sheets, palettes and the layer map */
+    uint32_t scratch[XRAY_LAYER_W * XRAY_LAYER_H];
 
     /* PPU layer isolation buffers (240x160 each, GBA 15-bit) */
     uint16_t layer_bg[4][XRAY_LAYER_W * XRAY_LAYER_H];
@@ -79,15 +94,6 @@ struct XRayState {
     uint8_t timer_flash[4];
     uint8_t dma_flash[4];
     uint8_t irq_flash[16];
-
-    /* IPS (instructions per second) tracking */
-    uint64_t ips_count;
-    uint64_t ips_display;
-    uint32_t ips_frame_counter;
-    uint64_t ips_last_total_cycles;
-
-    /* Frame skip counter */
-    uint8_t frame_counter;
 };
 typedef struct XRayState XRayState;
 
@@ -95,13 +101,35 @@ typedef struct XRayState XRayState;
  * Subsystem hooks check this before notifying. */
 extern XRayState* g_xray;
 
-/* Lifecycle */
+/* Lifecycle (xray_init in xray_draw.c so headless code can use it; the rest in xray.c) */
 void xray_init(XRayState* state);
 void xray_destroy(XRayState* state);
 void xray_toggle(XRayState* state);
 
 /* Per-frame rendering (call after gba_run_frame) */
 void xray_render(XRayState* state, GBA* gba);
+
+/* Layout and drawing (xray_draw.c, no SDL) */
+extern const UiRect xray_cards[XRAY_CARD_COUNT];
+extern const char* const xray_titles[XRAY_CARD_COUNT];
+extern const char* const xray_captions[XRAY_CARD_COUNT];
+
+typedef struct { float scale; int win_w, win_h; } XRayFit;
+/* Window size for a display's usable area in points (0 = unknown) and its pixel ratio. */
+XRayFit xray_fit(int usable_w_pt, int usable_h_pt, float px_per_pt);
+/* Canvas pixel size and density for a renderer output size, capped at XRAY_MAX_DENSITY. */
+void xray_canvas_size(int out_w, int out_h, int* cw, int* ch, float* density);
+
+void xray_draw(UiCanvas* c, GBA* gba, XRayState* s);
+/* Fade activity flashes by one frame (call once per emulated frame). */
+void xray_decay_flash(XRayState* s);
+/* Card background, title, optional pill and caption. Returns the content top in points. */
+float xray_card(UiCanvas* c, XRayCard id, const char* pill);
+/* Nearest-neighbour blits of native-size images into a point rect, clipped to the canvas. */
+void xray_blit_555(UiCanvas* c, UiRect dst, const uint16_t* src, int sw, int sh);
+void xray_blit_argb(UiCanvas* c, UiRect dst, const uint32_t* src, int sw, int sh);
+float xray_textf(UiCanvas* c, UiFont f, float size, float x, float y, float max_w, UiAlign a,
+                 uint32_t argb, const char* fmt, ...);
 
 /* Activity notification hooks (called from subsystems) */
 static inline void xray_notify_timer_overflow(XRayState* state, int timer_id) {
@@ -122,32 +150,22 @@ static inline void xray_notify_irq(XRayState* state, uint16_t irq_bit) {
     }
 }
 
-/* Panel render functions (implemented in separate files) */
-void xray_render_cpu(uint32_t* buf, int buf_w, int buf_h, int px, int py,
-                     int pw, int ph, ARM7TDMI* cpu, XRayState* state);
-
-void xray_render_activity(uint32_t* buf, int buf_w, int buf_h, int px, int py,
-                          int pw, int ph, Timer* timers,
-                          DMAController* dma, InterruptController* ic,
-                          XRayState* state);
-
-void xray_render_ppu(uint32_t* buf, int buf_w, int buf_h, int px, int py,
-                     int pw, int ph, PPU* ppu, XRayState* state);
-
+/* Captures (no-ops unless state->active) */
 void xray_capture_ppu_layers(PPU* ppu, XRayState* state);
-
-void xray_render_tiles(uint32_t* buf, int buf_w, int buf_h, int px, int py,
-                       int pw, int ph, PPU* ppu);
-
-void xray_render_audio(uint32_t* buf, int buf_w, int buf_h, int px, int py,
-                       int pw, int ph, APU* apu, XRayState* state);
-
 void xray_capture_audio(APU* apu, XRayState* state);
 
+/* Cards (implemented in separate files) */
+void xray_render_ppu(UiCanvas* c, PPU* ppu, XRayState* s);
+void xray_render_tiles(UiCanvas* c, PPU* ppu, XRayState* s);
+void xray_render_audio(UiCanvas* c, APU* apu, XRayState* s);
+void xray_render_cpu(UiCanvas* c, ARM7TDMI* cpu);
+/* Address of the executing instruction: PC runs 8 bytes ahead in ARM, 4 in Thumb. */
+uint32_t xray_cpu_exec_addr(const ARM7TDMI* cpu);
+void xray_render_activity(UiCanvas* c, Timer* timers, DMAController* dma,
+                          InterruptController* ic, XRayState* s);
 #ifdef ENABLE_REWIND
-/* Rewind status overlay (one line, drawn over bottom of CPU panel) */
-void xray_render_rewind(uint32_t* buf, int buf_w, int buf_h, int px, int py,
-                        int pw, int ph, const RewindBuffer* rb);
+/* One status line inside the Processor card */
+void xray_render_rewind(UiCanvas* c, float x, float y, float w, const RewindBuffer* rb);
 #endif
 
 #endif /* XRAY_H */

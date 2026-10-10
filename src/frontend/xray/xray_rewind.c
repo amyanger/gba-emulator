@@ -1,27 +1,14 @@
 #include "xray.h"
-#include "frontend/overlay_draw.h"
 #include "rewind/rewind.h"
+#include "ui/ui_theme.h"
 
-void xray_render_rewind(uint32_t* buf, int buf_w, int buf_h,
-                        int px, int py, int pw, int ph,
-                        const RewindBuffer* rb) {
-    (void)pw;
-    (void)ph;
+void xray_render_rewind(UiCanvas* c, float x, float y, float w, const RewindBuffer* rb) {
     if (!rb) return;
-
-    uint32_t depth    = rewind_depth(rb);
-    uint32_t capacity = rb->capacity;
-    double   mb       = (double)rewind_bytes_used(rb) / (1024.0 * 1024.0);
-
-    /* Line 1: depth/capacity and memory used. Always shown. */
-    overlay_draw_textf(buf, buf_w, buf_h, px + 4, py + 4,
-                    XRAY_COL_LABEL,
-                    "REW depth: %u/%u   %.1f MB",
-                    depth, capacity, mb);
-
-    /* Line 2: live indicator only when rewind is active. */
-    if (rewind_active(rb)) {
-        overlay_draw_text(buf, buf_w, buf_h, px + 4, py + 14,
-                       "[REWINDING]", XRAY_COL_FLASH);
-    }
+    double mb = (double)rewind_bytes_used(rb) / (1024.0 * 1024.0);
+    float tw = xray_textf(c, UI_FONT_REGULAR, XRAY_SIZE_HEAD, x, y, w, UI_ALIGN_LEFT, UI_DIM,
+                          "Rewind memory: %u of %u snapshots \xC2\xB7 %.1f MB",
+                          (unsigned)rewind_depth(rb), (unsigned)rb->capacity, mb);
+    if (rewind_active(rb))
+        ui_text(c, UI_FONT_SEMIBOLD, XRAY_SIZE_HEAD, x + tw + 8.0f, y, 0, UI_ALIGN_LEFT, UI_WARN,
+                "Rewinding");
 }

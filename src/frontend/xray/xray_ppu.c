@@ -1,28 +1,13 @@
 #include "xray.h"
 #include "frontend/overlay_draw.h"
 #include "ppu/ppu.h"
+#include "ui/ui_theme.h"
+#include "ui/ui_widgets.h"
 
-/* Layer overlay colors (indexed by layer ID: 0-3=BG, 4=OBJ, 5=backdrop) */
+/* Layer colors indexed by layer ID: 0-3 = BG, 4 = OBJ, 5 = backdrop */
 static const uint32_t layer_colors[6] = {
-    XRAY_COL_BG0, XRAY_COL_BG1, XRAY_COL_BG2, XRAY_COL_BG3,
-    XRAY_COL_OBJ, XRAY_COL_BACKDROP
+    XRAY_COL_BG0, XRAY_COL_BG1, XRAY_COL_BG2, XRAY_COL_BG3, XRAY_COL_OBJ, XRAY_COL_BACKDROP
 };
-
-static const char* layer_names[6] = {
-    "BG0", "BG1", "BG2", "BG3", "OBJ", "BDR"
-};
-
-static const char* ppu_mode_name(uint8_t mode) {
-    switch (mode) {
-    case 0:  return "Mode 0 (4x Tiled)";
-    case 1:  return "Mode 1 (2T+1A)";
-    case 2:  return "Mode 2 (2x Affine)";
-    case 3:  return "Mode 3 (Bitmap 16b)";
-    case 4:  return "Mode 4 (Bitmap 8b)";
-    case 5:  return "Mode 5 (Bitmap 16b small)";
-    default: return "Mode ???";
-    }
-}
 
 void xray_capture_ppu_layers(PPU* ppu, XRayState* state) {
     if (!state || !state->active) return;
@@ -135,154 +120,129 @@ void xray_capture_ppu_layers(PPU* ppu, XRayState* state) {
     memcpy(ppu->bg_ref_y, saved_ref_y, sizeof(saved_ref_y));
 }
 
-/* Half-resolution blit: sample every other pixel for 120x80 output */
-static void blit_gba_half(uint32_t* buf, int buf_w, int buf_h,
-                          int dst_x, int dst_y,
-                          const uint16_t* src, int src_w, int src_h) {
-    for (int sy = 0; sy < src_h; sy += 2) {
-        int dy = dst_y + sy / 2;
-        if (dy < 0 || dy >= buf_h) continue;
-        for (int sx = 0; sx < src_w; sx += 2) {
-            int dx = dst_x + sx / 2;
-            if (dx >= 0 && dx < buf_w) {
-                buf[dy * buf_w + dx] = gba_to_argb(src[sy * src_w + sx]);
-            }
-        }
+static const char* mode_pill(uint8_t mode) {
+    switch (mode) {
+    case 0:  return "Mode 0 \xC2\xB7 4 tiled layers";
+    case 1:  return "Mode 1 \xC2\xB7 2 tiled + 1 rotating";
+    case 2:  return "Mode 2 \xC2\xB7 2 rotating layers";
+    case 3:  return "Mode 3 \xC2\xB7 full-color bitmap";
+    case 4:  return "Mode 4 \xC2\xB7 256-color bitmap";
+    case 5:  return "Mode 5 \xC2\xB7 small bitmap";
+    default: return "Unknown mode";
     }
 }
 
-void xray_render_ppu(uint32_t* buf, int buf_w, int buf_h, int px, int py,
-                     int pw, int ph, PPU* ppu, XRayState* state) {
-    (void)ph;
-    (void)pw;
+/* What a BG's scroll column shows: "" for scroll offsets, a word for other kinds,
+ * NULL when the mode has no such layer. */
+static const char* bg_kind(uint8_t mode, int bg) {
+    if (mode >= 3) return bg == 2 ? "bitmap" : NULL;
+    if (mode == 2) return bg >= 2 ? "rotating" : NULL;
+    if (mode == 1 && bg == 2) return "rotating";
+    if (mode == 1 && bg == 3) return NULL;
+    return "";
+}
 
-    int x0 = px + 4;
-    int y0 = py + 16;
+#define THUMB_W 129.0f
+#define THUMB_H 86.0f
+#define THUMB_GAP 10.0f
 
+/* The composited frame tinted by which layer produced each pixel. */
+static void layer_map_to_argb(const PPU* ppu, const XRayState* s, uint32_t* out) {
+    for (int y = 0; y < SCREEN_HEIGHT; y++)
+        for (int x = 0; x < SCREEN_WIDTH; x++) {
+            uint8_t layer = s->layer_map[y][x];
+            if (layer > 5) layer = 5;
+            uint32_t tint = layer_colors[layer];
+            uint32_t argb = gba_to_argb(ppu->framebuffer[y * SCREEN_WIDTH + x]);
+            uint32_t r = ((argb >> 16) & 0xFF) / 2 + ((tint >> 16) & 0xFF) / 2;
+            uint32_t g = ((argb >> 8) & 0xFF) / 2 + ((tint >> 8) & 0xFF) / 2;
+            uint32_t b = (argb & 0xFF) / 2 + (tint & 0xFF) / 2;
+            out[y * SCREEN_WIDTH + x] = 0xFF000000u | (r << 16) | (g << 8) | b;
+        }
+}
+
+static void thumb(UiCanvas* c, float x, float y, const char* label, uint32_t color, bool on,
+                  const uint16_t* img555, const uint32_t* img_argb) {
+    ui_text(c, UI_FONT_SEMIBOLD, XRAY_SIZE_HEAD, x, y, THUMB_W, UI_ALIGN_LEFT,
+            on ? color : UI_FAINT, label);
+    UiRect img = {x, y + 15.0f, THUMB_W, THUMB_H};
+    if (on && img555) {
+        xray_blit_555(c, img, img555, SCREEN_WIDTH, SCREEN_HEIGHT);
+    } else if (on && img_argb) {
+        xray_blit_argb(c, img, img_argb, SCREEN_WIDTH, SCREEN_HEIGHT);
+    } else {
+        ui_fill_round_rect(c, img, 4.0f, UI_BG);
+        ui_text(c, UI_FONT_REGULAR, XRAY_SIZE_HEAD, x + THUMB_W / 2, img.y + THUMB_H / 2 - 7.0f,
+                0, UI_ALIGN_CENTER, UI_FAINT, "Not used");
+    }
+}
+
+static void head_right(UiCanvas* c, float x, float y, const char* t) {
+    ui_text(c, UI_FONT_SEMIBOLD, XRAY_SIZE_HEAD, x, y, 0, UI_ALIGN_RIGHT, UI_DIM, t);
+}
+
+void xray_render_ppu(UiCanvas* c, PPU* ppu, XRayState* s) {
     uint8_t mode = ppu->dispcnt & 0x7;
+    float top = xray_card(c, XRAY_CARD_SEE, mode_pill(mode));
+    UiRect r = xray_cards[XRAY_CARD_SEE];
+    float x0 = r.x + XRAY_PAD;
 
-    /* Half-resolution mini-views: 120x80 each.
-     * 3 columns: 3*120 + 2*8 + margins = 392, fits in 640px.
-     * 2 rows: 2*(80+14+4) + header = 212px, leaves room for info text. */
-    int view_w = SCREEN_WIDTH / 2;   /* 120 */
-    int view_h = SCREEN_HEIGHT / 2;  /* 80 */
-    int gap = 8;
-    int grid_x = x0 + 2;
-    int grid_y = y0 + 2;
-
-    typedef struct {
-        const char* label;
-        const uint16_t* data;
-        bool active;
-        int layer_id;
-    } LayerView;
-
-    LayerView views[6] = {
-        {"BG0", state->layer_bg[0], BIT(ppu->dispcnt, 8) != 0, 0},
-        {"BG1", state->layer_bg[1], BIT(ppu->dispcnt, 9) != 0, 1},
-        {"BG2", state->layer_bg[2], BIT(ppu->dispcnt, 10) != 0, 2},
-        {"BG3", state->layer_bg[3], BIT(ppu->dispcnt, 11) != 0, 3},
-        {"OBJ", state->layer_obj, BIT(ppu->dispcnt, 12) != 0, 4},
-        {"MAP", NULL, true, -1}
-    };
-
-    for (int row = 0; row < 2; row++) {
-        for (int col = 0; col < 3; col++) {
-            int idx = row * 3 + col;
-            int vx = grid_x + col * (view_w + gap);
-            int vy = grid_y + row * (view_h + 14 + gap);
-
-            /* Label */
-            uint32_t label_col = views[idx].active
-                ? layer_colors[views[idx].layer_id < 0 ? 5 : views[idx].layer_id]
-                : XRAY_COL_DIM;
-            overlay_draw_text(buf, buf_w, buf_h, vx, vy, views[idx].label,
-                           label_col);
-            if (!views[idx].active) {
-                overlay_draw_text(buf, buf_w, buf_h, vx + 32, vy, "(off)",
-                               XRAY_COL_DIM);
-            }
-            vy += 10;
-
-            /* View border */
-            overlay_draw_rect_outline(buf, buf_w, buf_h, vx - 1, vy - 1,
-                                   view_w + 2, view_h + 2, XRAY_COL_BORDER);
-
-            if (idx == 5) {
-                /* Layer map overlay: composited framebuffer with color tinting
-                 * based on which layer produced each pixel */
-                for (int ly = 0; ly < SCREEN_HEIGHT; ly += 2) {
-                    int dy = vy + ly / 2;
-                    if (dy < 0 || dy >= buf_h) continue;
-                    for (int lx = 0; lx < SCREEN_WIDTH; lx += 2) {
-                        int dx = vx + lx / 2;
-                        if (dx < 0 || dx >= buf_w) continue;
-
-                        uint8_t layer = state->layer_map[ly][lx];
-                        if (layer > 5) layer = 5;
-                        uint32_t tint = layer_colors[layer];
-
-                        uint16_t gba_pix = ppu->framebuffer[ly * SCREEN_WIDTH + lx];
-                        uint32_t argb = gba_to_argb(gba_pix);
-
-                        /* Blend: 50% original + 50% tint */
-                        uint32_t r = ((argb >> 16) & 0xFF) / 2 +
-                                     ((tint >> 16) & 0xFF) / 2;
-                        uint32_t g = ((argb >> 8) & 0xFF) / 2 +
-                                     ((tint >> 8) & 0xFF) / 2;
-                        uint32_t b = (argb & 0xFF) / 2 + (tint & 0xFF) / 2;
-
-                        buf[dy * buf_w + dx] =
-                            0xFF000000 | (r << 16) | (g << 8) | b;
-                    }
-                }
-            } else if (views[idx].active && views[idx].data) {
-                blit_gba_half(buf, buf_w, buf_h, vx, vy, views[idx].data,
-                              SCREEN_WIDTH, SCREEN_HEIGHT);
-            } else {
-                /* Inactive: fill with dark */
-                overlay_draw_rect(buf, buf_w, buf_h, vx, vy, view_w, view_h,
-                               0xFF050510);
-            }
+    static const char* names[4] = {"BG0", "BG1", "BG2", "BG3"};
+    for (int i = 0; i < 6; i++) {
+        float tx = x0 + (float)(i % 3) * (THUMB_W + THUMB_GAP);
+        float ty = top + (float)(i / 3) * (THUMB_H + 15.0f + 10.0f);
+        if (i < 4) {
+            bool on = BIT(ppu->dispcnt, 8 + i) && bg_kind(mode, i) != NULL;
+            thumb(c, tx, ty, names[i], layer_colors[i], on, s->layer_bg[i], NULL);
+        } else if (i == 4) {
+            thumb(c, tx, ty, "Sprites", layer_colors[4], BIT(ppu->dispcnt, 12), s->layer_obj, NULL);
+        } else {
+            layer_map_to_argb(ppu, s, s->scratch);
+            thumb(c, tx, ty, "Who drew each pixel", UI_MUTED, true, NULL, s->scratch);
         }
     }
 
-    /* PPU info text below the views */
-    int info_y = grid_y + 2 * (view_h + 14 + gap) + 4;
-    overlay_draw_textf(buf, buf_w, buf_h, x0, info_y, XRAY_COL_LABEL,
-                    "%s", ppu_mode_name(mode));
-    info_y += 12;
-
-    /* Active layers list */
-    int lx = x0;
-    overlay_draw_text(buf, buf_w, buf_h, lx, info_y, "Layers:", XRAY_COL_LABEL);
-    lx += 64;
-    for (int i = 0; i < 5; i++) {
-        bool active = BIT(ppu->dispcnt, 8 + i);
-        const char* name = (i < 4) ? layer_names[i] : "OBJ";
-        uint32_t col = active ? layer_colors[i] : XRAY_COL_DIM;
-        lx = overlay_draw_text(buf, buf_w, buf_h, lx, info_y, name, col);
-        lx += 8;
-    }
-    info_y += 12;
-
-    /* Scroll offsets for tiled modes */
-    if (mode <= 1) {
-        for (int bg = 0; bg < (mode == 0 ? 4 : 2); bg++) {
-            if (!BIT(ppu->dispcnt, 8 + bg)) continue;
-            overlay_draw_textf(buf, buf_w, buf_h, x0, info_y, layer_colors[bg],
-                            "BG%d scroll: (%d, %d)  prio: %d", bg,
-                            ppu->bg_hofs[bg], ppu->bg_vofs[bg],
-                            ppu->bg_cnt[bg] & 3);
-            info_y += 10;
+    /* Layer table, right of the thumbnails */
+    float tx = x0 + 3 * (THUMB_W + THUMB_GAP) + 10.0f;
+    float tw = r.x + r.w - XRAY_PAD - tx;
+    float sx = tx + 130.0f;
+    float y = top;
+    ui_section_label(c, tx, y, "LAYER");
+    head_right(c, sx, y, "SCROLL");
+    head_right(c, tx + tw, y, "PRIORITY");
+    y += XRAY_ROW;
+    for (int bg = 0; bg < 4; bg++, y += XRAY_ROW) {
+        const char* kind = bg_kind(mode, bg);
+        bool on = BIT(ppu->dispcnt, 8 + bg) && kind != NULL;
+        ui_text(c, UI_FONT_SEMIBOLD, XRAY_SIZE_TEXT, tx, y, 0, UI_ALIGN_LEFT,
+                on ? layer_colors[bg] : UI_FAINT, names[bg]);
+        if (!on) {
+            ui_text(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, sx, y, 0, UI_ALIGN_RIGHT, UI_FAINT, "off");
+            continue;
         }
+        if (kind[0])
+            ui_text(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, sx, y, 0, UI_ALIGN_RIGHT, UI_TEXT, kind);
+        else
+            xray_textf(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, sx, y, 0, UI_ALIGN_RIGHT, UI_TEXT,
+                       "%u, %u", (unsigned)(ppu->bg_hofs[bg] & 0x1FF),
+                       (unsigned)(ppu->bg_vofs[bg] & 0x1FF));   /* 9-bit registers */
+        xray_textf(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, tx + tw, y, 0, UI_ALIGN_RIGHT, UI_TEXT,
+                   "%u", (unsigned)(ppu->bg_cnt[bg] & 3));
     }
 
-    /* Blend mode info */
-    uint8_t blend_mode = (ppu->bldcnt >> 6) & 3;
-    const char* blend_names[] = {"None", "Alpha", "Brighten", "Darken"};
-    overlay_draw_textf(buf, buf_w, buf_h, x0, info_y, XRAY_COL_LABEL,
-                    "Blend: %s  EVA=%d EVB=%d EVY=%d", blend_names[blend_mode],
-                    ppu->bldalpha & 0x1F, (ppu->bldalpha >> 8) & 0x1F,
-                    ppu->bldy & 0x1F);
+    /* Blending in words */
+    static const char* blend_names[4] = {"None", "Mix two layers", "Brighten", "Darken"};
+    uint8_t blend = (ppu->bldcnt >> 6) & 3;
+    y += 8.0f;
+    ui_section_label(c, tx, y, "BLENDING");
+    y += XRAY_ROW;
+    ui_text(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, tx, y, tw, UI_ALIGN_LEFT, UI_TEXT, blend_names[blend]);
+    y += XRAY_ROW;
+    if (blend == 1)
+        xray_textf(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, tx, y, tw, UI_ALIGN_LEFT, UI_MUTED,
+                   "Top %u/16, bottom %u/16", (unsigned)(ppu->bldalpha & 0x1F),
+                   (unsigned)((ppu->bldalpha >> 8) & 0x1F));
+    else if (blend >= 2)
+        xray_textf(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, tx, y, tw, UI_ALIGN_LEFT, UI_MUTED,
+                   "Strength %u/16", (unsigned)(ppu->bldy & 0x1F));
 }

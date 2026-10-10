@@ -74,6 +74,7 @@ static void print_usage(const char* prog) {
     printf("  --panel-density <f>    Headless: panel pixels per point, 0.5 to 4.0 (default: 1.0)\n");
     printf("  --panel-page <p>       Headless: panel page, auto|party|route (default: auto)\n");
     printf("  --panel-select <n>     Headless: selected party slot on the party page (default: 0)\n");
+    printf("  --xray-out <file>      Headless: render the Hardware X-Ray window to a PNG after the run\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
@@ -110,6 +111,7 @@ int main(int argc, char* argv[]) {
     const char* panel_page_arg = NULL;
     const char* panel_density_arg = NULL;
     const char* panel_select_arg = NULL;
+    const char* xray_out_path = NULL;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -153,6 +155,8 @@ int main(int argc, char* argv[]) {
             panel_density_arg = argv[++i];
         } else if (strcmp(argv[i], "--panel-page") == 0 && i + 1 < argc) {
             panel_page_arg = argv[++i];
+        } else if (strcmp(argv[i], "--xray-out") == 0 && i + 1 < argc) {
+            xray_out_path = argv[++i];
         } else if (strcmp(argv[i], "--panel-select") == 0 && i + 1 < argc) {
             panel_select_arg = argv[++i];
         } else {
@@ -183,6 +187,16 @@ int main(int argc, char* argv[]) {
         LOG_ERROR("--panel-out, --panel-density, --panel-page and --panel-select require --headless");
         return 1;
     }
+    if (xray_out_path && !headless) {
+        LOG_ERROR("--xray-out requires --headless");
+        return 1;
+    }
+#ifndef ENABLE_XRAY
+    if (xray_out_path) {
+        LOG_ERROR("--xray-out needs X-Ray, which this build leaves out (ENABLE_XRAY=OFF)");
+        return 1;
+    }
+#endif
 
     float panel_density = 1.0f;
     if (panel_density_arg) {
@@ -312,6 +326,15 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
+#ifdef ENABLE_XRAY
+        if (xray_out_path) {
+            /* No window: active only feeds the hooks and captures during the run. */
+            xray_init(&s_xray_state);
+            s_xray_state.active = true;
+            gba.xray = &s_xray_state;
+            g_xray = &s_xray_state;
+        }
+#endif
         int rc = headless_run(&gba, headless_frames, hash_out,
                               input_script_path ? &input_script : NULL);
         if (hash_out != stdout) fclose(hash_out);
@@ -352,6 +375,22 @@ int main(int argc, char* argv[]) {
                 free(px);
             }
         }
+#ifdef ENABLE_XRAY
+        if (rc == 0 && xray_out_path) {
+            xray_capture_ppu_layers(&gba.ppu, &s_xray_state);
+            xray_capture_audio(&gba.apu, &s_xray_state);
+            UiCanvas canvas;
+            ui_canvas_init(&canvas, s_xray_state.framebuffer, XRAY_FB_MAX_W, XRAY_FB_MAX_H,
+                           XRAY_MAX_DENSITY);
+            xray_draw(&canvas, &gba, &s_xray_state);
+            if (!screenshot_save_argb(s_xray_state.framebuffer, XRAY_FB_MAX_W, XRAY_FB_MAX_H,
+                                      xray_out_path)) {
+                LOG_ERROR("Failed to write --xray-out file: %s", xray_out_path);
+                rc = 1;
+            }
+        }
+        g_xray = NULL;
+#endif
         gba_destroy(&gba);
         return rc;
     }

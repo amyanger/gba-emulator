@@ -1,128 +1,100 @@
 #include "xray.h"
-#include "frontend/overlay_draw.h"
 #include "cpu/arm7tdmi.h"
+#include "ui/ui_theme.h"
+#include "ui/ui_widgets.h"
+#include <stdio.h>
 
-static const char* cpu_mode_name(uint32_t cpsr) {
+static const char* mode_name(uint32_t cpsr) {
     switch (cpsr & 0x1F) {
-    case 0x10: return "USR";
-    case 0x11: return "FIQ";
-    case 0x12: return "IRQ";
-    case 0x13: return "SVC";
-    case 0x17: return "ABT";
-    case 0x1B: return "UND";
-    case 0x1F: return "SYS";
-    default:   return "???";
+    case 0x10: return "User mode";
+    case 0x11: return "Fast interrupt";
+    case 0x12: return "Interrupt";
+    case 0x13: return "Supervisor";
+    case 0x17: return "Abort";
+    case 0x1B: return "Undefined";
+    case 0x1F: return "System mode";
+    default:   return "Unknown mode";
     }
 }
 
-void xray_render_cpu(uint32_t* buf, int buf_w, int buf_h, int px, int py,
-                     int pw, int ph, ARM7TDMI* cpu, XRayState* state) {
-    (void)pw;
-    (void)ph;
+#define REG_ROW 15.0f
 
-    int x0 = px + 8;
-    int y0 = py + 18;  /* Below panel header */
-
-    /* Registers R0-R7 (left column) */
-    for (int i = 0; i < 8; i++) {
-        int y = y0 + i * 12;
-        overlay_draw_textf(buf, buf_w, buf_h, x0, y, XRAY_COL_LABEL,
-                        "R%-2d", i);
-        overlay_draw_textf(buf, buf_w, buf_h, x0 + 32, y, XRAY_COL_VALUE,
-                        "%08X", cpu->regs[i]);
-    }
-
-    /* Registers R8-R15 (right column) */
-    int x1 = px + 160;
-    for (int i = 8; i < 16; i++) {
-        int y = y0 + (i - 8) * 12;
-        const char* name;
-        switch (i) {
-        case 13: name = "SP"; break;
-        case 14: name = "LR"; break;
-        case 15: name = "PC"; break;
-        default:
-            overlay_draw_textf(buf, buf_w, buf_h, x1, y, XRAY_COL_LABEL,
-                            "R%-2d", i);
-            overlay_draw_textf(buf, buf_w, buf_h, x1 + 32, y, XRAY_COL_VALUE,
-                            "%08X", cpu->regs[i]);
-            continue;
-        }
-        overlay_draw_textf(buf, buf_w, buf_h, x1, y, XRAY_COL_LABEL, "%s", name);
-        overlay_draw_textf(buf, buf_w, buf_h, x1 + 32, y, XRAY_COL_VALUE,
-                        "%08X", cpu->regs[i]);
-    }
-
-    /* Separator line */
-    int sep_y = y0 + 8 * 12 + 4;
-    overlay_draw_hline(buf, buf_w, buf_h, x0, sep_y, 300, XRAY_COL_BORDER);
-
-    /* CPSR flags */
-    int fy = sep_y + 8;
-    overlay_draw_text(buf, buf_w, buf_h, x0, fy, "CPSR", XRAY_COL_LABEL);
-    overlay_draw_textf(buf, buf_w, buf_h, x0 + 48, fy, XRAY_COL_VALUE,
-                    "%08X", cpu->cpsr);
-
-    /* Individual flags as lit/unlit indicators */
-    int fx = x0 + 160;
-    struct { char name; int bit; } flags[] = {
-        {'N', CPSR_N}, {'Z', CPSR_Z}, {'C', CPSR_C}, {'V', CPSR_V},
-        {'I', CPSR_I}, {'F', CPSR_F}, {'T', CPSR_T}
-    };
-    for (int i = 0; i < 7; i++) {
-        bool set = (cpu->cpsr >> flags[i].bit) & 1;
-        uint32_t color = set ? XRAY_COL_VALUE : XRAY_COL_DIM;
-        char flag_str[2] = { flags[i].name, '\0' };
-        overlay_draw_text(buf, buf_w, buf_h, fx, fy, flag_str, color);
-        fx += 12;
-    }
-
-    /* CPU Mode */
-    int my = fy + 14;
-    overlay_draw_text(buf, buf_w, buf_h, x0, my, "Mode", XRAY_COL_LABEL);
-    overlay_draw_text(buf, buf_w, buf_h, x0 + 48, my, cpu_mode_name(cpu->cpsr),
-                   XRAY_COL_VALUE);
-
-    /* Thumb/ARM indicator */
+uint32_t xray_cpu_exec_addr(const ARM7TDMI* cpu) {
     bool thumb = (cpu->cpsr >> CPSR_T) & 1;
-    overlay_draw_text(buf, buf_w, buf_h, x0 + 100, my,
-                   thumb ? "THUMB" : "ARM", XRAY_COL_HEADER);
+    return cpu->regs[15] - (thumb ? 4u : 8u);
+}
 
-    /* Halted state */
+static void reg(UiCanvas* c, float x, float y, const char* name, uint32_t v) {
+    ui_text(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, x, y, 0, UI_ALIGN_LEFT, UI_MUTED, name);
+    xray_textf(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, x + 120.0f, y, 0, UI_ALIGN_RIGHT, UI_TEXT,
+               "%08X", (unsigned)v);
+}
+
+static void detail(UiCanvas* c, float x, float y, const char* label) {
+    ui_text(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, x, y, 0, UI_ALIGN_LEFT, UI_MUTED, label);
+}
+
+void xray_render_cpu(UiCanvas* c, ARM7TDMI* cpu) {
+    float top = xray_card(c, XRAY_CARD_CPU, "Clock 16.78 MHz");
+    UiRect r = xray_cards[XRAY_CARD_CPU];
+    float x0 = r.x + XRAY_PAD, right = r.x + r.w - XRAY_PAD;
+
+    static const char* hi[8] = {"R8", "R9", "R10", "R11", "R12", "SP", "LR", "PC"};
+    char name[4];
+    for (int i = 0; i < 8; i++) {
+        snprintf(name, sizeof(name), "R%d", i);
+        reg(c, x0, top + (float)i * REG_ROW, name, cpu->regs[i]);
+        reg(c, x0 + 160.0f, top + (float)i * REG_ROW, hi[i], cpu->regs[8 + i]);
+    }
+
+    /* State pills and flags, right of the registers */
+    float sx = x0 + 300.0f;
+    ui_section_label(c, sx, top, "STATE");
+    bool thumb = (cpu->cpsr >> CPSR_T) & 1;
+    float py = top + 16.0f;
+    ui_pill(c, sx, py, thumb ? "Thumb code" : "ARM code", UI_SELECTED);
+    py += 20.0f;
+    ui_pill(c, sx, py, mode_name(cpu->cpsr), UI_SELECTED);
+    py += 20.0f;
     if (cpu->halted) {
-        overlay_draw_text(buf, buf_w, buf_h, x0 + 170, my, "HALTED",
-                       XRAY_COL_FLASH);
+        ui_pill(c, sx, py, "Halted, waiting", UI_WARN);
+        py += 20.0f;
+    }
+    ui_section_label(c, sx, py + 6.0f, "FLAGS");
+    py += 22.0f;
+    static const char* flag_names[7] = {"N", "Z", "C", "V", "I", "F", "T"};
+    static const int flag_bits[7] = {CPSR_N, CPSR_Z, CPSR_C, CPSR_V, CPSR_I, CPSR_F, CPSR_T};
+    float fx = sx;
+    for (int i = 0; i < 7; i++) {
+        float w = ui_text_width(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL, flag_names[i]) + 14.0f;
+        if (fx + w > right) {
+            fx = sx;
+            py += 20.0f;
+        }
+        bool set = (cpu->cpsr >> flag_bits[i]) & 1;
+        fx += ui_pill(c, fx, py, flag_names[i], set ? UI_ACCENT : UI_TRACK) + 3.0f;
     }
 
-    /* Current instruction */
-    int iy = my + 14;
-    uint32_t pc = cpu->regs[15];
-    uint32_t instr = cpu->pipeline[0];
-    overlay_draw_text(buf, buf_w, buf_h, x0, iy, "Instr", XRAY_COL_LABEL);
-    overlay_draw_textf(buf, buf_w, buf_h, x0 + 48, iy, XRAY_COL_VALUE,
-                    "%08X @ %08X", instr, pc);
-
-    /* IPS counter */
-    int ipy = iy + 14;
-    overlay_draw_text(buf, buf_w, buf_h, x0, ipy, "IPS", XRAY_COL_LABEL);
-    uint64_t ips = state->ips_display;
-    if (ips > 1000000) {
-        overlay_draw_textf(buf, buf_w, buf_h, x0 + 48, ipy, XRAY_COL_VALUE,
-                        "%.2f M", (double)ips / 1000000.0);
-    } else if (ips > 1000) {
-        overlay_draw_textf(buf, buf_w, buf_h, x0 + 48, ipy, XRAY_COL_VALUE,
-                        "%.1f K", (double)ips / 1000.0);
-    } else {
-        overlay_draw_textf(buf, buf_w, buf_h, x0 + 48, ipy, XRAY_COL_VALUE,
-                        "%llu", (unsigned long long)ips);
-    }
-
-    /* Pipeline state */
-    int ppy = ipy + 14;
-    overlay_draw_text(buf, buf_w, buf_h, x0, ppy, "Pipe", XRAY_COL_LABEL);
-    overlay_draw_textf(buf, buf_w, buf_h, x0 + 48, ppy,
-                    cpu->pipeline_valid ? XRAY_COL_VALUE : XRAY_COL_DIM,
-                    "[%08X] [%08X] %s",
-                    cpu->pipeline[0], cpu->pipeline[1],
-                    cpu->pipeline_valid ? "valid" : "flushed");
+    /* Instruction details under the registers */
+    float y = top + 8 * REG_ROW + 8.0f;
+    ui_hline(c, x0, y, r.w - 2 * XRAY_PAD, UI_DIVIDER);
+    y += 8.0f;
+    detail(c, x0, y, "Instruction");
+    if (thumb)
+        xray_textf(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, x0 + 100.0f, y, 0, UI_ALIGN_LEFT, UI_TEXT,
+                   "%04X at %08X", (unsigned)(cpu->pipeline[0] & 0xFFFF),
+                   (unsigned)xray_cpu_exec_addr(cpu));
+    else
+        xray_textf(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, x0 + 100.0f, y, 0, UI_ALIGN_LEFT, UI_TEXT,
+                   "%08X at %08X", (unsigned)cpu->pipeline[0], (unsigned)xray_cpu_exec_addr(cpu));
+    y += XRAY_ROW;
+    detail(c, x0, y, "Pipeline");
+    xray_textf(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, x0 + 100.0f, y, 0, UI_ALIGN_LEFT,
+               cpu->pipeline_valid ? UI_TEXT : UI_FAINT, "%08X  %08X  %s",
+               (unsigned)cpu->pipeline[0], (unsigned)cpu->pipeline[1],
+               cpu->pipeline_valid ? "ready" : "refilling");
+    y += XRAY_ROW;
+    detail(c, x0, y, "Status (CPSR)");
+    xray_textf(c, UI_FONT_REGULAR, XRAY_SIZE_TEXT, x0 + 100.0f, y, 0, UI_ALIGN_LEFT, UI_TEXT,
+               "%08X", (unsigned)cpu->cpsr);
 }
