@@ -5,6 +5,7 @@
 #include "frontend/overlay_draw.h"
 #include "frontend/input_display.h"
 #include "frontend/slot_picker.h"
+#include "frontend/game_panel.h"
 #include "game/game.h"
 #include "headless/headless.h"
 #ifdef ENABLE_REWIND
@@ -17,6 +18,7 @@
 #include "trace/trace.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #ifdef ENABLE_XRAY
@@ -52,6 +54,10 @@ static void print_usage(const char* prog) {
     printf("  --screenshot-out <f>   Headless: write final-frame screenshot to file\n");
     printf("  --input-script <file>  Headless: scripted keypad input (see README)\n");
     printf("  --game-dump <file>     Headless: write decoded Emerald state after the run\n");
+    printf("  --panel-out <file>     Headless: render the game panel to a PNG after the run\n");
+    printf("  --panel-density <f>    Headless: panel pixels per point, 0.5 to 4.0 (default: 1.0)\n");
+    printf("  --panel-page <p>       Headless: panel page, auto|party|route (default: auto)\n");
+    printf("  --panel-select <n>     Headless: selected party slot on the party page (default: 0)\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
@@ -84,6 +90,10 @@ int main(int argc, char* argv[]) {
     const char* screenshot_out_path = NULL;
     const char* input_script_path = NULL;
     const char* game_dump_path = NULL;
+    const char* panel_out_path = NULL;
+    const char* panel_page_arg = NULL;
+    const char* panel_density_arg = NULL;
+    const char* panel_select_arg = NULL;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -121,6 +131,14 @@ int main(int argc, char* argv[]) {
             input_script_path = argv[++i];
         } else if (strcmp(argv[i], "--game-dump") == 0 && i + 1 < argc) {
             game_dump_path = argv[++i];
+        } else if (strcmp(argv[i], "--panel-out") == 0 && i + 1 < argc) {
+            panel_out_path = argv[++i];
+        } else if (strcmp(argv[i], "--panel-density") == 0 && i + 1 < argc) {
+            panel_density_arg = argv[++i];
+        } else if (strcmp(argv[i], "--panel-page") == 0 && i + 1 < argc) {
+            panel_page_arg = argv[++i];
+        } else if (strcmp(argv[i], "--panel-select") == 0 && i + 1 < argc) {
+            panel_select_arg = argv[++i];
         } else {
             /* Also catches value-taking options with the value missing:
              * they fail the i + 1 < argc guard and fall through here. */
@@ -143,6 +161,44 @@ int main(int argc, char* argv[]) {
     if (game_dump_path && !headless) {
         LOG_ERROR("--game-dump requires --headless");
         return 1;
+    }
+
+    if ((panel_out_path || panel_density_arg || panel_page_arg || panel_select_arg) && !headless) {
+        LOG_ERROR("--panel-out, --panel-density, --panel-page and --panel-select require --headless");
+        return 1;
+    }
+
+    float panel_density = 1.0f;
+    if (panel_density_arg) {
+        char* end = NULL;
+        panel_density = strtof(panel_density_arg, &end);
+        if (end == panel_density_arg || *end != '\0' || !(panel_density >= 0.5f && panel_density <= 4.0f)) {
+            LOG_ERROR("--panel-density must be between 0.5 and 4.0 (got %s)", panel_density_arg);
+            return 1;
+        }
+    }
+
+    GamePage panel_page = GAME_PAGE_AUTO;
+    if (panel_page_arg) {
+        if (strcmp(panel_page_arg, "party") == 0) {
+            panel_page = GAME_PAGE_PARTY;
+        } else if (strcmp(panel_page_arg, "route") == 0) {
+            panel_page = GAME_PAGE_ENCOUNTERS;
+        } else if (strcmp(panel_page_arg, "auto") != 0) {
+            LOG_ERROR("--panel-page must be auto, party or route (got %s)", panel_page_arg);
+            return 1;
+        }
+    }
+
+    uint8_t panel_select = 0;
+    if (panel_select_arg) {
+        char* end = NULL;
+        long v = strtol(panel_select_arg, &end, 10);
+        if (end == panel_select_arg || *end != '\0' || v < 0 || v > 5) {
+            LOG_ERROR("--panel-select must be between 0 and 5 (got %s)", panel_select_arg);
+            return 1;
+        }
+        panel_select = (uint8_t)v;
     }
 
     if (headless && (link_master_path || link_client_path)) {
@@ -246,16 +302,36 @@ int main(int argc, char* argv[]) {
                 rc = 1;
             }
         }
-        if (rc == 0 && game_dump_path) {
-            static GameState dump_state;  /* large; keep off the stack */
-            FILE* f = fopen(game_dump_path, "w");
+        static GameState dump_state;  /* large; keep off the stack */
+        if (rc == 0 && (game_dump_path || panel_out_path)) {
             game_init(&dump_state, gba.cart.rom, gba.cart.rom_size);
             game_update(&dump_state, &gba);
+        }
+        if (rc == 0 && game_dump_path) {
+            FILE* f = fopen(game_dump_path, "w");
             if (!f || !game_dump(&dump_state.snap, f)) {
                 LOG_ERROR("Failed to write --game-dump file: %s", game_dump_path);
                 rc = 1;
             }
             if (f) fclose(f);
+        }
+        if (rc == 0 && panel_out_path) {
+            int w = (int)(600 * panel_density + 0.5f);
+            int h = (int)(480 * panel_density + 0.5f);
+            uint32_t* px = (uint32_t*)calloc((size_t)w * (size_t)h, sizeof(uint32_t));
+            if (!px) {
+                LOG_ERROR("Out of memory rendering --panel-out");
+                rc = 1;
+            } else {
+                UiCanvas canvas;
+                ui_canvas_init(&canvas, px, w, h, panel_density);
+                game_panel_draw(&canvas, &dump_state.snap, panel_page, panel_select);
+                if (!screenshot_save_argb(px, w, h, panel_out_path)) {
+                    LOG_ERROR("Failed to write --panel-out file: %s", panel_out_path);
+                    rc = 1;
+                }
+                free(px);
+            }
         }
         gba_destroy(&gba);
         return rc;

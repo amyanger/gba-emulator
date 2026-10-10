@@ -68,6 +68,29 @@ TEST(screenshot_save_rejects_null_inputs) {
     ASSERT_TRUE(!screenshot_save(fb, NULL));
 }
 
+TEST(screenshot_save_argb_writes_png) {
+    static const uint32_t px[4 * 3] = {
+        0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFFFF,
+        0xFF000000, 0xFF808080, 0xFF123456, 0xFFABCDEF,
+        0xFF111111, 0xFF222222, 0xFF333333, 0xFF444444,
+    };
+    const char* path = "test_screenshot_argb_output.png";
+    remove(path);
+
+    ASSERT_TRUE(screenshot_save_argb(px, 4, 3, path));
+
+    FILE* fp = fopen(path, "rb");
+    ASSERT_TRUE(fp != NULL);
+    uint8_t magic[8] = {0};
+    size_t got = fread(magic, 1, sizeof(magic), fp);
+    fclose(fp);
+    remove(path);
+    ASSERT_EQ(got, (size_t)8);
+
+    static const uint8_t expected[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+    ASSERT_MEM_EQ(magic, expected, 8);
+}
+
 void run_screenshot_tests(void) {
     TEST_SUITE("screenshot");
     RUN_TEST(screenshot_path_appends_utc_timestamp);
@@ -75,4 +98,5 @@ void run_screenshot_tests(void) {
     RUN_TEST(screenshot_path_truncates_safely);
     RUN_TEST(screenshot_save_writes_valid_png);
     RUN_TEST(screenshot_save_rejects_null_inputs);
+    RUN_TEST(screenshot_save_argb_writes_png);
 }

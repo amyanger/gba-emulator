@@ -59,3 +59,26 @@ bool screenshot_save(const uint16_t* framebuffer_abgr1555, const char* path) {
     }
     return true;
 }
+
+bool screenshot_save_argb(const uint32_t* px, int w, int h, const char* path) {
+    if (!px || !path || w <= 0 || h <= 0) return false;
+
+    const size_t pixel_count = (size_t)w * (size_t)h;
+    uint8_t* rgb = (uint8_t*)malloc(pixel_count * 3);
+    if (!rgb) return false;
+
+    for (size_t i = 0; i < pixel_count; i++) {
+        rgb[i * 3 + 0] = (uint8_t)(px[i] >> 16);
+        rgb[i * 3 + 1] = (uint8_t)(px[i] >> 8);
+        rgb[i * 3 + 2] = (uint8_t)px[i];
+    }
+
+    int rc = stbi_write_png(path, w, h, 3, rgb, w * 3);
+    free(rgb);
+
+    if (!rc) {
+        LOG_ERROR("screenshot: failed to write %s", path);
+        return false;
+    }
+    return true;
+}

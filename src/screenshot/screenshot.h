@@ -17,4 +17,8 @@ void screenshot_path(const char* rom_path, time_t now, char* out, size_t out_siz
  * Returns true on success, false on encode/write error. */
 bool screenshot_save(const uint16_t* framebuffer_abgr1555, const char* path);
 
+/* Encode a w x h ARGB8888 buffer (alpha ignored) as an RGB PNG.
+ * Returns true on success, false on bad arguments or encode/write error. */
+bool screenshot_save_argb(const uint32_t* px, int w, int h, const char* path);
+
 #endif // SCREENSHOT_H
