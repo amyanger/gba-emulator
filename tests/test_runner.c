@@ -38,6 +38,8 @@ void run_ui_canvas_tests(void);
 void run_ui_font_tests(void);
 void run_ui_widgets_tests(void);
 void run_panel_layout_tests(void);
+void run_toast_tests(void);
+void run_hud_tests(void);
 #ifndef _WIN32
 // These suites depend on POSIX APIs (unistd.h, pthreads, AF_UNIX socketpair)
 // and are not compiled into the Windows test binary.
@@ -82,6 +84,8 @@ int main(void) {
     RUN_SUITE(run_ui_font_tests);
     RUN_SUITE(run_ui_widgets_tests);
     RUN_SUITE(run_panel_layout_tests);
+    RUN_SUITE(run_toast_tests);
+    RUN_SUITE(run_hud_tests);
 #ifndef _WIN32
     RUN_SUITE(run_rtc_tests);
     RUN_SUITE(run_sio_tests);

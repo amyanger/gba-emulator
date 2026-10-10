@@ -138,12 +138,15 @@ void cartridge_write8(Cartridge* cart, uint32_t addr, uint8_t val);
  * 16-bit — byte writes are ignored on hardware, so this is the only write
  * entry for the 0x08-0x0D region. */
 void cartridge_write16(Cartridge* cart, uint32_t addr, uint16_t val);
-void cartridge_save_to_file(Cartridge* cart);
+typedef enum { CART_FLUSH_NONE, CART_FLUSH_OK, CART_FLUSH_FAILED } CartFlushResult;
+
+CartFlushResult cartridge_save_to_file(Cartridge* cart);
 void cartridge_load_save_file(Cartridge* cart);
 
 /* Called once per frame from the main loop. Flushes save data to disk
  * if it has changed since the last flush AND the debounce window has
- * elapsed. No-op when nothing has changed or no save chip is present. */
-void cartridge_save_tick(Cartridge* cart, time_t now);
+ * elapsed. No-op when nothing has changed or no save chip is present.
+ * Returns CART_FLUSH_NONE when nothing was attempted, else the flush result. */
+CartFlushResult cartridge_save_tick(Cartridge* cart, time_t now);
 
 #endif // CARTRIDGE_H

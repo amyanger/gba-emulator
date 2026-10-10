@@ -5,6 +5,7 @@ static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v;
 
 void ui_canvas_init(UiCanvas* c, uint32_t* px, int w, int h, float scale) {
     c->px = px; c->w = w; c->h = h; c->scale = scale;
+    c->keep_alpha = false;
     ui_canvas_unclip(c);
 }
 
@@ -20,7 +21,8 @@ void ui_canvas_clip(UiCanvas* c, UiRect r) {
 }
 
 void ui_canvas_clear(UiCanvas* c, uint32_t argb) {
-    for (int i = 0; i < c->w * c->h; i++) c->px[i] = argb | 0xFF000000u;
+    uint32_t v = c->keep_alpha ? argb : (argb | 0xFF000000u);
+    for (int i = 0; i < c->w * c->h; i++) c->px[i] = v;
 }
 
 void ui_blend_coverage(UiCanvas* c, int x, int y, uint32_t argb, uint32_t coverage) {
@@ -29,9 +31,23 @@ void ui_blend_coverage(UiCanvas* c, int x, int y, uint32_t argb, uint32_t covera
     uint32_t* d = &c->px[y * c->w + x];
     if (a >= 255) { *d = argb | 0xFF000000u; return; }
     uint32_t inv = 255 - a, out = 0xFF000000u;
+    uint32_t da = *d >> 24;
+    if (!c->keep_alpha || da == 255) {
+        for (int shift = 0; shift < 24; shift += 8) {
+            uint32_t s = (argb >> shift) & 0xFF, b = (*d >> shift) & 0xFF;
+            out |= ((s * a + b * inv + 127) / 255) << shift;
+        }
+        *d = out;
+        return;
+    }
+    /* Straight-alpha "over" onto a translucent pixel. */
+    uint32_t dw = da * inv;                 /* dst weight, x255 */
+    uint32_t oa255 = a * 255 + dw;          /* out alpha, x255 */
+    if (oa255 == 0) { *d = 0; return; }
+    out = ((oa255 + 127) / 255) << 24;
     for (int shift = 0; shift < 24; shift += 8) {
         uint32_t s = (argb >> shift) & 0xFF, b = (*d >> shift) & 0xFF;
-        out |= ((s * a + b * inv + 127) / 255) << shift;
+        out |= ((s * a * 255 + b * dw + oa255 / 2) / oa255) << shift;
     }
     *d = out;
 }

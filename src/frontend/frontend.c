@@ -2,11 +2,13 @@
 #include "frame_advance.h"
 #include "input_display.h"
 #include "slot_picker.h"
+#include "frontend/hud_draw.h"
 #include "gba.h"
 #include "apu/apu.h"
 #include "input/input.h"
 #include "input/keymap.h"
 #include "ui/ui_theme.h"
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,6 +18,7 @@
 
 bool frontend_init(Frontend* fe, int scale) {
     memset(fe, 0, sizeof(*fe));
+    toast_init(&fe->toasts);
 
     /* Per-monitor DPI awareness so Windows does not bitmap-stretch the window.
      * With DPI scaling on, SDL reports window sizes in points like macOS. */
@@ -112,6 +115,8 @@ bool frontend_init(Frontend* fe, int scale) {
             if (fe->controller) {
                 LOG_INFO("Controller connected: %s",
                          SDL_GameControllerName(fe->controller));
+                frontend_toast(fe, TOAST_INFO, "Controller connected",
+                               SDL_GameControllerName(fe->controller));
                 break;
             }
         }
@@ -221,36 +226,71 @@ static void frontend_layout(Frontend* fe, bool resize_window) {
         }
     }
     fe->panel_dirty = true;
+
+    int hud_w = fe->game_rect.w;
+    int hud_h = (int)ceilf(hud_strip_height_pt() * fe->plan.density);
+    if (hud_h > fe->game_rect.h) hud_h = fe->game_rect.h;
+    if (hud_w != fe->hud_px_w || hud_h != fe->hud_px_h) {
+        if (fe->hud_texture) SDL_DestroyTexture(fe->hud_texture);
+        fe->hud_texture = NULL;
+        free(fe->hud_buffer);
+        fe->hud_buffer = NULL;
+        fe->hud_px_w = fe->hud_px_h = 0;
+        if (hud_w > 0 && hud_h > 0) {
+            fe->hud_buffer = (uint32_t*)calloc((size_t)hud_w * (size_t)hud_h, sizeof(uint32_t));
+            fe->hud_texture = SDL_CreateTexture(fe->renderer, SDL_PIXELFORMAT_ARGB8888,
+                                                SDL_TEXTUREACCESS_STREAMING, hud_w, hud_h);
+            if (!fe->hud_buffer || !fe->hud_texture) {
+                LOG_ERROR("Failed to create the HUD texture: %s", SDL_GetError());
+                if (fe->hud_texture) SDL_DestroyTexture(fe->hud_texture);
+                fe->hud_texture = NULL;
+                free(fe->hud_buffer);
+                fe->hud_buffer = NULL;
+            } else {
+                SDL_SetTextureBlendMode(fe->hud_texture, SDL_BLENDMODE_BLEND);
+                SDL_SetTextureScaleMode(fe->hud_texture, SDL_ScaleModeNearest);
+                fe->hud_px_w = hud_w;
+                fe->hud_px_h = hud_h;
+            }
+        }
+    }
+    fe->hud_dirty = true;
 }
 
 void frontend_apply_layout(Frontend* fe) {
     frontend_layout(fe, true);
 }
 
-void frontend_set_ff_indicator(Frontend* fe, bool active) {
-    if (active) {
-        SDL_SetWindowTitle(fe->window, "GBA Emulator [FF]");
-    } else {
-        SDL_SetWindowTitle(fe->window, "GBA Emulator");
-    }
+void frontend_toast(Frontend* fe, ToastKind kind, const char* title, const char* detail) {
+    toast_push(&fe->toasts, SDL_GetTicks(), kind, title, detail);
 }
 
-void frontend_set_pause_indicator(Frontend* fe, bool active) {
-    if (active) {
-        SDL_SetWindowTitle(fe->window, "GBA Emulator [PAUSED]");
-    } else {
-        SDL_SetWindowTitle(fe->window, fe->muted ? "GBA Emulator [MUTE]" : "GBA Emulator");
-    }
+void frontend_toast_keyed(Frontend* fe, const char* key, ToastKind kind, const char* title,
+                          const char* detail) {
+    toast_push_keyed(&fe->toasts, SDL_GetTicks(), key, kind, title, detail);
 }
 
-void frontend_set_mute_indicator(Frontend* fe, bool active) {
-    if (active) {
-        SDL_SetWindowTitle(fe->window, "GBA Emulator [MUTE]");
-    } else {
-        SDL_SetWindowTitle(fe->window, "GBA Emulator");
+void frontend_update_hud(Frontend* fe, uint32_t now_ms) {
+    toast_set_badge(&fe->toasts, BADGE_PAUSED, fe->paused);
+    toast_set_badge(&fe->toasts, BADGE_FAST, fe->ff_hold || fe->ff_toggle);
+    toast_set_badge(&fe->toasts, BADGE_MUTED, fe->muted);
+    toast_tick(&fe->toasts, now_ms);
+    fe->hud_shown = fe->hud_texture && hud_visible(&fe->toasts);
+    if (!fe->hud_shown) {
+        fe->hud_dirty = true;   /* redraw when something appears again */
+        fe->toasts.changed = false;
+        return;
+    }
+    if (fe->toasts.changed || fe->hud_dirty || toast_animating(&fe->toasts, now_ms)) {
+        UiCanvas canvas;
+        ui_canvas_init(&canvas, fe->hud_buffer, fe->hud_px_w, fe->hud_px_h, fe->plan.density);
+        hud_draw(&canvas, &fe->toasts, now_ms);
+        SDL_UpdateTexture(fe->hud_texture, NULL, fe->hud_buffer,
+                          fe->hud_px_w * (int)sizeof(uint32_t));
+        fe->toasts.changed = false;
+        fe->hud_dirty = false;
     }
 }
-
 
 void frontend_destroy(Frontend* fe) {
     if (fe->overlay_texture) SDL_DestroyTexture(fe->overlay_texture);
@@ -263,6 +303,9 @@ void frontend_destroy(Frontend* fe) {
         free(fe->panel_buffer);
         fe->panel_buffer = NULL;
     }
+    if (fe->hud_texture) SDL_DestroyTexture(fe->hud_texture);
+    free(fe->hud_buffer);
+    fe->hud_buffer = NULL;
     if (fe->texture) SDL_DestroyTexture(fe->texture);
     if (fe->renderer) SDL_DestroyRenderer(fe->renderer);
     if (fe->window) SDL_DestroyWindow(fe->window);
@@ -285,6 +328,11 @@ void frontend_present_frame(Frontend* fe, uint16_t* framebuffer) {
         SDL_UpdateTexture(fe->overlay_texture, NULL, fe->overlay_buffer,
                           SCREEN_WIDTH * sizeof(uint32_t));
         SDL_RenderCopy(fe->renderer, fe->overlay_texture, NULL, &game_rect);
+    }
+
+    if (fe->hud_shown && fe->hud_texture) {
+        SDL_Rect hud_rect = {fe->game_rect.x, fe->game_rect.y, fe->hud_px_w, fe->hud_px_h};
+        SDL_RenderCopy(fe->renderer, fe->hud_texture, NULL, &hud_rect);
     }
 
     if (fe->panel_visible && fe->panel_texture) {
@@ -367,6 +415,9 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 fe->input_display_enabled = !fe->input_display_enabled;
                 LOG_INFO("Input display %s",
                          fe->input_display_enabled ? "ON" : "OFF");
+                frontend_toast_keyed(fe, "input", TOAST_INFO,
+                                     fe->input_display_enabled ? "Input display on" : "Input display off",
+                                     NULL);
             }
 
             if (event.key.keysym.scancode == SDL_SCANCODE_F9 && !event.key.repeat) {
@@ -422,6 +473,9 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 if (slot >= 0 && slot != fe->savestate_slot) {
                     fe->savestate_slot = slot;
                     LOG_INFO("Save state slot: %d", slot);
+                    char detail[16];
+                    snprintf(detail, sizeof(detail), "Slot %d", (int)slot);
+                    frontend_toast(fe, TOAST_INFO, "Slot selected", detail);
                 }
             }
 
@@ -430,6 +484,8 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 !event.key.repeat) {
                 fe->ff_toggle = !fe->ff_toggle;
                 LOG_INFO("Fast-forward %s", fe->ff_toggle ? "ON" : "OFF");
+                frontend_toast_keyed(fe, "ff", TOAST_INFO,
+                                     fe->ff_toggle ? "Fast forward on" : "Fast forward off", NULL);
             }
             if (event.key.keysym.scancode == SDL_SCANCODE_TAB) {
                 fe->ff_hold = true;
@@ -446,6 +502,8 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                     fe->fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
                 frontend_apply_layout(fe);
                 LOG_INFO("Fullscreen %s", fe->fullscreen ? "ON" : "OFF");
+                frontend_toast_keyed(fe, "fullscreen", TOAST_INFO,
+                                     fe->fullscreen ? "Fullscreen on" : "Fullscreen off", NULL);
             }
 
             // Pause toggle
@@ -454,12 +512,14 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 fe->paused = !fe->paused;
                 if (!fe->paused) fe->step_pending = false;  // discard any queued step
                 LOG_INFO("Paused %s", fe->paused ? "ON" : "OFF");
+                frontend_toast_keyed(fe, "pause", TOAST_INFO, fe->paused ? "Paused" : "Resumed", NULL);
             }
 
             // Frame advance: backslash steps one frame. Allow key-repeat so hold-to-step works.
             if (event.key.keysym.scancode == SDL_SCANCODE_BACKSLASH) {
                 if (frame_advance_request(fe) == FRAME_ADVANCE_STEPPED) {
                     LOG_INFO("Frame advance");
+                    frontend_toast(fe, TOAST_INFO, "Frame advance", NULL);
                 }
             }
 
@@ -468,8 +528,8 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 !event.key.repeat) {
                 fe->muted = !fe->muted;
                 if (fe->audio_device) SDL_ClearQueuedAudio(fe->audio_device);
-                frontend_set_mute_indicator(fe, fe->muted);
                 LOG_INFO("Mute %s", fe->muted ? "ON" : "OFF");
+                frontend_toast_keyed(fe, "mute", TOAST_INFO, fe->muted ? "Muted" : "Sound on", NULL);
             }
             break;
         }
@@ -491,9 +551,12 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
         case SDL_CONTROLLERDEVICEADDED:
             if (!fe->controller && SDL_IsGameController(event.cdevice.which)) {
                 fe->controller = SDL_GameControllerOpen(event.cdevice.which);
-                if (fe->controller)
+                if (fe->controller) {
                     LOG_INFO("Controller connected: %s",
                              SDL_GameControllerName(fe->controller));
+                    frontend_toast(fe, TOAST_INFO, "Controller connected",
+                                   SDL_GameControllerName(fe->controller));
+                }
             }
             break;
 
@@ -503,6 +566,7 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                     SDL_JoystickInstanceID(
                         SDL_GameControllerGetJoystick(fe->controller))) {
                 LOG_INFO("Controller disconnected");
+                frontend_toast(fe, TOAST_INFO, "Controller disconnected", NULL);
                 SDL_GameControllerClose(fe->controller);
                 fe->controller = NULL;
             }

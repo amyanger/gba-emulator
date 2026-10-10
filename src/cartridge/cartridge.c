@@ -253,9 +253,9 @@ void cartridge_write8(Cartridge* cart, uint32_t addr, uint8_t val) {
     }
 }
 
-void cartridge_save_to_file(Cartridge* cart) {
-    if (cart->save_type == SAVE_NONE) return;
-    if (cart->save_path[0] == '\0') return;
+CartFlushResult cartridge_save_to_file(Cartridge* cart) {
+    if (cart->save_type == SAVE_NONE) return CART_FLUSH_NONE;
+    if (cart->save_path[0] == '\0') return CART_FLUSH_NONE;
 
     /* Write to a temp file then rename. POSIX rename() is atomic, so a
      * crash mid-write leaves the previous .sav intact rather than truncated. */
@@ -265,7 +265,7 @@ void cartridge_save_to_file(Cartridge* cart) {
     FILE* f = fopen(tmp_path, "wb");
     if (!f) {
         LOG_ERROR("Cannot save to %s", tmp_path);
-        return;
+        return CART_FLUSH_FAILED;
     }
 
     size_t expected = 0;
@@ -304,29 +304,31 @@ void cartridge_save_to_file(Cartridge* cart) {
     }
     if (!ok) {
         remove(tmp_path);
-        return;
+        return CART_FLUSH_FAILED;
     }
 
     if (!replace_file(tmp_path, cart->save_path)) {
         LOG_ERROR("Failed to commit save file %s", cart->save_path);
         remove(tmp_path);
-        return;
+        return CART_FLUSH_FAILED;
     }
 
     cart->save_dirty = false;
     cart->last_save_flush = time(NULL);
     LOG_INFO("Save written to %s", cart->save_path);
+    return CART_FLUSH_OK;
 }
 
-void cartridge_save_tick(Cartridge* cart, time_t now) {
-    if (!cart || !cart->save_dirty) return;
-    if (cart->save_type == SAVE_NONE) return;
-    if (now - cart->last_save_flush < CARTRIDGE_AUTOSAVE_DEBOUNCE_SECONDS) return;
-    cartridge_save_to_file(cart);
+CartFlushResult cartridge_save_tick(Cartridge* cart, time_t now) {
+    if (!cart || !cart->save_dirty) return CART_FLUSH_NONE;
+    if (cart->save_type == SAVE_NONE) return CART_FLUSH_NONE;
+    if (now - cart->last_save_flush < CARTRIDGE_AUTOSAVE_DEBOUNCE_SECONDS) return CART_FLUSH_NONE;
+    CartFlushResult r = cartridge_save_to_file(cart);
     /* Record the attempt even on failure (save_dirty stays set), so a full
      * disk or read-only directory retries at the debounce interval rather
      * than every frame. */
     cart->last_save_flush = now;
+    return r;
 }
 
 void cartridge_load_save_file(Cartridge* cart) {

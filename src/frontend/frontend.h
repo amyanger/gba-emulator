@@ -6,6 +6,7 @@
 #include "frontend/slot_picker.h"
 #include "frontend/game_panel.h"
 #include "frontend/panel_layout.h"
+#include "frontend/toast.h"
 
 // Forward declaration
 typedef struct GBA GBA;
@@ -32,6 +33,14 @@ typedef struct Frontend {
     GameSnapshot last_snap;
     uint8_t last_page, last_sel;
     bool panel_dirty;
+
+    /* Toasts and status badges, drawn over the top of the game at full resolution. */
+    ToastQueue toasts;
+    SDL_Texture* hud_texture;     /* hud_px_w x hud_px_h, ARGB8888 straight alpha */
+    uint32_t* hud_buffer;
+    int hud_px_w, hud_px_h;
+    bool hud_dirty;               /* size changed: redraw even if the queue did not */
+    bool hud_shown;               /* draw the texture this frame */
     SDL_AudioDeviceID audio_device;
     uint32_t audio_target_bytes;  /* frame-sync queue target: 3x the device pull size */
     SDL_GameController* controller;
@@ -78,8 +87,10 @@ void frontend_poll_input(Frontend* fe, GBA* gba);
 void frontend_audio_init(Frontend* fe);
 void frontend_push_audio(Frontend* fe, APU* apu);
 void frontend_frame_sync(Frontend* fe);
-void frontend_set_ff_indicator(Frontend* fe, bool active);
-void frontend_set_pause_indicator(Frontend* fe, bool active);
-void frontend_set_mute_indicator(Frontend* fe, bool active);
+void frontend_toast(Frontend* fe, ToastKind kind, const char* title, const char* detail);
+void frontend_toast_keyed(Frontend* fe, const char* key, ToastKind kind, const char* title,
+                          const char* detail);
+/* Updates badges from frontend state, expires toasts, redraws the HUD if needed. */
+void frontend_update_hud(Frontend* fe, uint32_t now_ms);
 
 #endif // FRONTEND_H

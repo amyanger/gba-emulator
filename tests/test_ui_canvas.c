@@ -75,6 +75,70 @@ TEST(canvas_ring_and_capsule_draw_something) {
     ASSERT_TRUE((AT(45, 10) & 0xFF) > 0x80);
 }
 
+TEST(canvas_keep_alpha_clear_is_transparent) {
+    UiCanvas c;
+    ui_canvas_init(&c, s_px, W, H, 1.0f);
+    ASSERT_TRUE(!c.keep_alpha);
+    c.keep_alpha = true;
+    ui_canvas_clear(&c, 0x00000000);
+    ASSERT_EQ_HEX(AT(0, 0), 0x00000000);
+    ASSERT_EQ_HEX(AT(W - 1, H - 1), 0x00000000);
+}
+
+TEST(canvas_keep_alpha_opaque_fill_exact) {
+    UiCanvas c;
+    ui_canvas_init(&c, s_px, W, H, 1.0f);
+    c.keep_alpha = true;
+    ui_canvas_clear(&c, 0x00000000);
+    ui_fill_rect(&c, (UiRect){2, 2, 4, 4}, 0xFF3DDC97);
+    ASSERT_EQ_HEX(AT(3, 3), 0xFF3DDC97);
+    ASSERT_EQ_HEX(AT(1, 1), 0x00000000);
+}
+
+/* Half coverage onto transparent keeps the source color (no dark halo). */
+TEST(canvas_keep_alpha_edge_has_no_halo) {
+    UiCanvas c;
+    ui_canvas_init(&c, s_px, W, H, 1.0f);
+    c.keep_alpha = true;
+    ui_canvas_clear(&c, 0x00000000);
+    ui_blend_coverage(&c, 5, 5, 0xFFE7E9EE, 128);
+    uint32_t p = AT(5, 5);
+    ASSERT_EQ((p >> 24) & 0xFF, 128);
+    ASSERT_EQ((p >> 16) & 0xFF, 0xE7);
+    ASSERT_EQ((p >> 8) & 0xFF, 0xE9);
+    ASSERT_EQ(p & 0xFF, 0xEE);
+}
+
+/* Over a translucent destination, alpha accumulates and color mixes. */
+TEST(canvas_keep_alpha_over_translucent) {
+    UiCanvas c;
+    ui_canvas_init(&c, s_px, W, H, 1.0f);
+    c.keep_alpha = true;
+    ui_canvas_clear(&c, 0x80000000);               /* black, 50% */
+    ui_blend_coverage(&c, 1, 1, 0x80FFFFFF, 255);  /* white, 50% */
+    uint32_t p = AT(1, 1);
+    uint32_t a = (p >> 24) & 0xFF, r = (p >> 16) & 0xFF;
+    ASSERT_TRUE(a >= 0xBF && a <= 0xC1);           /* 0.5 + 0.5*0.5 = 0.75 */
+    ASSERT_TRUE(r >= 0xA9 && r <= 0xAB);           /* 0.5 / 0.75 = 0.667 */
+}
+
+/* Opaque destination: keep_alpha must give exactly the old result. */
+TEST(canvas_keep_alpha_matches_opaque_path_on_opaque_dst) {
+    static uint32_t a_px[W * H], b_px[W * H];
+    UiCanvas a, b;
+    ui_canvas_init(&a, a_px, W, H, 2.0f);
+    ui_canvas_init(&b, b_px, W, H, 2.0f);
+    b.keep_alpha = true;
+    ui_canvas_clear(&a, 0xFF11131A);
+    ui_canvas_clear(&b, 0xFF11131A);
+    UiRect r = {3.3f, 2.7f, 20.1f, 11.6f};
+    ui_fill_round_rect(&a, r, 5.0f, 0xC05B8CFF);
+    ui_fill_round_rect(&b, r, 5.0f, 0xC05B8CFF);
+    ui_ring(&a, 12, 12, 6, 1.5f, 0x80FFFFFF);
+    ui_ring(&b, 12, 12, 6, 1.5f, 0x80FFFFFF);
+    ASSERT_MEM_EQ(a_px, b_px, sizeof(a_px));
+}
+
 void run_ui_canvas_tests(void) {
     TEST_SUITE("ui_canvas");
     RUN_TEST(canvas_fill_rect_snaps_and_scales);
@@ -83,4 +147,9 @@ void run_ui_canvas_tests(void) {
     RUN_TEST(canvas_clip_stops_writes);
     RUN_TEST(canvas_out_of_bounds_and_degenerate_shapes_are_safe);
     RUN_TEST(canvas_ring_and_capsule_draw_something);
+    RUN_TEST(canvas_keep_alpha_clear_is_transparent);
+    RUN_TEST(canvas_keep_alpha_opaque_fill_exact);
+    RUN_TEST(canvas_keep_alpha_edge_has_no_halo);
+    RUN_TEST(canvas_keep_alpha_over_translucent);
+    RUN_TEST(canvas_keep_alpha_matches_opaque_path_on_opaque_dst);
 }
