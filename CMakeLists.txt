@@ -103,6 +103,7 @@ set(SOURCES
     src/ui/ui_stb.c
     src/ui/ui_canvas.c
     src/ui/ui_font.c
+    src/ui/ui_widgets.c
     src/frontend/frontend.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
@@ -201,6 +202,7 @@ set(LIB_SOURCES
     src/ui/ui_stb.c
     src/ui/ui_canvas.c
     src/ui/ui_font.c
+    src/ui/ui_widgets.c
     src/headless/fb_hash.c
     src/headless/headless.c
     src/headless/input_script.c
@@ -249,6 +251,7 @@ set(TEST_SOURCES
     tests/test_ui_font_data.c
     tests/test_ui_canvas.c
     tests/test_ui_font.c
+    tests/test_ui_widgets.c
 )
 
 # Several tests rely on POSIX-only APIs (unistd.h, pthreads, AF_UNIX
