@@ -125,7 +125,7 @@ TEST(cheat_file_save_is_atomic_over_existing) {
 }
 
 static long read_file(const char* path, char* buf, size_t len) {
-    FILE* f = fopen(path, "rb");
+    FILE* f = fopen(path, "r");   /* text mode, like the loader: CRLF on Windows */
     if (!f) return -1;
     size_t n = fread(buf, 1, len - 1, f);
     fclose(f);
