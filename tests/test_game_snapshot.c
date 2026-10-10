@@ -165,7 +165,15 @@ TEST(snapshot_without_profile_explains) {
     GameMem m = test_mem();
     game_update_mem(&gs, &m);
     ASSERT_TRUE(!gs.snap.valid);
-    ASSERT_STR_EQ(gs.snap.reason, "No game info for this ROM");
+    ASSERT_EQ(gs.snap.support, GAME_SUPPORT_OTHER_GAME);
+    ASSERT_STR_EQ(gs.snap.reason, "Game not supported");
+
+    memcpy(s_rom + 0xAC, "BPEE", 4);  /* Emerald header on a ROM that isn't the retail one */
+    game_init(&gs, s_rom, sizeof(s_rom));
+    game_update_mem(&gs, &m);
+    ASSERT_TRUE(!gs.snap.valid);
+    ASSERT_EQ(gs.snap.support, GAME_SUPPORT_MODIFIED);
+    ASSERT_STR_EQ(gs.snap.reason, "ROM hack or modified ROM not supported");
 }
 
 TEST(snapshot_waits_when_save_pointers_invalid) {

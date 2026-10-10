@@ -73,6 +73,7 @@ typedef struct {
 
 typedef struct {
     bool valid;
+    GameSupport support; /* OK unless the ROM itself is unsupported */
     char reason[48];
     GameContext context;
     char active_name[GAME_NAME_LEN]; /* player's active battler, empty when unknown */
@@ -91,6 +92,7 @@ typedef struct {
 
 typedef struct {
     const GameProfile* profile;
+    GameSupport support;
     GameSnapshot snap;
 } GameState;
 

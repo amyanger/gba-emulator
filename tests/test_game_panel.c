@@ -177,7 +177,7 @@ TEST(panel_long_names_stay_in_columns) {
 TEST(panel_invalid_snapshot_shows_reason) {
     static GameSnapshot snap;
     memset(&snap, 0, sizeof(snap));
-    game_strcpy(snap.reason, sizeof(snap.reason), "No game info for this ROM");
+    game_strcpy(snap.reason, sizeof(snap.reason), "Waiting for save data");
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
     game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0);
@@ -186,6 +186,28 @@ TEST(panel_invalid_snapshot_shows_reason) {
         for (int x = 0; x < 600; x++)
             if (s_buf[y * 600 + x] != UI_BG) lit++;
     ASSERT_TRUE(lit > 0);
+}
+
+static int lit_rows(int y0, int y1) {
+    int lit = 0;
+    for (int y = y0; y < y1; y++)
+        for (int x = 0; x < 600; x++)
+            if (s_buf[y * 600 + x] != UI_BG) lit++;
+    return lit;
+}
+
+TEST(panel_unsupported_rom_explains_why) {
+    static GameSnapshot snap;
+    const GameSupport kinds[2] = {GAME_SUPPORT_MODIFIED, GAME_SUPPORT_OTHER_GAME};
+    for (int k = 0; k < 2; k++) {
+        memset(&snap, 0, sizeof(snap));
+        snap.support = kinds[k];
+        UiCanvas c;
+        ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0);
+        ASSERT_TRUE(lit_rows(160, 190) > 0);  /* heading */
+        ASSERT_TRUE(lit_rows(200, 300) > 0);  /* explanation */
+    }
 }
 
 static void fill_route(GameSnapshot* s, const uint8_t counts[ENC_METHOD_COUNT]) {
@@ -254,6 +276,7 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_pages_stay_in_bounds_at_all_densities);
     RUN_TEST(panel_long_names_stay_in_columns);
     RUN_TEST(panel_invalid_snapshot_shows_reason);
+    RUN_TEST(panel_unsupported_rom_explains_why);
     RUN_TEST(panel_route_busy_water_route_shows_every_row);
     RUN_TEST(panel_route_short_list_keeps_roomy_single_column);
     RUN_TEST(panel_route_overflow_keeps_whole_rows_and_counts_the_rest);

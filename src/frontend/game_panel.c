@@ -621,6 +621,35 @@ static void draw_route(UiCanvas* c, const GameSnapshot* s, float top) {
             "lead abilities, Pyramid/Pike.");
 }
 
+/* The ROM itself is unsupported: say so plainly, since a hack would otherwise look broken. */
+static void draw_unsupported(UiCanvas* c, GameSupport support) {
+    static const char* const hack[] = {
+        "This ROM identifies itself as Pok\xC3\xA9mon Emerald, but its contents",
+        "don't match the original game. It is most likely a ROM hack.",
+    };
+    static const char* const other[] = {
+        "This ROM isn't Pok\xC3\xA9mon Emerald (US/English).",
+    };
+    static const char* const scope[] = {
+        "Emerald Companion only works with the original, unmodified",
+        "Pok\xC3\xA9mon Emerald (US/English) ROM. That is the version it was",
+        "built and tested with. The game itself still plays normally.",
+    };
+    bool is_hack = support == GAME_SUPPORT_MODIFIED;
+    const char* const* lead = is_hack ? hack : other;
+    int lead_n = is_hack ? 2 : 1;
+    float x = PANEL_W / 2, w = RIGHT - LEFT, y = 170.0f, line = 20.0f;
+
+    ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, x, y, w, UI_ALIGN_CENTER, UI_TEXT,
+            is_hack ? "ROM hack not supported" : "Game not supported");
+    y += 36.0f;
+    for (int i = 0; i < lead_n; i++, y += line)
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, x, y, w, UI_ALIGN_CENTER, UI_MUTED, lead[i]);
+    y += 12.0f;
+    for (int i = 0; i < 3; i++, y += line)
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, x, y, w, UI_ALIGN_CENTER, UI_MUTED, scope[i]);
+}
+
 void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel) {
     static const char* const labels[3] = {"Battle", "Party", "Route"};
     GamePage shown = game_panel_resolve_page(page, snap->context);
@@ -633,7 +662,9 @@ void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8
                         active == 1 ? "F10 page   [ ] select" : "F10 page");
 
     ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, PANEL_H - top - 4.0f});
-    if (!snap->valid) {
+    if (!snap->valid && snap->support != GAME_SUPPORT_OK) {
+        draw_unsupported(c, snap->support);
+    } else if (!snap->valid) {
         ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, PANEL_W / 2, 220.0f, RIGHT - LEFT,
                 UI_ALIGN_CENTER, UI_MUTED, snap->reason);
     } else if (active == 1) {

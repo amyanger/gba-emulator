@@ -1,13 +1,23 @@
 #ifndef EMERALD_PROFILE_H
 #define EMERALD_PROFILE_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 /* Every address the game layer needs, for one ROM. Nothing else in
  * src/game/ hardcodes an address, so supporting another build (e.g. a
  * pokeemerald-expansion hack) means adding a second profile. */
+/* Why a ROM does or doesn't get game info. */
+typedef enum {
+    GAME_SUPPORT_OK,
+    GAME_SUPPORT_OTHER_GAME, /* not Pokemon Emerald (US/English) */
+    GAME_SUPPORT_MODIFIED,   /* Emerald header, other contents: a ROM hack or altered dump */
+} GameSupport;
+
 typedef struct {
     const char* name;
+    char game_code[4];               /* header bytes 0xAC-0xAF */
+    uint32_t rom_size, rom_crc32;    /* the exact retail ROM the addresses were verified on */
 
     /* RAM */
     uint32_t battle_type_flags;     /* u32 gBattleTypeFlags */
@@ -42,7 +52,11 @@ typedef struct {
 
 extern const GameProfile g_emerald_profile;
 
-/* Returns the profile matching this ROM, or NULL when unsupported. */
-const GameProfile* game_profile_detect(const uint8_t* rom, uint32_t rom_size);
+/* Whether this ROM is exactly the one profile p was verified against. */
+GameSupport game_profile_match(const GameProfile* p, const uint8_t* rom, uint32_t rom_size);
+/* Returns the profile matching this ROM, or NULL when unsupported; *support says why. */
+const GameProfile* game_profile_detect(const uint8_t* rom, uint32_t rom_size, GameSupport* support);
+/* Standard CRC-32 (zlib, IEEE 802.3). */
+uint32_t game_crc32(const uint8_t* data, uint32_t len);
 
 #endif // EMERALD_PROFILE_H

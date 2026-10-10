@@ -67,7 +67,7 @@ static void print_usage(const char* prog) {
     printf("  --screenshot-out <f>   Headless: write final-frame screenshot to file\n");
     printf("  --input-script <file>  Headless: scripted keypad input (see README)\n");
     printf("  --game-dump <file>     Headless: write decoded Emerald state after the run\n");
-    printf("  --panel-out <file>     Headless: render the game panel to a PNG after the run\n");
+    printf("  --panel-out <file>     Headless: render the Emerald Companion panel to a PNG after the run\n");
     printf("  --panel-density <f>    Headless: panel pixels per point, 0.5 to 4.0 (default: 1.0)\n");
     printf("  --panel-page <p>       Headless: panel page, auto|party|route (default: auto)\n");
     printf("  --panel-select <n>     Headless: selected party slot on the party page (default: 0)\n");
@@ -270,6 +270,9 @@ int main(int argc, char* argv[]) {
     }
 
     game_init(&s_game, gba.cart.rom, gba.cart.rom_size);
+    if (s_game.support == GAME_SUPPORT_MODIFIED)
+        LOG_WARN("Emerald Companion (F9) is off: this ROM is a hack or modified copy of Pokemon "
+                 "Emerald. It only supports the original Pokemon Emerald (US/English) ROM.");
 
     // Load cheat codes if provided
     if (cheat_path) {

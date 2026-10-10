@@ -66,16 +66,35 @@ static void set_header(const char* code, uint8_t version) {
     s_rom[0xBC] = version;
 }
 
-TEST(profile_detects_bpee_rev0_only) {
+TEST(crc32_matches_zlib) {
+    ASSERT_EQ(game_crc32((const uint8_t*)"123456789", 9), 0xCBF43926u);
+    ASSERT_EQ(game_crc32(NULL, 0), 0u);
+}
+
+TEST(profile_match_requires_the_exact_rom) {
     set_header("BPEE", 0);
-    ASSERT_TRUE(game_profile_detect(s_rom, sizeof(s_rom)) == &g_emerald_profile);
-    set_header("BPEE", 1);
-    ASSERT_TRUE(game_profile_detect(s_rom, sizeof(s_rom)) == NULL);
+    GameProfile p = g_emerald_profile;
+    p.rom_size = sizeof(s_rom);
+    p.rom_crc32 = game_crc32(s_rom, sizeof(s_rom));
+    ASSERT_EQ(game_profile_match(&p, s_rom, sizeof(s_rom)), GAME_SUPPORT_OK);
+    s_rom[0x100] ^= 1;       /* one changed byte: a hack */
+    ASSERT_EQ(game_profile_match(&p, s_rom, sizeof(s_rom)), GAME_SUPPORT_MODIFIED);
+    s_rom[0x100] ^= 1;
+    ASSERT_EQ(game_profile_match(&p, s_rom, sizeof(s_rom) - 1), GAME_SUPPORT_MODIFIED);
     set_header("BPRE", 0);   /* FireRed */
-    ASSERT_TRUE(game_profile_detect(s_rom, sizeof(s_rom)) == NULL);
-    set_header("BPEE", 0);
-    ASSERT_TRUE(game_profile_detect(s_rom, 0xBC) == NULL); /* too short for header */
-    ASSERT_TRUE(game_profile_detect(NULL, 0) == NULL);
+    ASSERT_EQ(game_profile_match(&p, s_rom, sizeof(s_rom)), GAME_SUPPORT_OTHER_GAME);
+    ASSERT_EQ(game_profile_match(&p, s_rom, 0xAF), GAME_SUPPORT_OTHER_GAME); /* too short */
+    ASSERT_EQ(game_profile_match(&p, NULL, 0), GAME_SUPPORT_OTHER_GAME);
+}
+
+TEST(profile_detect_rejects_a_hack_with_the_emerald_header) {
+    GameSupport support = GAME_SUPPORT_OK;
+    set_header("BPEE", 0);   /* right header, wrong size and contents */
+    ASSERT_TRUE(game_profile_detect(s_rom, sizeof(s_rom), &support) == NULL);
+    ASSERT_EQ(support, GAME_SUPPORT_MODIFIED);
+    set_header("BPRE", 0);
+    ASSERT_TRUE(game_profile_detect(s_rom, sizeof(s_rom), &support) == NULL);
+    ASSERT_EQ(support, GAME_SUPPORT_OTHER_GAME);
 }
 
 void run_game_mem_tests(void) {
@@ -85,5 +104,7 @@ void run_game_mem_tests(void) {
     RUN_TEST(game_mem_null_region_is_unreadable);
     RUN_TEST(game_mem_in_ewram_bounds);
     RUN_TEST(game_strcpy_truncates_and_terminates);
-    RUN_TEST(profile_detects_bpee_rev0_only);
+    RUN_TEST(crc32_matches_zlib);
+    RUN_TEST(profile_match_requires_the_exact_rom);
+    RUN_TEST(profile_detect_rejects_a_hack_with_the_emerald_header);
 }

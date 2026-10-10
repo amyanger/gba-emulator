@@ -378,7 +378,7 @@ static void read_encounters(const GameMem* m, const GameProfile* p, uint32_t sb1
 
 void game_init(GameState* gs, const uint8_t* rom, uint32_t rom_size) {
     memset(gs, 0, sizeof(*gs));
-    gs->profile = game_profile_detect(rom, rom_size);
+    gs->profile = game_profile_detect(rom, rom_size, &gs->support);
 }
 
 void game_update_mem(GameState* gs, const GameMem* m) {
@@ -388,7 +388,11 @@ void game_update_mem(GameState* gs, const GameMem* m) {
 
     memset(s, 0, sizeof(*s));
     if (!p) {
-        game_strcpy(s->reason, sizeof(s->reason), "No game info for this ROM");
+        s->support = gs->support == GAME_SUPPORT_MODIFIED ? GAME_SUPPORT_MODIFIED
+                                                          : GAME_SUPPORT_OTHER_GAME;
+        game_strcpy(s->reason, sizeof(s->reason),
+                    s->support == GAME_SUPPORT_MODIFIED ? "ROM hack or modified ROM not supported"
+                                                        : "Game not supported");
         return;
     }
     if (!game_mem_read32(m, p->save_block1_ptr, &sb1) || !game_mem_read32(m, p->save_block2_ptr, &sb2) ||
