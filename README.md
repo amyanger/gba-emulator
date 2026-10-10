@@ -28,6 +28,22 @@ X-Ray Mode adds zero overhead when disabled. It's compile-time gated (`ENABLE_XR
 cmake .. -DENABLE_XRAY=OFF
 ```
 
+## Game info panel
+
+Press **F9** to open a side panel next to the game. The window widens from 240 to 440 logical pixels while the panel is open. **F10** cycles the page: Auto, Party, Encounters. Auto shows the battle page during a battle and the encounters page otherwise.
+
+- **Battle** shows the opposing Pokemon (species, level, HP, types, nature, IVs, ability, held item), move matchups, and, in wild battles, catch odds for each ball in your bag.
+- **Party** shows each Pokemon's nature, IVs, EVs and Hidden Power.
+- **Encounters** shows the encounter table for the current route.
+
+Supported ROM: US Emerald rev 0 (game code BPEE) only. Any other ROM shows "No game info for this ROM". Every name and number is read from your own ROM at runtime, and nothing from the game ships with the emulator. The panel only reads memory. It never writes to the game, makes no bus accesses, does not change timing, and leaves savestates untouched. Addresses come from the pret/pokeemerald decomp.
+
+Fullscreen (F11) now letterboxes to the correct aspect ratio, with or without the panel. Before, it stretched the image.
+
+Not shown yet: Safari Ball odds, mass outbreaks, Feebas tiles, roamers, Altering Cave variants, and map names (the encounters page shows the map as group:num).
+
+To check decoded state without a window, run headless with `--game-dump <file>` (see Headless mode).
+
 ## Features
 
 - **ARM7TDMI CPU** — Full ARM (32-bit) and Thumb (16-bit) instruction set
@@ -51,6 +67,7 @@ cmake .. -DENABLE_XRAY=OFF
 - **Flash 64K / 128K Save** — Macronix and SST/Atmel/Panasonic chip IDs (Pokemon Emerald, Ruby, Sapphire, FireRed, LeafGreen)
 - **Real-Time Clock** — S-3511A serial RTC over GPIO (0x080000C4/C6/C8) with persistent offset stored in the `.sav` trailer
 - **Cartridge** — ROM loading (up to 32MB), auto save detection, file persistence next to the ROM
+- **Game info panel (Pokemon Emerald)**: press F9 for a side panel with wild battle IVs, natures, catch odds per ball, move matchups, your party's IVs/EVs/Hidden Power, and the current route's encounter table.
 - **Save States** — 10 numbered slots (0–9), versioned and ROM-hash guarded, written next to the ROM as `<rom>.ss<N>`
 - **Cheats** — GameShark / Action Replay v1–v3 + CodeBreaker, loaded from a `.cht` file
 - **Fast-Forward** — Hold Tab or toggle with `` ` `` (skips audio, renders every Nth frame)
@@ -185,6 +202,8 @@ cmake .. -DENABLE_REWIND=OFF
 | F1 | Dump CPU registers to stderr (debug builds) |
 | F2 | Toggle Hardware X-Ray Mode |
 | F3 | Toggle input display HUD (mini-GBA overlay showing held buttons) |
+| F9 | Toggle the Pokemon Emerald game info panel |
+| F10 | Cycle the panel page: Auto, Party, Encounters |
 | F5 | Save state to current slot |
 | F6 | Edit label of current save-state slot |
 | F7 | Open save-state slot picker |
@@ -218,6 +237,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--hash-out <file>` | Write per-frame `<N> <FNV1a-hex>` lines. Defaults to stdout. |
 | `--screenshot-out <file>` | After the run, save the final framebuffer as PNG. |
 | `--input-script <file>` | Replay scripted keypad input. Headless only. Format below. |
+| `--game-dump <file>` | After the run, write the decoded Emerald game state (party, battle, encounters) to `file`. Requires `--headless`. |
 
 An input script has one event per line, `<frame> <press|release> <KEY>`,
 where `<frame>` is the 0-based frame index (same as in `--hash-out`) and
@@ -345,6 +365,7 @@ Each block starts with `[GameShark]` or `[CodeBreaker]`, followed by a name line
 - **No dynamic allocation** — All subsystem memory is statically sized. The only heap allocation is ROM loading.
 - **One file = one hardware component** — Each source file maps to a discrete piece of GBA hardware.
 - **X-Ray is a passive observer** — It reads GBA state but never writes to it. Zero overhead when disabled.
+- **The game layer is a passive observer too**: `src/game/` reads RAM and ROM arrays directly, never through the bus, and never writes to emulated memory.
 
 ## Project Structure
 
@@ -388,10 +409,19 @@ src/
     cheat_file.c/h         `.cht` file parser and writer
   savestate/
     savestate.c/h          Versioned save state serialization (ROM-hash guarded)
+  game/
+    game.c/h               Builds a snapshot of party, battle and encounter state
+    game_mem.c/h           Read-only view of EWRAM, IWRAM and ROM
+    emerald_profile.c/h    Every ROM and RAM address for US Emerald rev 0
+    pokemon.c/h            Party Pokemon decryption, stats, IVs, nature, Hidden Power
+    battle_info.c/h        Catch odds and move matchups for the current battle
+    encounters.c/h         Wild encounter tables for the current map
+    gen3_text.c/h          Gen 3 character set to ASCII
   input/
     input.c/h              Keypad registers
   frontend/
     frontend.c/h           SDL2 window, rendering, input polling, audio
+    game_panel.c/h         Game info panel drawn beside the screen (F9/F10)
     debug.c                Register dumps, instruction tracing (debug builds)
     xray/
       xray.h               X-Ray state struct, public API, notification hooks
