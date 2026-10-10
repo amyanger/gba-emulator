@@ -23,6 +23,7 @@ typedef struct Frontend {
     float panel_density;          /* canvas pixels per point */
     bool panel_visible;           /* F9 */
     uint8_t panel_page;           /* GamePage, F10 */
+    PanelBattleFollow panel_follow; /* switches to Auto while a battle runs */
     uint8_t panel_sel;            /* selected party slot, [ and ] */
     LayoutPlan plan;
     PxRect game_rect, panel_rect; /* drawable pixels */

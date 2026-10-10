@@ -12,6 +12,15 @@ typedef enum { GAME_PAGE_AUTO, GAME_PAGE_PARTY, GAME_PAGE_ENCOUNTERS, GAME_PAGE_
 GamePage game_panel_next_page(GamePage page);
 /* GAME_PAGE_COUNT means "show the battle page". */
 GamePage game_panel_resolve_page(GamePage page, GameContext ctx);
+/* Switching to Auto when a battle starts. Zero-initialise; clear `restore` when the
+ * user changes the page by hand so their choice survives the end of the battle. */
+typedef struct {
+    bool in_battle;     /* last non-NONE context seen was a battle */
+    bool restore;       /* put saved_page back when the battle ends */
+    uint8_t saved_page; /* GamePage the user had before the battle */
+} PanelBattleFollow;
+/* Returns the page to show after the context becomes ctx. GAME_CTX_NONE is ignored. */
+GamePage game_panel_follow_battle(GamePage page, GameContext ctx, PanelBattleFollow* f);
 /* Draws the panel into a canvas sized 600*density by 480*density pixels. */
 void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel);
 /* Moves the party selection by delta; wraps, and returns 0 when the party is empty. */

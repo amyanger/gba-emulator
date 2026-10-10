@@ -23,6 +23,55 @@ TEST(panel_auto_page_follows_context) {
     ASSERT_EQ(game_panel_resolve_page(GAME_PAGE_PARTY, GAME_CTX_BATTLE_WILD), GAME_PAGE_PARTY);
 }
 
+TEST(panel_battle_switches_to_auto_and_back) {
+    PanelBattleFollow f = { 0 };
+    GamePage page = game_panel_follow_battle(GAME_PAGE_PARTY, GAME_CTX_OVERWORLD, &f);
+    ASSERT_EQ(page, GAME_PAGE_PARTY);
+    page = game_panel_follow_battle(page, GAME_CTX_BATTLE_WILD, &f);
+    ASSERT_EQ(page, GAME_PAGE_AUTO);
+    page = game_panel_follow_battle(page, GAME_CTX_BATTLE_WILD, &f);
+    ASSERT_EQ(page, GAME_PAGE_AUTO);
+    page = game_panel_follow_battle(page, GAME_CTX_OVERWORLD, &f);
+    ASSERT_EQ(page, GAME_PAGE_PARTY);
+    page = game_panel_follow_battle(page, GAME_CTX_OVERWORLD, &f);
+    ASSERT_EQ(page, GAME_PAGE_PARTY);
+}
+
+TEST(panel_battle_keeps_page_chosen_during_battle) {
+    PanelBattleFollow f = { 0 };
+    GamePage page = game_panel_follow_battle(GAME_PAGE_ENCOUNTERS, GAME_CTX_BATTLE_TRAINER, &f);
+    ASSERT_EQ(page, GAME_PAGE_AUTO);
+    page = game_panel_next_page(page); /* what F10 does */
+    f.restore = false;
+    page = game_panel_follow_battle(page, GAME_CTX_BATTLE_TRAINER, &f);
+    ASSERT_EQ(page, GAME_PAGE_PARTY);
+    page = game_panel_follow_battle(page, GAME_CTX_OVERWORLD, &f);
+    ASSERT_EQ(page, GAME_PAGE_PARTY);
+}
+
+TEST(panel_battle_ignores_none_context) {
+    PanelBattleFollow f = { 0 };
+    GamePage page = game_panel_follow_battle(GAME_PAGE_PARTY, GAME_CTX_NONE, &f);
+    ASSERT_EQ(page, GAME_PAGE_PARTY);
+    page = game_panel_follow_battle(page, GAME_CTX_BATTLE_WILD, &f);
+    ASSERT_EQ(page, GAME_PAGE_AUTO);
+    page = game_panel_follow_battle(page, GAME_CTX_NONE, &f);
+    ASSERT_EQ(page, GAME_PAGE_AUTO);
+    page = game_panel_follow_battle(page, GAME_CTX_BATTLE_WILD, &f);
+    ASSERT_EQ(page, GAME_PAGE_AUTO);
+    page = game_panel_follow_battle(page, GAME_CTX_NONE, &f);
+    page = game_panel_follow_battle(page, GAME_CTX_OVERWORLD, &f);
+    ASSERT_EQ(page, GAME_PAGE_PARTY);
+}
+
+TEST(panel_battle_from_auto_stays_auto) {
+    PanelBattleFollow f = { 0 };
+    GamePage page = game_panel_follow_battle(GAME_PAGE_AUTO, GAME_CTX_BATTLE_WILD, &f);
+    ASSERT_EQ(page, GAME_PAGE_AUTO);
+    page = game_panel_follow_battle(page, GAME_CTX_OVERWORLD, &f);
+    ASSERT_EQ(page, GAME_PAGE_AUTO);
+}
+
 TEST(panel_title_case) {
     char out[GAME_NAME_LEN];
     game_panel_title_case("POK\xC3\xA9 BALL", out, sizeof(out));
@@ -91,6 +140,13 @@ static void fill_battle(GameSnapshot* s, GameContext ctx) {
             e->eff[m].quarters = (uint8_t)(1u << m);
         }
         e->eff[3].status_move = true;
+        e->move_count = 4;
+        for (int m = 0; m < 4; m++) {
+            game_strcpy(e->moves[m].move, GAME_NAME_LEN, "SUPERSONICXXX");
+            e->moves[m].type = 13;
+            e->moves[m].quarters = m == 0 ? 0xFF : (uint8_t)(4u << m);
+        }
+        e->moves[3].status_move = true;
     }
     s->catch_count = 3;
     for (int i = 0; i < 3; i++) {
@@ -164,11 +220,11 @@ TEST(panel_long_names_stay_in_columns) {
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
     game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0);
-    /* Rows between the HP bar and the bottom of the move list; the gap between
+    /* Rows between the HP bar and the bottom of the enemy's move list; the gap between
      * the left column (ends at x 292) and the right one (starts at x 308),
      * minus a pixel either side for anti-aliasing. */
     int lit = 0;
-    for (int y = 100; y < 300; y++)
+    for (int y = 100; y < 350; y++)
         for (int x = 294; x < 306; x++)
             if (s_buf[y * 600 + x] != UI_BG) lit++;
     ASSERT_EQ(lit, 0);
@@ -207,6 +263,92 @@ TEST(panel_unsupported_rom_explains_why) {
         game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0);
         ASSERT_TRUE(lit_rows(160, 190) > 0);  /* heading */
         ASSERT_TRUE(lit_rows(200, 300) > 0);  /* explanation */
+    }
+}
+
+/* Lit pixels in a 1x rect; tinted counts only clearly coloured ones (not grey text). */
+static int lit_rect(int x0, int x1, int y0, int y1, bool tinted) {
+    int lit = 0;
+    for (int y = y0; y < y1; y++)
+        for (int x = x0; x < x1; x++) {
+            uint32_t p = s_buf[y * 600 + x];
+            if (p == UI_BG) continue;
+            int r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
+            int hi = r > g ? (r > b ? r : b) : (g > b ? g : b);
+            int lo = r < g ? (r < b ? r : b) : (g < b ? g : b);
+            if (!tinted || hi - lo > 60) lit++;
+        }
+    return lit;
+}
+
+static void draw_1x(const GameSnapshot* snap) {
+    UiCanvas c;
+    ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0);
+}
+
+/* The enemy's moves sit in the right column under the IVs (which end near y 230). */
+TEST(panel_battle_shows_enemy_moves) {
+    static GameSnapshot snap;
+    fill_battle(&snap, GAME_CTX_BATTLE_TRAINER);
+    snap.enemy_count = 1;
+    snap.enemies[0].move_count = 0;
+    draw_1x(&snap);
+    ASSERT_EQ(lit_rect(308, 584, 236, 350, false), 0);
+    snap.enemies[0].move_count = 4;
+    draw_1x(&snap);
+    ASSERT_TRUE(lit_rect(308, 584, 236, 350, false) > 0);
+}
+
+/* An unknown matchup (0xFF) is a muted "?", never a coloured "x0". */
+TEST(panel_enemy_move_unknown_matchup_is_muted) {
+    static GameSnapshot snap;
+    fill_battle(&snap, GAME_CTX_BATTLE_TRAINER);
+    snap.enemy_count = 1;
+    GameEnemy* e = &snap.enemies[0];
+    for (int m = 0; m < 4; m++) {
+        e->moves[m].status_move = false;
+        e->moves[m].quarters = 0;
+    }
+    draw_1x(&snap);
+    ASSERT_TRUE(lit_rect(540, 584, 236, 350, true) > 0);
+    for (int m = 0; m < 4; m++) e->moves[m].quarters = 0xFF;
+    draw_1x(&snap);
+    ASSERT_TRUE(lit_rect(540, 584, 236, 350, false) > 0);
+    ASSERT_EQ(lit_rect(540, 584, 236, 350, true), 0);
+}
+
+/* A tall battle page (second enemy line, status, enemy moves) with a full bag ends the
+ * catch list with "+N more": the last line drawn is that short label at the left, with
+ * no ball row (count, bar, percent) beside it, and it sits above the page clip (476). */
+TEST(panel_wild_battle_many_balls_fit) {
+    static const float densities[] = {1.0f, 2.0f};
+    static GameSnapshot snap;
+    fill_battle(&snap, GAME_CTX_BATTLE_WILD);
+    snap.catch_count = 16;
+    for (int i = 0; i < 16; i++) {
+        game_strcpy(snap.catch_rows[i].ball, GAME_NAME_LEN, "WWWWWWWWWWWW");
+        snap.catch_rows[i].quantity = 999;
+        snap.catch_rows[i].permille = 500;
+    }
+    for (int v = 0; v < 10; v++) {
+        snap.enemy_count = (uint8_t)(1 + v % 2);
+        snap.enemies[0].move_count = (uint8_t)(v / 2);
+        for (size_t d = 0; d < 2; d++) {
+            float dn = densities[d];
+            int w = (int)(600 * dn + 0.5f), h = (int)(480 * dn + 0.5f);
+            ASSERT_TRUE(draw_checked(dn, &snap, GAME_PAGE_AUTO, 0));
+            int last = -1;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                    if (s_buf[y * w + x] != UI_BG) last = y;
+            ASSERT_TRUE(last >= (int)(400 * dn) && last < (int)(476 * dn));
+            int wide = 0;
+            for (int y = last - (int)(14 * dn); y <= last; y++)
+                for (int x = (int)(200 * dn); x < w; x++)
+                    if (s_buf[y * w + x] != UI_BG) wide++;
+            ASSERT_EQ(wide, 0);
+        }
     }
 }
 
@@ -271,12 +413,19 @@ void run_game_panel_tests(void) {
     TEST_SUITE("game_panel");
     RUN_TEST(panel_page_cycles);
     RUN_TEST(panel_auto_page_follows_context);
+    RUN_TEST(panel_battle_switches_to_auto_and_back);
+    RUN_TEST(panel_battle_keeps_page_chosen_during_battle);
+    RUN_TEST(panel_battle_ignores_none_context);
+    RUN_TEST(panel_battle_from_auto_stays_auto);
     RUN_TEST(panel_title_case);
     RUN_TEST(panel_select_wraps);
     RUN_TEST(panel_pages_stay_in_bounds_at_all_densities);
     RUN_TEST(panel_long_names_stay_in_columns);
     RUN_TEST(panel_invalid_snapshot_shows_reason);
     RUN_TEST(panel_unsupported_rom_explains_why);
+    RUN_TEST(panel_battle_shows_enemy_moves);
+    RUN_TEST(panel_enemy_move_unknown_matchup_is_muted);
+    RUN_TEST(panel_wild_battle_many_balls_fit);
     RUN_TEST(panel_route_busy_water_route_shows_every_row);
     RUN_TEST(panel_route_short_list_keeps_roomy_single_column);
     RUN_TEST(panel_route_overflow_keeps_whole_rows_and_counts_the_rest);

@@ -375,6 +375,7 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             }
             if (event.key.keysym.scancode == SDL_SCANCODE_F10 && !event.key.repeat) {
                 fe->panel_page = (uint8_t)game_panel_next_page((GamePage)fe->panel_page);
+                fe->panel_follow.restore = false;
             }
             /* [ and ] move the party selection unless the keymap binds them. */
             if ((event.key.keysym.scancode == SDL_SCANCODE_LEFTBRACKET ||

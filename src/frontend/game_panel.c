@@ -35,6 +35,21 @@ GamePage game_panel_resolve_page(GamePage page, GameContext ctx) {
     return GAME_PAGE_ENCOUNTERS;
 }
 
+GamePage game_panel_follow_battle(GamePage page, GameContext ctx, PanelBattleFollow* f) {
+    if (ctx == GAME_CTX_NONE) return page;
+    bool battle = ctx == GAME_CTX_BATTLE_WILD || ctx == GAME_CTX_BATTLE_TRAINER;
+    if (battle == f->in_battle) return page;
+    f->in_battle = battle;
+    if (battle) {
+        f->saved_page = (uint8_t)page;
+        f->restore = page != GAME_PAGE_AUTO;
+        return GAME_PAGE_AUTO;
+    }
+    if (!f->restore) return page;
+    f->restore = false;
+    return (GamePage)f->saved_page;
+}
+
 uint8_t game_panel_select(uint8_t sel, int delta, uint8_t party_count) {
     if (party_count == 0) return 0;
     int s = sel >= party_count ? party_count - 1 : sel;
@@ -222,23 +237,27 @@ static void title_meta(UiCanvas* c, float x, float y, float max_x, const char* p
                 suffix);
 }
 
-/* pill_x lines the type pills up in one column, as in the mockup's grid. */
-static void move_row(UiCanvas* c, float x, float y, float w, float pill_x, const GameMoveEff* e) {
+/* pill_x lines the type pills up in one column, as in the mockup's grid. The colours
+ * say how good the matchup is for the player, so they flip for the enemy's moves
+ * (against_you): x2 against you is a threat, a resisted or blocked move is good news. */
+static void move_row(UiCanvas* c, float x, float y, float w, float pill_x, const GameMoveEff* e,
+                     bool against_you) {
     const char* txt = "?";
     uint32_t color = UI_MUTED;
     UiFont font = UI_FONT_SEMIBOLD;
+    uint32_t strong = against_you ? UI_BAD : UI_GOOD;
     if (e->status_move) {
         txt = "status";
         font = UI_FONT_REGULAR;
     } else {
         switch (e->quarters) {
-        case 16: txt = TIMES "4"; color = UI_GOOD; break;
-        case 8: txt = TIMES "2"; color = UI_GOOD; break;
+        case 16: txt = TIMES "4"; color = strong; break;
+        case 8: txt = TIMES "2"; color = strong; break;
         case 4: txt = TIMES "1"; font = UI_FONT_REGULAR; break;
-        case 2: txt = TIMES "0.5"; color = UI_WARN; break;
-        case 1: txt = TIMES "0.25"; color = UI_WARN; break;
-        case 0: txt = TIMES "0"; color = UI_BAD; break;
-        default: break;
+        case 2: txt = TIMES "0.5"; color = against_you ? UI_GOOD : UI_WARN; break;
+        case 1: txt = TIMES "0.25"; color = against_you ? UI_GOOD : UI_WARN; break;
+        case 0: txt = TIMES "0"; color = against_you ? UI_GOOD : UI_BAD; break;
+        default: break; /* 0xFF: matchup unknown */
         }
     }
     /* Text centered on the pill (UI_SIZE_PILL + 5 tall). */
@@ -289,6 +308,16 @@ static void more_line(UiCanvas* c, float x, float y, unsigned n) {
     char buf[16];
     snprintf(buf, sizeof(buf), "+%u more", n);
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, 0, UI_ALIGN_LEFT, UI_MUTED, buf);
+}
+
+/* ASCII uppercase copy for section titles, truncated to fit. */
+static void upper_copy(char* out, size_t out_size, const char* in) {
+    size_t n = 0;
+    for (; in[n] && n + 1 < out_size; n++) {
+        char ch = in[n];
+        out[n] = (ch >= 'a' && ch <= 'z') ? (char)(ch - ('a' - 'A')) : ch;
+    }
+    out[n] = '\0';
 }
 
 static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
@@ -344,43 +373,57 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
         kv_row(c, LEFT, ly, 84.0f, COL_W, "Status", st, UI_WARN);
         ly += KV_LINE;
     }
-    if (e->eff_count > 0) {
+    /* Both move lists share one pill offset so their type columns line up. Matchup
+     * column of 44 plus a 10 gap; the name keeps at least 130. */
+    uint8_t eff_n = e->eff_count > 4 ? 4 : e->eff_count;
+    uint8_t moves_n = e->move_count > 4 ? 4 : e->move_count;
+    float widest = 0;
+    for (uint8_t i = 0; i < eff_n; i++) {
+        float pw = pill_width(c, e->eff[i].type);
+        if (pw > widest) widest = pw;
+    }
+    for (uint8_t i = 0; i < moves_n; i++) {
+        float pw = pill_width(c, e->moves[i].type);
+        if (pw > widest) widest = pw;
+    }
+    float pill_off = COL_W - 54.0f - widest;
+    if (pill_off < 138.0f) pill_off = 138.0f;
+    char upper[GAME_NAME_LEN];
+
+    if (eff_n > 0) {
         ly += 6.0f;
         if (s->active_name[0]) {
-            size_t n = 0;
-            char upper[GAME_NAME_LEN];
-            for (; s->active_name[n] && n + 1 < sizeof(upper); n++) {
-                char ch = s->active_name[n];
-                upper[n] = (ch >= 'a' && ch <= 'z') ? (char)(ch - ('a' - 'A')) : ch;
-            }
-            upper[n] = '\0';
+            upper_copy(upper, sizeof(upper), s->active_name);
             snprintf(buf, sizeof(buf), "YOUR %s'S MOVES", upper);
             section(c, LEFT, ly, COL_W, buf);
         } else {
             section(c, LEFT, ly, COL_W, "YOUR MOVES");
         }
         ly += SECTION_ADV;
-        float widest = 0;
-        for (uint8_t i = 0; i < e->eff_count && i < 4; i++) {
-            float pw = pill_width(c, e->eff[i].type);
-            if (pw > widest) widest = pw;
-        }
-        /* Matchup column of 44 plus a 10 gap; the name keeps at least 130. */
-        float pill_x = LEFT + COL_W - 54.0f - widest;
-        if (pill_x < LEFT + 138.0f) pill_x = LEFT + 138.0f;
-        for (uint8_t i = 0; i < e->eff_count && i < 4; i++) {
-            move_row(c, LEFT, ly, COL_W, pill_x, &e->eff[i]);
+        for (uint8_t i = 0; i < eff_n; i++) {
+            move_row(c, LEFT, ly, COL_W, LEFT + pill_off, &e->eff[i], false);
             ly += 21.0f;
         }
     }
 
-    /* Right column: IVs */
+    /* Right column: IVs, then the enemy's moves against the player's active mon */
     float ry = y;
     section(c, COL2_X, ry, COL_W, "IVS");
     ry += SECTION_ADV;
     for (int i = 0; i < 6; i++) {
         iv_row(c, COL2_X, ry, COL_W, i, e->ivs);
         ry += 19.0f;
+    }
+    if (moves_n > 0) {
+        ry += 6.0f;
+        upper_copy(upper, sizeof(upper), e->species);
+        snprintf(buf, sizeof(buf), "%s'S MOVES", upper);
+        section(c, COL2_X, ry, COL_W, buf);
+        ry += SECTION_ADV;
+        for (uint8_t i = 0; i < moves_n; i++) {
+            move_row(c, COL2_X, ry, COL_W, COL2_X + pill_off, &e->moves[i], true);
+            ry += 21.0f;
+        }
     }
 
     if (!wild) return;

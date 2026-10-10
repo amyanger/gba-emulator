@@ -47,16 +47,18 @@ Emerald Companion is a side panel that shows live info from your Pokemon Emerald
 | Key | Panel action |
 |-----|--------------|
 | F9 | Show or hide the panel |
-| F10 | Cycle the page: Auto, Party, Route. Auto shows the battle page during a battle and the route page otherwise. |
+| F10 | Cycle the page: Auto, Party, Route. Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
 | [ and ] | Select the previous or next Pokemon on the Party page |
 
 On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is set to use F1, F2 and so on as standard function keys. `[` and `]` only work on the Party page, and only when they are not bound to a GBA button in a custom keymap.
 
 ### Battle
 
-The opposing Pokemon's species, level, HP, types, nature, IVs, ability and held item, how your active Pokemon's moves match up against it, and, in wild battles, the catch chance for each ball in your bag.
+The opposing Pokemon's species, level, HP, types, nature, IVs, ability and held item, how your active Pokemon's moves match up against it, the opponent's own moves and how they match up against your active Pokemon, and, in wild battles, the catch chance for each ball in your bag. For the opponent's moves the colors are from your side: red means a move is super effective against you, green means you resist it or are immune.
 
-![Wild battle against a Poochyena with the battle page open](docs/screenshots/panel-battle.png)
+The panel switches to this page by itself when a battle starts, even if you were on Party or Route, and goes back to your page when the battle ends.
+
+![Wild battle against a Poochyena, showing your Swampert's moves and the Poochyena's moves](docs/screenshots/panel-battle.png)
 
 ### Party
 
@@ -103,7 +105,7 @@ To check decoded state without a window, run headless with `--game-dump <file>` 
 - **Flash 64K / 128K Save** — Macronix and SST/Atmel/Panasonic chip IDs (Pokemon Emerald, Ruby, Sapphire, FireRed, LeafGreen)
 - **Real-Time Clock** — S-3511A serial RTC over GPIO (0x080000C4/C6/C8) with persistent offset stored in the `.sav` trailer
 - **Cartridge** — ROM loading (up to 32MB), auto save detection, file persistence next to the ROM
-- **Emerald Companion**: for the original Pokemon Emerald (US/English) ROM only. Press F9 for a side panel with wild battle IVs, natures, catch odds per ball, move matchups, your party's IVs/EVs/Hidden Power, and the current location's name and encounter table, in a dark dashboard layout.
+- **Emerald Companion**: for the original Pokemon Emerald (US/English) ROM only. Press F9 for a side panel with wild battle IVs, natures, catch odds per ball, move matchups both ways (your moves and the opponent's), your party's IVs/EVs/Hidden Power, and the current location's name and encounter table, in a dark dashboard layout.
 - **Save States** — 10 numbered slots (0–9), versioned and ROM-hash guarded, written next to the ROM as `<rom>.ss<N>`
 - **Cheats** — GameShark / Action Replay v1–v3 + CodeBreaker, loaded from a `.cht` file
 - **Fast-Forward** — Hold Tab or toggle with `` ` `` (skips audio, renders every Nth frame)
@@ -239,7 +241,7 @@ cmake .. -DENABLE_REWIND=OFF
 | F2 | Toggle Hardware X-Ray Mode |
 | F3 | Toggle input display HUD (mini-GBA overlay showing held buttons) |
 | F9 | Show or hide Emerald Companion (original Pokemon Emerald US/English ROM only) |
-| F10 | Cycle the Emerald Companion page: Auto, Party, Route (Auto shows the battle page during battles) |
+| F10 | Cycle the Emerald Companion page: Auto, Party, Route (Auto shows the battle page during battles; a battle switches to Auto and the old page returns afterwards) |
 | [ and ] | Select the previous or next Pokemon on the Party page (unless bound to a GBA button) |
 | F5 | Save state to current slot |
 | F6 | Edit label of current save-state slot |
