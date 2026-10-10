@@ -127,8 +127,14 @@ static void frontend_measure(Frontend* fe, LayoutInput* in) {
     SDL_GetWindowSize(fe->window, &win_w, &win_h);
     SDL_GetRendererOutputSize(fe->renderer, &out_w, &out_h);
     in->pt_to_px = (win_w > 0 && out_w > 0) ? (float)out_w / (float)win_w : 1.0f;
+    /* Snap to 1/8 so a measured 2.2498 is treated as 2.25. */
+    in->pt_to_px = (float)(int)(in->pt_to_px * 8.0f + 0.5f) / 8.0f;
+    if (in->pt_to_px <= 0.0f) in->pt_to_px = 1.0f;
 
-    /* X11 has no point/pixel split; the desktop scale is only visible as DPI. */
+    /* X11 has no point/pixel split, so the only density hint is DPI. SDL2 derives
+     * X11 DPI from the monitor's physical size, not from the desktop scale setting,
+     * so ordinary monitors report noisy values around 1.0-1.5x. Trust it only when
+     * it clearly indicates a high-DPI screen (>= 1.75x); otherwise use 1.0. */
     in->os_scale = 1.0f;
     int display = SDL_GetWindowDisplayIndex(fe->window);
     if (display < 0) display = 0;
@@ -137,9 +143,8 @@ static void frontend_measure(Frontend* fe, LayoutInput* in) {
     if (driver && strcmp(driver, "x11") == 0 &&
         SDL_GetDisplayDPI(display, NULL, &hdpi, NULL) == 0 && hdpi > 0.0f) {
         float s = (float)(int)(hdpi / 96.0f * 4.0f + 0.5f) / 4.0f;
-        if (s < 1.0f) s = 1.0f;
         if (s > 3.0f) s = 3.0f;
-        in->os_scale = s;
+        if (s >= 1.75f) in->os_scale = s;
     }
 
     SDL_Rect usable;
@@ -294,6 +299,26 @@ static uint16_t sdl_to_gba_key(SDL_Scancode sc) {
     return keymap_lookup(sc);
 }
 
+static void frontend_handle_window_event(Frontend* fe, const SDL_Event* event) {
+#ifdef ENABLE_XRAY
+    /* Handle X-Ray window close button */
+    if (event->window.event == SDL_WINDOWEVENT_CLOSE &&
+        g_xray && g_xray->window_id == event->window.windowID) {
+        xray_toggle(g_xray);
+    }
+#endif
+    if (event->window.windowID == SDL_GetWindowID(fe->window)) {
+        if (event->window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
+            frontend_layout(fe, false);
+        }
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+        if (event->window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) {
+            frontend_layout(fe, true);
+        }
+#endif
+    }
+}
+
 void frontend_poll_input(Frontend* fe, GBA* gba) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -301,6 +326,13 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
         if (event.type == SDL_QUIT) {
             fe->running = false;
             gba->running = false;
+            continue;
+        }
+
+        /* Window events come before the slot picker, which swallows everything,
+         * so the layout still follows resizes while it is open. */
+        if (event.type == SDL_WINDOWEVENT) {
+            frontend_handle_window_event(fe, &event);
             continue;
         }
 
@@ -312,26 +344,6 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
         }
 
         switch (event.type) {
-        case SDL_WINDOWEVENT:
-#ifdef ENABLE_XRAY
-            /* Handle X-Ray window close button */
-            if (event.window.event == SDL_WINDOWEVENT_CLOSE &&
-                g_xray && g_xray->window_id == event.window.windowID) {
-                xray_toggle(g_xray);
-            }
-#endif
-            if (event.window.windowID == SDL_GetWindowID(fe->window)) {
-                if (event.window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
-                    frontend_layout(fe, false);
-                }
-#if SDL_VERSION_ATLEAST(2, 0, 18)
-                if (event.window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) {
-                    frontend_layout(fe, true);
-                }
-#endif
-            }
-            break;
-
         case SDL_KEYDOWN: {
             uint16_t key = sdl_to_gba_key(event.key.keysym.scancode);
             if (key) input_press(&gba->input, key);

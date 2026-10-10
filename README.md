@@ -36,7 +36,7 @@ Press **F9** to open a side panel next to the game. The panel has a dark dashboa
 - **Party** shows each Pokemon's nature, IVs, EVs and Hidden Power. Press **[** and **]** to change the selected Pokemon. These two keys only work on the Party page, and only when they are not bound to a GBA button in a custom keymap.
 - **Route** shows the encounter table for the current route.
 
-The panel sizes itself to the screen's pixel density, so it stays crisp on standard monitors, Windows display scaling, Retina and 4K. `--scale` only sets the size of the game. The panel is 600 by 480 points, the window is at least 480 points tall while the panel is open, and the game is centered vertically. In fullscreen (F11) the game grows to fill the screen with the panel beside it.
+The panel sizes itself to the screen's pixel density, so it stays crisp on standard monitors, Windows display scaling, Retina and 4K. `--scale` only sets the size of the game. The panel is 600 by 480 points, the window is at least 480 points tall while the panel is open, and the game is centered vertically. In fullscreen (F11) the game grows to fill the screen with the panel beside it. On Linux X11 the panel uses the display DPI only when it indicates a high-DPI screen; otherwise it uses 1.0.
 
 Supported ROM: US Emerald rev 0 (game code BPEE) only. Any other ROM shows "No game info for this ROM". Every name and number is read from your own ROM at runtime, and nothing from the game ships with the emulator. The panel only reads memory. It never writes to the game, makes no bus accesses, does not change timing, and leaves savestates untouched. Addresses come from the pret/pokeemerald decomp.
 
@@ -545,8 +545,8 @@ Place test ROMs in the `roms/` directory (not tracked by git):
 - [awesome-gbadev](https://github.com/gbadev-org/awesome-gbadev) — Curated GBA development resources
 - [mGBA](https://github.com/mgba-emu/mgba) — Reference emulator source
 - [Tonc](https://www.coranac.com/tonc/text/hardware.htm) — GBA hardware programming tutorial
-- [Inter](https://rsms.me/inter/) 4.1 — Font for the game info panel, under the SIL Open Font License 1.1 (`fonts/Inter-LICENSE.txt`). `tools/embed_font.sh` regenerates `src/ui/font_inter.h` from it.
-- [stb_truetype](https://github.com/nothings/stb) — Glyph rasterizer for the panel font, public domain
+- [Inter](https://rsms.me/inter/) 4.1: Font for the game info panel, under the SIL Open Font License 1.1 (`fonts/Inter-LICENSE.txt`). `tools/embed_font.sh` regenerates `src/ui/font_inter.h` from it.
+- [stb_truetype](https://github.com/nothings/stb): Glyph rasterizer for the panel font, public domain
 
 ## License
 
