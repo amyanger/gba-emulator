@@ -44,13 +44,25 @@
 #define MAP_HEADER_SIZE    0x1C
 #define MAP_HEADER_LAYOUT  0x00
 #define MAP_HEADER_EVENTS  0x04
+#define MAP_HEADER_CONNS   0x0C
+#define LAYOUT_WIDTH       0x00
+#define LAYOUT_HEIGHT      0x04
 #define LAYOUT_PRIMARY     0x10
 #define LAYOUT_SECONDARY   0x14
 #define TILESET_ATTRS      0x10
 #define EVENTS_OBJ_COUNT   0x00
+#define EVENTS_BG_COUNT    0x03
 #define EVENTS_OBJS        0x04
+#define EVENTS_BGS         0x10
+#define BG_SIZE            12
+#define BG_KIND            0x05
+#define BG_HIDDEN_ID       0x0A
+#define BG_KIND_HIDDEN_ITEM 7
+#define CONN_SIZE          12
+#define CONN_CAP           8
 
 #define FLAG_TRAINER_BASE  0x500
+#define FLAG_HIDDEN_BASE   0x1F4
 #define SCRIPT_TRAINERBATTLE 0x5C
 #define TRAINER_SIZE       0x28
 #define TRAINER_CLASS      0x01
@@ -58,6 +70,7 @@
 #define CHAR_MALE          0xB5
 #define CHAR_FEMALE        0xB6
 
+#define MAP_OFFSET         7
 #define VMAP_MAX_CELLS     10240
 #define GRID_UNDEFINED     0x03FF
 #define GRID_COLLISION     0x0C00
@@ -96,6 +109,11 @@ static bool flag_set(const OwCtx* c, uint32_t flag) {
 
 /* Sub-tile camera progress, from SetSpritePosToMapCoords (event_object_movement.c). */
 static int32_t cam_adjust(int32_t f) { return -f + (f > 0 ? 16 : f < 0 ? -16 : 0); }
+
+static void tile_to_screen(const OwCtx* c, int32_t vx, int32_t vy, int16_t* x, int16_t* y) {
+    *x = (int16_t)((vx - c->pos_x) * 16 + c->cam_dx);
+    *y = (int16_t)((vy - c->pos_y) * 16 + c->cam_dy);
+}
 
 static bool on_screen(int32_t x, int32_t y) {
     return x > -16 && x < SCREEN_WIDTH && y > -16 && y < SCREEN_HEIGHT;
@@ -217,8 +235,9 @@ static uint8_t sight_clear(const OwCtx* c, int self, OwDir d, uint8_t range) {
     if (!c->grid_ok || k_own_blocks[d](o[OBJ_BEHAVIOR])) return 0;
     int32_t x = s16_at(o + OBJ_CUR), y = s16_at(o + OBJ_CUR + 2);
     uint8_t elev = o[OBJ_ELEVATION] & 0x0F;
-    for (uint8_t k = 1; k <= range; k++) {
-        int32_t tx = x + k_dx[d] * k, ty = y + k_dy[d] * k;
+    /* u32 counter: with range 255 a u8 would wrap and never end. */
+    for (uint32_t k = 1; k <= range; k++) {
+        int32_t tx = x + k_dx[d] * (int32_t)k, ty = y + k_dy[d] * (int32_t)k;
         uint16_t block = 0;
         if (!grid_cell(c, tx, ty, &block) || (block & GRID_COLLISION)) return (uint8_t)(k - 1);
         if (k_dest_blocks[d](behavior_of(c, block))) return (uint8_t)(k - 1);
@@ -275,6 +294,65 @@ static bool field_visible(const OwCtx* c) {
     return true;
 }
 
+static void add_hidden(const OwCtx* c, uint32_t events, int32_t ox, int32_t oy, OverworldSnapshot* s) {
+    uint8_t n = 0, ev[BG_SIZE];
+    uint32_t bgs = 0;
+    if (!game_mem_read8(c->m, events + EVENTS_BG_COUNT, &n) || !game_mem_read32(c->m, events + EVENTS_BGS, &bgs))
+        return;
+    for (uint32_t i = 0; i < n && s->hidden_count < OW_MAX_HIDDEN; i++) {
+        int16_t x, y;
+        if (!game_mem_copy(c->m, bgs + i * BG_SIZE, ev, BG_SIZE) || ev[BG_KIND] != BG_KIND_HIDDEN_ITEM) continue;
+        if (flag_set(c, FLAG_HIDDEN_BASE + (uint32_t)(ev[BG_HIDDEN_ID] | (ev[BG_HIDDEN_ID + 1] << 8)))) continue;
+        tile_to_screen(c, s16_at(ev) + ox, s16_at(ev + 2) + oy, &x, &y);
+        if (!on_screen(x, y)) continue;
+        s->hidden[s->hidden_count].x = x;
+        s->hidden[s->hidden_count].y = y;
+        s->hidden_count++;
+    }
+}
+
+static bool layout_size(const OwCtx* c, uint32_t header, int32_t* w, int32_t* h) {
+    uint32_t layout = 0, uw = 0, uh = 0;
+    if (!game_mem_read32(c->m, header + MAP_HEADER_LAYOUT, &layout) ||
+        !game_mem_read32(c->m, layout + LAYOUT_WIDTH, &uw) || !game_mem_read32(c->m, layout + LAYOUT_HEIGHT, &uh))
+        return false;
+    *w = (int32_t)uw;
+    *h = (int32_t)uh;
+    return true;
+}
+
+/* The current map's hidden items, plus those of connected maps shifted the way
+ * the game stitches them into the VMap (fieldmap.c Fill*Connection). */
+static void read_hidden(const OwCtx* c, OverworldSnapshot* s) {
+    uint32_t events = 0, conns = 0, list = 0, count = 0;
+    int32_t lw = 0, lh = 0;
+    if (game_mem_read32(c->m, c->p->map_header + MAP_HEADER_EVENTS, &events))
+        add_hidden(c, events, MAP_OFFSET, MAP_OFFSET, s);
+    if (!layout_size(c, c->p->map_header, &lw, &lh) ||
+        !game_mem_read32(c->m, c->p->map_header + MAP_HEADER_CONNS, &conns) || conns == 0 ||
+        !game_mem_read32(c->m, conns, &count) || !game_mem_read32(c->m, conns + 4, &list))
+        return;
+    for (uint32_t i = 0; i < count && i < CONN_CAP; i++) {
+        uint8_t conn[CONN_SIZE];
+        int32_t nw = 0, nh = 0, ox, oy;
+        uint32_t header, nev = 0;
+        if (!game_mem_copy(c->m, list + i * CONN_SIZE, conn, CONN_SIZE)) return;
+        header = map_header_rom(c, conn[8], conn[9]);
+        if (!header || !layout_size(c, header, &nw, &nh) || !game_mem_read32(c->m, header + MAP_HEADER_EVENTS, &nev))
+            continue;
+        int32_t off = (int32_t)((uint32_t)conn[4] | ((uint32_t)conn[5] << 8) | ((uint32_t)conn[6] << 16) |
+                                ((uint32_t)conn[7] << 24));
+        switch (conn[0]) {
+        case 1: ox = off + MAP_OFFSET; oy = lh + MAP_OFFSET; break;   /* south */
+        case 2: ox = off + MAP_OFFSET; oy = MAP_OFFSET - nh; break;   /* north */
+        case 3: ox = MAP_OFFSET - nw; oy = off + MAP_OFFSET; break;   /* west */
+        case 4: ox = lw + MAP_OFFSET; oy = off + MAP_OFFSET; break;   /* east */
+        default: continue;
+        }
+        add_hidden(c, nev, ox, oy, s);
+    }
+}
+
 void overworld_read(const GameProfile* p, const GameMem* m, OverworldSnapshot* out) {
     OwCtx c;
     uint8_t sb[6];
@@ -313,6 +391,7 @@ void overworld_read(const GameProfile* p, const GameMem* m, OverworldSnapshot* o
     for (int i = 0; i < OBJ_COUNT; i++)
         if (c.obj_ok[i] && (c.objs[i][OBJ_FLAGS0] & 1) && !(c.objs[i][OBJ_FLAGS2] & 1))
             read_trainer(&c, i, out);
+    read_hidden(&c, out);
 }
 
 void overworld_feed_init(OverworldFeed* f, const GameProfile* p) {
@@ -337,6 +416,20 @@ void overworld_capture(const GBA* gba, void* feed) {
 }
 
 bool overworld_dump(const OverworldSnapshot* s, FILE* out) {
-    (void)s;
-    return fprintf(out, "[overworld]\n") >= 0;
+    static const char* const k_dir[OW_DIR_COUNT] = {"down", "up", "left", "right"};
+    if (fprintf(out, "[overworld]\nvisible %d\n", s->visible ? 1 : 0) < 0) return false;
+    for (uint8_t i = 0; i < s->trainer_count; i++) {
+        const OwTrainer* t = &s->trainers[i];
+        if (fprintf(out,
+                    "trainer id=%u class=%s known=%d beaten=%d buried=%d facing=%s range=%u "
+                    "clear=%u,%u,%u,%u x=%d y=%d\n",
+                    (unsigned)t->id, t->class_name, t->known, t->beaten, t->buried,
+                    k_dir[t->facing < OW_DIR_COUNT ? t->facing : 0], (unsigned)t->range,
+                    (unsigned)t->clear[0], (unsigned)t->clear[1], (unsigned)t->clear[2],
+                    (unsigned)t->clear[3], t->x, t->y) < 0)
+            return false;
+    }
+    for (uint8_t i = 0; i < s->hidden_count; i++)
+        if (fprintf(out, "hidden x=%d y=%d\n", s->hidden[i].x, s->hidden[i].y) < 0) return false;
+    return true;
 }

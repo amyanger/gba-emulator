@@ -471,7 +471,116 @@ TEST(ow_bad_grid_omits_cones_keeps_trainer) {
     ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 0);
 }
 
+/* Hidden item bg event i at map coords (x, y) with hiddenItemId id. */
+static void put_hidden(uint32_t table, int i, uint16_t x, uint16_t y, uint8_t kind, uint16_t id) {
+    uint32_t e = table + 12u * (uint32_t)i;
+    put16(e + 0, x); put16(e + 2, y); put8(e + 5, kind); put16(e + 0x0A, id);
+}
+
+TEST(ow_hidden_item_on_screen) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put8(EVENTS + 0x03, 3);
+    put_hidden(BG_EVENTS, 0, 5, 17, 7, 3);     /* VMap (12, 24) -> screen (32, 24) */
+    put_hidden(BG_EVENTS, 1, 6, 17, 0, 4);     /* a sign, not an item */
+    put_hidden(BG_EVENTS, 2, 60, 17, 7, 5);    /* off screen */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.hidden_count, 1);
+    ASSERT_EQ(s.hidden[0].x, 32);
+    ASSERT_EQ(s.hidden[0].y, 24);
+}
+
+TEST(ow_hidden_item_collected_is_skipped) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put8(EVENTS + 0x03, 1);
+    put_hidden(BG_EVENTS, 0, 5, 17, 7, 3);
+    put8(SB1 + 0x1270 + ((0x1F4 + 3) >> 3), (uint8_t)(1u << ((0x1F4 + 3) & 7)));
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.hidden_count, 0);
+}
+
+TEST(ow_hidden_item_follows_camera_scroll) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put8(EVENTS + 0x03, 1);
+    put_hidden(BG_EVENTS, 0, 5, 17, 7, 3);
+    put32(CAMERA + 0x10, 5);                    /* dx = -5 + 16 = 11 */
+    put32(CAMERA + 0x14, (uint32_t)-3);         /* dy = 3 - 16 = -13 */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.hidden_count, 1);
+    ASSERT_EQ(s.hidden[0].x, 32 + 11);
+    ASSERT_EQ(s.hidden[0].y, 24 - 13);
+}
+
+TEST(ow_hidden_item_in_south_connection) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put16(SB1 + 0x00, 5); put16(SB1 + 0x02, 28);   /* camera near the south edge */
+    put32(MAP_HDR + 0x0C, 0x08004000);              /* connections */
+    put32(0x08004000 + 0, 1); put32(0x08004000 + 4, 0x08004010);
+    put8(0x08004010 + 0, 1);                        /* SOUTH */
+    put32(0x08004010 + 4, 0);                       /* offset 0 */
+    put8(0x08004010 + 8, 0); put8(0x08004010 + 9, 2);
+    put32(GROUPS + 0, 0x08003000);
+    put32(0x08003000 + 4 * 2, 0x08003100);
+    put32(0x08003100 + 0x00, 0x08003180);           /* neighbour layout 25 x 10 */
+    put32(0x08003180 + 0, 25); put32(0x08003180 + 4, 10);
+    put32(0x08003100 + 0x04, 0x08003200);
+    put8(0x08003200 + 0x03, 1); put32(0x08003200 + 0x10, 0x08003500);
+    put_hidden(0x08003500, 0, 2, 0, 7, 9);          /* VMap (9, 26 + 7) */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.hidden_count, 1);
+    ASSERT_EQ(s.hidden[0].x, (9 - 5) * 16);
+    ASSERT_EQ(s.hidden[0].y, (33 - 28) * 16 - 40);
+}
+
+TEST(ow_dump_lists_trainers_and_items) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    char buf[512];
+    scene();
+    put8(EVENTS + 0x03, 1);
+    put_hidden(BG_EVENTS, 0, 5, 17, 7, 3);
+    overworld_read(&k_profile, &m, &s);
+    FILE* f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    ASSERT_TRUE(overworld_dump(&s, f));
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+    ASSERT_TRUE(strstr(buf, "[overworld]\nvisible 1\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "trainer id=10 class=YOUNGSTER known=1 beaten=0 buried=0 facing=down "
+                            "range=4 clear=4,0,0,0 x=64 y=24\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "hidden x=32 y=24\n") != NULL);
+}
+
+TEST(ow_sight_range_255_terminates) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    /* A wide but legal grid (300 x 34 = 10200 cells) with 255+ clear tiles east. */
+    put32(BACKUP + 0, 300); put32(BACKUP + 4, 34);
+    for (uint32_t i = 0; i < 300u * 34u; i++) put16(GRID + 2u * i, 0x3001);
+    put16(OBJS + 0x24 + 0x18, 4);     /* facing east */
+    put8(OBJS + 0x24 + 0x1D, 255);    /* garbage range: a u8 counter would wrap forever */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_RIGHT], 255);
+}
+
 void run_overworld_tests(void) {
+    RUN_TEST(ow_sight_range_255_terminates);
+    RUN_TEST(ow_hidden_item_on_screen);
+    RUN_TEST(ow_hidden_item_collected_is_skipped);
+    RUN_TEST(ow_hidden_item_follows_camera_scroll);
+    RUN_TEST(ow_hidden_item_in_south_connection);
+    RUN_TEST(ow_dump_lists_trainers_and_items);
     RUN_TEST(ow_sight_clear_full_range);
     RUN_TEST(ow_sight_stops_at_collision_and_undefined);
     RUN_TEST(ow_sight_elevation_rules);
