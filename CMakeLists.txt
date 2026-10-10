@@ -5,6 +5,11 @@ project(gba_emulator
     LANGUAGES C
 )
 
+# rom_picker_mac.m (the macOS "choose a ROM" dialog) is Objective-C.
+if(APPLE)
+    enable_language(OBJC)
+endif()
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -110,6 +115,7 @@ set(SOURCES
     src/frontend/slot_picker.c
     src/frontend/game_panel.c
     src/frontend/panel_layout.c
+    src/frontend/rom_picker.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
     src/frontend/overlay_draw.c
@@ -149,6 +155,17 @@ target_include_directories(gba_emulator PRIVATE
 )
 
 target_link_libraries(gba_emulator PRIVATE ${SDL2_LIBRARIES} $<$<NOT:$<PLATFORM_ID:Windows>>:m>)
+
+# Native file picker for launches without a ROM argument (double-click).
+if(APPLE)
+    target_sources(gba_emulator PRIVATE src/frontend/rom_picker_mac.m)
+    target_link_libraries(gba_emulator PRIVATE "-framework AppKit" "-framework UniformTypeIdentifiers")
+elseif(WIN32)
+    target_sources(gba_emulator PRIVATE src/frontend/rom_picker_win.c)
+    target_link_libraries(gba_emulator PRIVATE comdlg32)
+else()
+    target_sources(gba_emulator PRIVATE src/frontend/rom_picker_linux.c)
+endif()
 
 if(ENABLE_XRAY)
     target_compile_definitions(gba_emulator PRIVATE ENABLE_XRAY)

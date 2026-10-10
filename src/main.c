@@ -6,6 +6,7 @@
 #include "frontend/input_display.h"
 #include "frontend/slot_picker.h"
 #include "frontend/game_panel.h"
+#include "frontend/rom_picker.h"
 #include "game/game.h"
 #include "headless/headless.h"
 #ifdef ENABLE_REWIND
@@ -83,12 +84,19 @@ static void print_usage(const char* prog) {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        print_usage(argv[0]);
-        return 1;
-    }
+    rom_picker_hide_console();
 
+    /* No arguments means a double-click: ask for a ROM instead of printing usage. */
+    static char picked_rom[1024];
+    bool gui_launch = argc < 2;
     const char* rom_path = argv[1];
+    if (gui_launch) {
+        if (!rom_picker_launch(picked_rom, sizeof(picked_rom))) {
+            print_usage(argv[0]);
+            return 0;
+        }
+        rom_path = picked_rom;
+    }
     const char* bios_path = NULL;
     const char* cheat_path = NULL;
     const char* keymap_path = NULL;
@@ -266,6 +274,7 @@ int main(int argc, char* argv[]) {
 
     if (!gba_load_rom(&gba, rom_path)) {
         LOG_ERROR("Failed to load ROM: %s", rom_path);
+        if (gui_launch) rom_picker_alert("Couldn't load that file as a GBA ROM.");
         // Mirror the normal-cleanup path so a failed ROM load doesn't leak
         // the link socket fd or leave a stray socket file behind.
         if (link_peer) link_peer_shutdown(link_peer);
