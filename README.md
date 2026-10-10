@@ -134,11 +134,14 @@ The `xattr` line clears the Gatekeeper quarantine flag so macOS will run the uns
 
 ### Linux (x86_64)
 
+1. Download `gba_emulator-0.3.1-Linux-x86_64.AppImage` from the Releases page.
+2. Make it executable: right-click it, open **Properties** and allow running it as a program, or run `chmod +x gba_emulator-0.3.1-Linux-x86_64.AppImage`.
+3. Double-click it and choose a `.gba` file.
+
+The file picker uses `zenity` (GNOME and most desktops) or `kdialog` (KDE). If neither is installed, pass the ROM on the command line:
+
 ```bash
-sudo apt install libsdl2-2.0-0   # or your distro's SDL2 runtime package
-curl -L -O https://github.com/amyanger/gba-emulator/releases/latest/download/gba_emulator-0.3.1-Linux-x86_64.tar.gz
-tar -xzf gba_emulator-0.3.1-Linux-x86_64.tar.gz
-./gba_emulator-0.3.1-Linux-x86_64/bin/gba_emulator path/to/rom.gba --scale 3
+./gba_emulator-0.3.1-Linux-x86_64.AppImage path/to/rom.gba --scale 3
 ```
 
 ### Windows (x86_64)

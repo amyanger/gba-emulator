@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=GBA Emulator
+Comment=Game Boy Advance emulator
+Exec=gba_emulator %f
+Icon=gba_emulator
+Terminal=false
+Categories=Game;Emulator;
+MimeType=application/x-gba-rom;
+StartupWMClass=gba_emulator
