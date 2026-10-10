@@ -101,6 +101,7 @@ static void print_usage(const char* prog) {
     printf("  --panel-page <p>       Headless: panel page, auto|party|route (default: auto)\n");
     printf("  --panel-select <n>     Headless: selected party slot on the party page (default: 0)\n");
     printf("  --xray-out <file>      Headless: render the Hardware X-Ray window to a PNG after the run\n");
+    printf("  --overworld-out <f>    Headless: final frame at 3x with the Overworld X-Ray drawn, as PNG\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
@@ -149,6 +150,7 @@ int main(int argc, char* argv[]) {
     const char* panel_density_arg = NULL;
     const char* panel_select_arg = NULL;
     const char* xray_out_path = NULL;
+    const char* overworld_out_path = NULL;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -196,6 +198,8 @@ int main(int argc, char* argv[]) {
             panel_page_arg = argv[++i];
         } else if (strcmp(argv[i], "--xray-out") == 0 && i + 1 < argc) {
             xray_out_path = argv[++i];
+        } else if (strcmp(argv[i], "--overworld-out") == 0 && i + 1 < argc) {
+            overworld_out_path = argv[++i];
         } else if (strcmp(argv[i], "--panel-select") == 0 && i + 1 < argc) {
             panel_select_arg = argv[++i];
         } else {
@@ -228,6 +232,10 @@ int main(int argc, char* argv[]) {
     }
     if (xray_out_path && !headless) {
         LOG_ERROR("--xray-out requires --headless");
+        return 1;
+    }
+    if (overworld_out_path && !headless) {
+        LOG_ERROR("--overworld-out requires --headless");
         return 1;
     }
 #ifndef ENABLE_XRAY
@@ -431,6 +439,10 @@ int main(int argc, char* argv[]) {
             g_xray = &s_xray_state;
         }
 #endif
+        if (s_game.profile && (game_dump_path || overworld_out_path))
+            gba_set_vblank_observer(&gba, overworld_capture, &s_ow);
+        if (overworld_out_path && !s_game.profile)
+            LOG_WARN("--overworld-out: not the original Pokemon Emerald (US), drawing the game only");
         int rc = headless_run(&gba, headless_frames, hash_out,
                               input_script_path ? &input_script : NULL);
         if (hash_out != stdout) fclose(hash_out);
@@ -447,7 +459,7 @@ int main(int argc, char* argv[]) {
         }
         if (rc == 0 && game_dump_path) {
             FILE* f = fopen(game_dump_path, "w");
-            if (!f || !game_dump(&dump_state.snap, f)) {
+            if (!f || !game_dump(&dump_state.snap, f) || (s_game.profile && !overworld_dump(&s_ow.shown, f))) {
                 LOG_ERROR("Failed to write --game-dump file: %s", game_dump_path);
                 rc = 1;
             }
@@ -466,6 +478,28 @@ int main(int argc, char* argv[]) {
                 game_panel_draw(&canvas, &dump_state.snap, panel_page, panel_select);
                 if (!screenshot_save_argb(px, w, h, panel_out_path)) {
                     LOG_ERROR("Failed to write --panel-out file: %s", panel_out_path);
+                    rc = 1;
+                }
+                free(px);
+            }
+        }
+        if (rc == 0 && overworld_out_path) {
+            enum { OW_OUT_SCALE = 3 };
+            int w = SCREEN_WIDTH * OW_OUT_SCALE, h = SCREEN_HEIGHT * OW_OUT_SCALE;
+            uint32_t* px = (uint32_t*)calloc((size_t)w * (size_t)h, sizeof(uint32_t));
+            if (!px) {
+                LOG_ERROR("Out of memory rendering --overworld-out");
+                rc = 1;
+            } else {
+                for (int y = 0; y < h; y++)
+                    for (int x = 0; x < w; x++)
+                        px[y * w + x] = gba_to_argb(
+                            gba.ppu.framebuffer[(y / OW_OUT_SCALE) * SCREEN_WIDTH + x / OW_OUT_SCALE]);
+                UiCanvas canvas;
+                ui_canvas_init(&canvas, px, w, h, 1.0f);
+                overworld_draw(&canvas, &s_ow.shown, (float)OW_OUT_SCALE);
+                if (!screenshot_save_argb(px, w, h, overworld_out_path)) {
+                    LOG_ERROR("Failed to write --overworld-out file: %s", overworld_out_path);
                     rc = 1;
                 }
                 free(px);

@@ -302,6 +302,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--panel-page <p>` | Panel page: `auto`, `party` or `route` (default `auto`). Requires `--headless`. |
 | `--panel-select <n>` | Selected party slot, 0 to 5, for the party page (default 0). Requires `--headless`. |
 | `--xray-out <file>` | After the run, render the Hardware X-Ray window to a 2400x1640 PNG. Requires `--headless` and an X-Ray build. |
+| `--overworld-out <file>` | After the run, write the final frame at 3x (720x480 PNG) with the Overworld X-Ray drawn on it. With `--game-dump`, the dump gains an `[overworld]` section. Requires `--headless`; original Pokemon Emerald (US) only. |
 | `--game-dump <file>` | After the run, write the decoded Emerald game state (party, battle, encounters) to `file`. Requires `--headless`. |
 
 An input script has one event per line, `<frame> <press|release> <KEY>`,
