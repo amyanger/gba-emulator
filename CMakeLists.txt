@@ -97,6 +97,7 @@ set(SOURCES
     src/game/emerald_profile.c
     src/game/gen3_text.c
     src/game/pokemon.c
+    src/game/battle_info.c
     src/frontend/frontend.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
@@ -188,6 +189,7 @@ set(LIB_SOURCES
     src/game/emerald_profile.c
     src/game/gen3_text.c
     src/game/pokemon.c
+    src/game/battle_info.c
     src/headless/fb_hash.c
     src/headless/headless.c
     src/headless/input_script.c
@@ -228,6 +230,7 @@ set(TEST_SOURCES
     tests/test_game_mem.c
     tests/test_game_text.c
     tests/test_game_pokemon.c
+    tests/test_game_battle.c
 )
 
 # Several tests rely on POSIX-only APIs (unistd.h, pthreads, AF_UNIX
