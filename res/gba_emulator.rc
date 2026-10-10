@@ -1,0 +1,2 @@
+// Icon ID 1: Explorer uses the first icon; SDL loads it for the window (frontend.c).
+1 ICON "icon/app.ico"

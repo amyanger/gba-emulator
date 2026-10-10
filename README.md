@@ -149,7 +149,12 @@ tar -xzf gba_emulator-0.3.1-Linux-x86_64.tar.gz
 
 ### Windows (x86_64)
 
-Download `gba_emulator-0.3.1-Windows-AMD64.zip` from the Releases page and extract it. `SDL2.dll` is bundled, no separate install needed:
+1. Download `gba_emulator-0.3.1-Windows-AMD64.zip` from the Releases page and extract it.
+2. Double-click `gba_emulator.exe` in the `bin` folder and choose a `.gba` file. Dragging a ROM onto the `.exe` also works.
+
+Windows SmartScreen may warn that the app is from an unknown publisher, because it isn't signed with a paid certificate. Click **More info**, then **Run anyway**.
+
+Command-line options still work from a terminal:
 
 ```
 gba_emulator-0.3.1-Windows-AMD64\bin\gba_emulator.exe path\to\rom.gba --scale 3

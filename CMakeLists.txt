@@ -180,7 +180,9 @@ if(APPLE)
     target_sources(gba_emulator PRIVATE src/frontend/rom_picker_mac.m)
     target_link_libraries(gba_emulator PRIVATE "-framework AppKit" "-framework UniformTypeIdentifiers")
 elseif(WIN32)
-    target_sources(gba_emulator PRIVATE src/frontend/rom_picker_win.c)
+    # .rc: exe icon. .manifest: UTF-8 code page so argv and fopen take Unicode paths.
+    target_sources(gba_emulator PRIVATE src/frontend/rom_picker_win.c
+                   res/gba_emulator.rc res/gba_emulator.manifest)
     target_link_libraries(gba_emulator PRIVATE comdlg32)
 else()
     target_sources(gba_emulator PRIVATE src/frontend/rom_picker_linux.c)

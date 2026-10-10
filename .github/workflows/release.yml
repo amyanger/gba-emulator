@@ -67,6 +67,19 @@ jobs:
         working-directory: build
         run: ctest --output-on-failure -C Release
 
+      - name: Smoke test Unicode ROM path (Windows)
+        if: runner.os == 'Windows'
+        env:
+          LANG: C.UTF-8
+        run: |
+          # 192 bytes of filler is a bogus ROM that cartridge_load still accepts, so
+          # "ROM loaded:" appears only if fopen found the Unicode path. A missing exe,
+          # wrong path or crash leaves no such line and fails the step.
+          mkdir -p "build/Pokémon Roms"
+          printf 'x%.0s' $(seq 1 192) > "build/Pokémon Roms/tiny.gba"
+          ./build/Release/gba_emulator.exe "build/Pokémon Roms/tiny.gba" --headless --frames 1 2>&1 | tee smoke.log || true
+          if ! grep -q "ROM loaded:" smoke.log; then echo "Unicode path failed to open"; exit 1; fi
+
       - name: Package
         working-directory: build
         run: cpack -G ${{ matrix.cpack_generator }} -C Release
