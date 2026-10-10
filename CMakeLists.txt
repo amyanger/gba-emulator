@@ -145,6 +145,7 @@ set(SOURCES
     src/frontend/panel_layout.c
     src/frontend/rom_picker.c
     src/frontend/toast.c
+    src/frontend/prefs.c
     src/frontend/settings.c
     src/frontend/settings_cheats.c
     src/frontend/hud_draw.c
@@ -295,6 +296,7 @@ set(LIB_SOURCES
     src/frontend/game_panel.c
     src/frontend/panel_layout.c
     src/frontend/toast.c
+    src/frontend/prefs.c
     src/frontend/settings.c
     src/frontend/settings_cheats.c
     src/frontend/hud_draw.c
@@ -368,6 +370,7 @@ set(TEST_SOURCES
     tests/test_settings.c
     tests/test_panel_layout.c
     tests/test_toast.c
+    tests/test_prefs.c
     tests/test_hud.c
 )
 
