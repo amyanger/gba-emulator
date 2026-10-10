@@ -84,6 +84,8 @@ static void build_world(void) {
     put_str(0x08000200 + 13 * 2, "GROWL");
     at(0x08000300 + 12 * 1)[1] = 40; at(0x08000300 + 12 * 1)[2] = 11;  /* Water Gun */
     at(0x08000300 + 12 * 2)[1] = 0;  at(0x08000300 + 12 * 2)[2] = 3;   /* Growl, stored type 3 */
+    put_str(0x08000200 + 13 * 3, "MUD SLAP");
+    at(0x08000300 + 12 * 3)[1] = 20; at(0x08000300 + 12 * 3)[2] = 4;   /* Ground */
     put_str(0x08000200 + 13 * 237, "HIDDEN POWER");
     at(0x08000300 + 12 * 237)[1] = 60; at(0x08000300 + 12 * 237)[2] = 0;  /* stored Normal */
     put_str(0x08000400 + 13 * 1, "OVERGROW");
@@ -277,6 +279,77 @@ TEST(snapshot_hidden_power_uses_the_players_ivs) {
     ASSERT_EQ(e->eff[0].quarters, 8);  /* Dark vs Fire; stored Normal would be 4 */
 }
 
+/* Enemy (Fire, IVs all 31) knows Water Gun, Growl, Mud Slap, Hidden Power;
+ * the player's battler is made Fire with IVs 0. */
+static void give_enemy_moves(void) {
+    uint8_t* enemy = at(0x02000C00 + 0x58);
+    fixture_put16(enemy + 0x0C, 1);
+    fixture_put16(enemy + 0x0E, 2);
+    fixture_put16(enemy + 0x10, 3);
+    fixture_put16(enemy + 0x12, 237);
+    uint8_t* player = at(0x02000C00);
+    player[0x21] = 10; player[0x22] = 10;
+}
+
+TEST(snapshot_enemy_moves_against_the_player) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    const GameEnemy* e = &gs->snap.enemies[0];
+    ASSERT_EQ(e->move_count, 4);
+    ASSERT_STR_EQ(e->moves[0].move, "WATER GUN");
+    ASSERT_EQ(e->moves[0].type, 11);
+    ASSERT_EQ(e->moves[0].quarters, 8);   /* Water vs Fire */
+    ASSERT_TRUE(!e->moves[0].status_move);
+    ASSERT_STR_EQ(e->moves[1].move, "GROWL");
+    ASSERT_TRUE(e->moves[1].status_move);
+    ASSERT_EQ(e->moves[1].type, 3);
+    ASSERT_STR_EQ(e->moves[2].move, "MUD SLAP");
+    ASSERT_EQ(e->moves[2].quarters, 4);   /* no Ground row in the test table */
+    ASSERT_STR_EQ(e->moves[3].move, "HIDDEN POWER");
+    ASSERT_EQ(e->moves[3].type, 17);      /* the enemy's IVs; the player's would give Fighting */
+    ASSERT_EQ(e->moves[3].quarters, 8);   /* Dark vs Fire */
+}
+
+TEST(snapshot_enemy_ground_move_misses_levitate) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    at(0x02000C00)[0x20] = 26;  /* player battler has Levitate */
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    const GameEnemy* e = &gs->snap.enemies[0];
+    ASSERT_STR_EQ(e->moves[2].move, "MUD SLAP");
+    ASSERT_EQ(e->moves[2].quarters, 0);
+    ASSERT_EQ(e->moves[0].quarters, 8);
+}
+
+TEST(snapshot_enemy_moves_without_player_battler) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    at(0x02000E04)[0] = 1;  /* both battlers on the enemy side */
+    fixture_put16(at(0x02000C00), 0);
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemy_count, 1);
+    const GameEnemy* e = &gs->snap.enemies[0];
+    ASSERT_EQ(e->eff_count, 0);
+    ASSERT_EQ(e->move_count, 4);
+    ASSERT_STR_EQ(e->moves[0].move, "WATER GUN");
+    ASSERT_EQ(e->moves[0].type, 11);
+    ASSERT_EQ(e->moves[0].quarters, 0xFF);
+    ASSERT_TRUE(e->moves[1].status_move);
+    ASSERT_EQ(e->moves[1].quarters, 0xFF);
+    ASSERT_EQ(e->moves[3].type, 17);
+    ASSERT_EQ(e->moves[3].quarters, 0xFF);
+}
+
 TEST(snapshot_active_name_clamps_bad_party_index) {
     build_world();
     enter_wild_battle();
@@ -356,6 +429,21 @@ TEST(snapshot_dump_writes_text) {
     remove("game_dump_test.txt");
     ASSERT_TRUE(strstr(buf, "BULBASAUR") != NULL);
     ASSERT_TRUE(strstr(buf, "ZIGZAGOON") != NULL);
+
+    enter_wild_battle();
+    give_enemy_moves();
+    game_update_mem(gs, &m);
+    f = fopen("game_dump_test.txt", "w+");
+    ASSERT_TRUE(f != NULL);
+    ASSERT_TRUE(game_dump(&gs->snap, f));
+    rewind(f);
+    n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+    remove("game_dump_test.txt");
+    ASSERT_TRUE(strstr(buf, "\nenemy 0 ZIGZAGOON ") != NULL);
+    ASSERT_TRUE(strstr(buf, "\nenemy_move 0 0 WATER GUN type 11 x8\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "\nenemy_move 0 1 GROWL type 3 x0 status\n") != NULL);
 }
 
 void run_game_snapshot_tests(void) {
@@ -366,6 +454,9 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_map_name_empty_when_section_unknown);
     RUN_TEST(snapshot_wild_battle_matchups_and_catch);
     RUN_TEST(snapshot_hidden_power_uses_the_players_ivs);
+    RUN_TEST(snapshot_enemy_moves_against_the_player);
+    RUN_TEST(snapshot_enemy_ground_move_misses_levitate);
+    RUN_TEST(snapshot_enemy_moves_without_player_battler);
     RUN_TEST(snapshot_active_name_clamps_bad_party_index);
     RUN_TEST(snapshot_trainer_battle_has_no_catch_rows);
     RUN_TEST(snapshot_battle_flag_without_enemy_is_overworld);

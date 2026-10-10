@@ -254,6 +254,39 @@ static void read_active_name(const GameMem* m, const GameProfile* p, uint8_t bat
     gen3_decode(d.nickname_raw, sizeof(d.nickname_raw), s->active_name, GAME_NAME_LEN);
 }
 
+/* One of attacker's moves against defender (NULL when unknown: quarters 0xFF).
+ * Foresight is read from the defender, as TypeCalc checks the target's status2. */
+static void fill_move_eff(const GameMem* m, const GameProfile* p, uint16_t mv,
+                          const uint8_t* attacker, const uint8_t* defender,
+                          const uint8_t* type_table, uint32_t type_len, GameMoveEff* eff) {
+    uint8_t bm[BATTLE_MOVE_SIZE];
+    eff->type = 0xFF;
+    eff->quarters = defender ? 0 : 0xFF;
+    move_name(m, p, mv, eff->move);
+    if (mv >= p->move_count ||
+        !game_mem_copy(m, p->battle_moves + (uint32_t)mv * BATTLE_MOVE_SIZE, bm, sizeof(bm))) {
+        eff->status_move = true;
+        return;
+    }
+    uint8_t move_type = bm[2];
+    if (bm[1] == 0) {
+        eff->status_move = true;
+        eff->type = move_type;
+        return;
+    }
+    if (mv == MOVE_HIDDEN_POWER) {
+        uint8_t ivs[6];
+        pokemon_unpack_ivs(rd32(attacker + BMON_IVS), ivs);
+        move_type = pokemon_hidden_power_type(ivs);
+    }
+    eff->type = move_type;
+    if (!defender) return;
+    bool foresight = (rd32(defender + BMON_STATUS2) & STATUS2_FORESIGHT) != 0;
+    uint8_t q = battle_type_quarters(type_table, type_len, move_type, defender[BMON_TYPE1],
+                                     defender[BMON_TYPE2], foresight);
+    eff->quarters = battle_apply_ability(q, move_type, defender[BMON_ABILITY]);
+}
+
 static void fill_enemy(const GameMem* m, const GameProfile* p, const uint8_t* mon,
                        const uint8_t* player, bool have_player, const uint8_t* type_table,
                        uint32_t type_len, GameEnemy* e) {
@@ -282,34 +315,17 @@ static void fill_enemy(const GameMem* m, const GameProfile* p, const uint8_t* mo
     type_name(m, p, t1, e->type1);
     if (t2 != t1) type_name(m, p, t2, e->type2);
 
+    for (int i = 0; i < 4; i++) {
+        uint16_t mv = rd16(mon + BMON_MOVES + 2 * i);
+        if (mv != 0)
+            fill_move_eff(m, p, mv, mon, have_player ? player : NULL, type_table, type_len,
+                          &e->moves[e->move_count++]);
+    }
     if (!have_player) return;
-    bool foresight = (rd32(mon + BMON_STATUS2) & STATUS2_FORESIGHT) != 0;
     for (int i = 0; i < 4; i++) {
         uint16_t mv = rd16(player + BMON_MOVES + 2 * i);
-        uint8_t bm[BATTLE_MOVE_SIZE];
-        if (mv == 0) continue;
-        GameMoveEff* eff = &e->eff[e->eff_count++];
-        eff->type = 0xFF;
-        move_name(m, p, mv, eff->move);
-        if (mv >= p->move_count ||
-            !game_mem_copy(m, p->battle_moves + (uint32_t)mv * BATTLE_MOVE_SIZE, bm, sizeof(bm))) {
-            eff->status_move = true;
-            continue;
-        }
-        uint8_t move_type = bm[2];
-        if (bm[1] == 0) {
-            eff->status_move = true;
-            eff->type = move_type;
-            continue;
-        }
-        if (mv == MOVE_HIDDEN_POWER) {
-            uint8_t ivs[6];
-            pokemon_unpack_ivs(rd32(player + BMON_IVS), ivs);
-            move_type = pokemon_hidden_power_type(ivs);
-        }
-        eff->type = move_type;
-        uint8_t q = battle_type_quarters(type_table, type_len, move_type, t1, t2, foresight);
-        eff->quarters = battle_apply_ability(q, move_type, ability);
+        if (mv != 0)
+            fill_move_eff(m, p, mv, player, mon, type_table, type_len, &e->eff[e->eff_count++]);
     }
 }
 
@@ -463,6 +479,11 @@ bool game_dump(const GameSnapshot* s, FILE* out) {
         ok &= fprintf(out, "enemy %u %s lv%u hp %u/%u nature %s iv %u/%u/%u/%u/%u/%u ability %s item %s\n",
                       i, e->species, e->level, e->hp, e->max_hp, e->nature, e->ivs[0], e->ivs[1],
                       e->ivs[2], e->ivs[3], e->ivs[4], e->ivs[5], e->ability, e->item) >= 0;
+        for (uint8_t j = 0; j < e->move_count; j++) {
+            const GameMoveEff* mv = &e->moves[j];
+            ok &= fprintf(out, "enemy_move %u %u %s type %u x%u%s\n", i, j, mv->move, mv->type,
+                          mv->quarters, mv->status_move ? " status" : "") >= 0;
+        }
     }
     for (uint8_t i = 0; i < s->catch_count; i++)
         ok &= fprintf(out, "catch %s x%u %d\n", s->catch_rows[i].ball, s->catch_rows[i].quantity,

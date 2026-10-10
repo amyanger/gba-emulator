@@ -56,7 +56,10 @@ typedef struct {
     char type1[GAME_NAME_LEN], type2[GAME_NAME_LEN];
     uint8_t type_ids[2];
     uint8_t eff_count;
-    GameMoveEff eff[4];
+    GameMoveEff eff[4];      /* the player's active moves against this enemy */
+    uint8_t move_count;
+    GameMoveEff moves[4];    /* this enemy's moves against the player's active battler;
+                                quarters is 0xFF when that battler is unknown */
 } GameEnemy;
 
 typedef struct {
