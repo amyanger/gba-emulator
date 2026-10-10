@@ -41,6 +41,8 @@ void run_panel_layout_tests(void);
 #ifdef ENABLE_XRAY
 void run_xray_tests(void);
 #endif
+void run_toast_tests(void);
+void run_hud_tests(void);
 #ifndef _WIN32
 // These suites depend on POSIX APIs (unistd.h, pthreads, AF_UNIX socketpair)
 // and are not compiled into the Windows test binary.
@@ -88,6 +90,8 @@ int main(void) {
 #ifdef ENABLE_XRAY
     RUN_SUITE(run_xray_tests);
 #endif
+    RUN_SUITE(run_toast_tests);
+    RUN_SUITE(run_hud_tests);
 #ifndef _WIN32
     RUN_SUITE(run_rtc_tests);
     RUN_SUITE(run_sio_tests);

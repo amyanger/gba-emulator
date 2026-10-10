@@ -248,6 +248,47 @@ TEST(autosave_failed_flush_waits_for_debounce) {
               (int64_t)(1000000 + CARTRIDGE_AUTOSAVE_DEBOUNCE_SECONDS));
 }
 
+TEST(cart_tick_reports_none_when_clean) {
+    Cartridge cart;
+    cart_init_for_test(&cart, "test_autosave_result_clean.sav");
+    ASSERT_EQ(cartridge_save_tick(&cart, (time_t)1000000), CART_FLUSH_NONE);
+}
+
+TEST(cart_tick_reports_none_inside_debounce) {
+    Cartridge cart;
+    cart_init_for_test(&cart, "test_autosave_result_debounce.sav");
+    cart.save_dirty = true;
+    cart.last_save_flush = 1000;
+    ASSERT_EQ(cartridge_save_tick(&cart, (time_t)1001), CART_FLUSH_NONE);
+}
+
+TEST(cart_tick_reports_ok_on_flush) {
+    Cartridge cart;
+    cart_init_for_test(&cart, "test_autosave_result_ok.sav");
+    remove(cart.save_path);
+    cart.save_dirty = true;
+    ASSERT_EQ(cartridge_save_tick(&cart, (time_t)1000000), CART_FLUSH_OK);
+    remove(cart.save_path);
+}
+
+TEST(cart_tick_reports_failed_on_unwritable_path) {
+    Cartridge cart;
+    cart_init_for_test(&cart, "no_such_dir_for_toast_test/x.sav");
+    cart.save_dirty = true;
+    ASSERT_EQ(cartridge_save_tick(&cart, (time_t)1000000), CART_FLUSH_FAILED);
+    ASSERT_TRUE(cart.save_dirty);
+    /* Retried after the debounce, still failing. */
+    ASSERT_EQ(cartridge_save_tick(&cart, (time_t)(1000000 + CARTRIDGE_AUTOSAVE_DEBOUNCE_SECONDS)),
+              CART_FLUSH_FAILED);
+}
+
+TEST(cart_save_to_file_none_without_chip) {
+    Cartridge cart;
+    cart_init_for_test(&cart, "test_autosave_result_nochip.sav");
+    cart.save_type = SAVE_NONE;
+    ASSERT_EQ(cartridge_save_to_file(&cart), CART_FLUSH_NONE);
+}
+
 void run_cartridge_autosave_tests(void) {
     TEST_SUITE("cartridge_autosave");
     RUN_TEST(autosave_tick_no_op_when_clean);
@@ -262,4 +303,9 @@ void run_cartridge_autosave_tests(void) {
     RUN_TEST(save_path_too_long_rom_path);
     RUN_TEST(save_roundtrip_with_rtc_trailer);
     RUN_TEST(save_overwrites_existing_save);
+    RUN_TEST(cart_tick_reports_none_when_clean);
+    RUN_TEST(cart_tick_reports_none_inside_debounce);
+    RUN_TEST(cart_tick_reports_ok_on_flush);
+    RUN_TEST(cart_tick_reports_failed_on_unwritable_path);
+    RUN_TEST(cart_save_to_file_none_without_chip);
 }

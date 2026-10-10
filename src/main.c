@@ -5,6 +5,7 @@
 #include "frontend/overlay_draw.h"
 #include "frontend/input_display.h"
 #include "frontend/slot_picker.h"
+#include "frontend/toast.h"
 #include "frontend/game_panel.h"
 #include "frontend/rom_picker.h"
 #include "game/game.h"
@@ -28,6 +29,14 @@ static XRayState s_xray_state;
 #endif
 
 static GameState s_game;
+
+/* File name without its directory, for short toast details. */
+static const char* path_base(const char* p) {
+    const char* s = strrchr(p, '/');
+    const char* b = strrchr(p, '\\');
+    if (b && (!s || b > s)) s = b;
+    return s ? s + 1 : p;
+}
 
 /* Present one frame: clear overlay, render HUD layers, then blit to screen. */
 static void render_with_overlay(Frontend* fe, GBA* gba) {
@@ -54,6 +63,7 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
             fe->panel_dirty = false;
         }
     }
+    frontend_update_hud(fe, SDL_GetTicks());
     frontend_present_frame(fe, gba->ppu.framebuffer);
 }
 
@@ -278,10 +288,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    bool bios_loaded = false;
     if (bios_path) {
         if (!gba_load_bios(&gba, bios_path)) {
             LOG_WARN("Failed to load BIOS, continuing without it");
             cpu_skip_bios(&gba.cpu);
+        } else {
+            bios_loaded = true;
         }
     } else {
         // No BIOS provided — set CPU to post-BIOS state so execution
@@ -304,12 +317,13 @@ int main(int argc, char* argv[]) {
                  "Emerald. It only supports the original Pokemon Emerald (US/English) ROM.");
 
     // Load cheat codes if provided
+    int32_t cheats_loaded = -1;
     if (cheat_path) {
-        int32_t loaded = cheat_file_load(&gba.cheats, cheat_path);
-        if (loaded < 0) {
+        cheats_loaded = cheat_file_load(&gba.cheats, cheat_path);
+        if (cheats_loaded < 0) {
             LOG_WARN("Failed to load cheat file: %s", cheat_path);
         } else {
-            LOG_INFO("Loaded %d cheats from %s", loaded, cheat_path);
+            LOG_INFO("Loaded %d cheats from %s", cheats_loaded, cheat_path);
         }
     }
 
@@ -419,13 +433,28 @@ int main(int argc, char* argv[]) {
 
     snprintf(fe.rom_path, sizeof(fe.rom_path), "%s", rom_path);
     fe.muted = start_muted;
-    if (start_muted) frontend_set_mute_indicator(&fe, true);
 
     // Keyboard bindings (must come after frontend_init so SDL is up)
     keymap_reset_defaults();
     if (keymap_path) {
         keymap_load(keymap_path);
     }
+
+    if (!bios_loaded)
+        frontend_toast(&fe, TOAST_WARN, "Running without BIOS", "Using built-in BIOS");
+    if (s_game.support == GAME_SUPPORT_MODIFIED)
+        frontend_toast(&fe, TOAST_WARN, "Emerald Companion is off", "ROM hack not supported");
+    if (cheat_path) {
+        if (cheats_loaded < 0) {
+            frontend_toast(&fe, TOAST_ERROR, "Couldn't load cheats", path_base(cheat_path));
+        } else {
+            char title[32];
+            snprintf(title, sizeof(title), "%d %s loaded", (int)cheats_loaded,
+                     cheats_loaded == 1 ? "cheat" : "cheats");
+            frontend_toast(&fe, TOAST_OK, title, path_base(cheat_path));
+        }
+    }
+    if (link_peer) frontend_toast(&fe, TOAST_INFO, "Link cable connected", NULL);
 
     // Initialize audio
     frontend_audio_init(&fe);
@@ -440,12 +469,12 @@ int main(int argc, char* argv[]) {
 
     // Main loop
     bool prev_paused = false;
+    bool save_fail_reported = false;
     while (fe.running && gba.running) {
         frontend_poll_input(&fe, &gba);
 
         // Pause: skip emulation, keep window responsive, mute audio.
         if (fe.paused != prev_paused) {
-            frontend_set_pause_indicator(&fe, fe.paused);
             if (fe.paused) {
                 SDL_ClearQueuedAudio(fe.audio_device);
                 gba.apu.read_pos = gba.apu.write_pos;
@@ -453,12 +482,16 @@ int main(int argc, char* argv[]) {
             prev_paused = fe.paused;
         }
         if (fe.paused) {
+            toast_set_badge(&fe.toasts, BADGE_REWIND, false);
             if (fe.step_pending) {
                 // Single-step: run exactly one frame then re-pause.
                 fe.step_pending = false;
                 gba_run_frame(&gba);
                 if (gba.frame_complete) {
-                    cartridge_save_tick(&gba.cart, time(NULL));
+                    CartFlushResult flush = cartridge_save_tick(&gba.cart, time(NULL));
+                    if (toast_failure_edge(&save_fail_reported, flush != CART_FLUSH_NONE,
+                                           flush == CART_FLUSH_OK))
+                        frontend_toast(&fe, TOAST_ERROR, "Game save failed", "Progress may not be on disk");
                 }
             }
             render_with_overlay(&fe, &gba);
@@ -475,13 +508,17 @@ int main(int argc, char* argv[]) {
             char ss_path[512];
             savestate_slot_path(fe.rom_path, fe.savestate_slot,
                                 ss_path, sizeof(ss_path));
+            char slot_detail[16];
+            snprintf(slot_detail, sizeof(slot_detail), "Slot %d", (int)fe.savestate_slot);
             if (fe.save_requested) {
                 fe.save_requested = false;
                 SaveStateResult res = savestate_save(&gba, ss_path);
                 if (res == SS_OK) {
                     LOG_INFO("State saved to slot %d", fe.savestate_slot);
+                    frontend_toast(&fe, TOAST_OK, "State saved", slot_detail);
                 } else {
                     LOG_ERROR("Failed to save state (error %d)", res);
+                    frontend_toast(&fe, TOAST_ERROR, "Couldn't save state", toast_savestate_error(res));
                 }
             }
             if (fe.load_requested) {
@@ -489,18 +526,28 @@ int main(int argc, char* argv[]) {
                 SaveStateResult res = savestate_load(&gba, ss_path);
                 if (res == SS_OK) {
                     LOG_INFO("State loaded from slot %d", fe.savestate_slot);
+                    frontend_toast(&fe, TOAST_OK, "State loaded", slot_detail);
                     SDL_ClearQueuedAudio(fe.audio_device);
 #ifdef ENABLE_REWIND
                     rewind_clear(&gba.rewind);   // past is no longer valid
 #endif
                 } else {
                     LOG_ERROR("Failed to load state (error %d)", res);
+                    if (res == SS_ERR_FILE_OPEN) {
+                        char title[32];
+                        snprintf(title, sizeof(title), "Slot %d is empty", (int)fe.savestate_slot);
+                        frontend_toast(&fe, TOAST_ERROR, title, NULL);
+                    } else {
+                        frontend_toast(&fe, TOAST_ERROR, "Couldn't load state",
+                                       toast_savestate_error(res));
+                    }
                 }
             }
         }
 
 #ifdef ENABLE_REWIND
         bool rewind_active_now = fe.rewind_hold && rewind_depth(&gba.rewind) > 0;
+        toast_set_badge(&fe.toasts, BADGE_REWIND, rewind_active_now);
 
         // Detect transitions OUT of rewind (cleanup audio + APU state)
         {
@@ -539,14 +586,16 @@ int main(int argc, char* argv[]) {
 
         if (gba.frame_complete) {
             trace_frame_tick();
-            cartridge_save_tick(&gba.cart, time(NULL));
+            CartFlushResult flush = cartridge_save_tick(&gba.cart, time(NULL));
+            if (toast_failure_edge(&save_fail_reported, flush != CART_FLUSH_NONE,
+                                   flush == CART_FLUSH_OK))
+                frontend_toast(&fe, TOAST_ERROR, "Game save failed", "Progress may not be on disk");
             bool ff_active = fe.ff_hold || fe.ff_toggle;
 
-            // Update window title on FF state change
+            // Clean up audio when fast-forward ends
             {
                 static bool prev_ff = false;
                 if (ff_active != prev_ff) {
-                    frontend_set_ff_indicator(&fe, ff_active);
                     if (!ff_active) {
                         // Returning to normal speed: clean audio state
                         SDL_ClearQueuedAudio(fe.audio_device);
@@ -582,6 +631,9 @@ int main(int argc, char* argv[]) {
                 screenshot_path(fe.rom_path, time(NULL), shot_path, sizeof(shot_path));
                 if (screenshot_save(gba.ppu.framebuffer, shot_path)) {
                     LOG_INFO("Screenshot saved: %s", shot_path);
+                    frontend_toast(&fe, TOAST_OK, "Screenshot saved", path_base(shot_path));
+                } else {
+                    frontend_toast(&fe, TOAST_ERROR, "Couldn't save screenshot", NULL);
                 }
             }
         }

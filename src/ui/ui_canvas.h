@@ -1,13 +1,15 @@
 #ifndef UI_CANVAS_H
 #define UI_CANVAS_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct { float x, y, w, h; } UiRect;                 /* points */
 typedef struct {
-    uint32_t* px; int w, h;   /* ARGB8888, opaque background assumed */
+    uint32_t* px; int w, h;   /* ARGB8888 */
     float scale;              /* pixels per point */
     int cx0, cy0, cx1, cy1;   /* clip, pixels, half-open */
+    bool keep_alpha;          /* false: opaque target (panel). true: transparent target, straight alpha */
 } UiCanvas;
 void ui_canvas_init(UiCanvas* c, uint32_t* px, int w, int h, float scale);
 void ui_canvas_clip(UiCanvas* c, UiRect r);    /* intersects with the buffer */
