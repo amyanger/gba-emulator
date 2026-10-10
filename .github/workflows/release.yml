@@ -15,12 +15,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             asset_suffix: linux-x86_64
             install: sudo apt-get update && sudo apt-get install -y libsdl2-dev
             cmake_extra: ""
             cpack_generator: TGZ
-            artifact_glob: build/gba_emulator-*.tar.gz
+            artifact_glob: build/gba_emulator-*.AppImage
           - os: macos-latest
             asset_suffix: macos-arm64
             install: brew install sdl2
@@ -92,6 +92,27 @@ jobs:
           tools/check_mac_bundle.sh "$MNT/GBA Emulator.app"
           hdiutil detach "$MNT"
 
+      - name: Build AppImage (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          VERSION=$(grep -m1 -oE 'VERSION [0-9]+\.[0-9]+\.[0-9]+' CMakeLists.txt | cut -d' ' -f2)
+          tools/make_appimage.sh build/gba_emulator "$VERSION" build
+
+      - name: Check AppImage (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          APPIMAGE=$(realpath build/gba_emulator-*-Linux-x86_64.AppImage)
+          chmod +x "$APPIMAGE"
+          (cd "$RUNNER_TEMP" && "$APPIMAGE" --appimage-extract >/dev/null)
+          ldd "$RUNNER_TEMP/squashfs-root/usr/bin/gba_emulator" | tee ldd.log
+          grep -q "libSDL2.*squashfs-root" ldd.log || { echo "SDL2 not bundled"; exit 1; }
+          # No zenity/kdialog on PATH and no display: must exit 0 quickly, not hang.
+          rc=0
+          SDL_VIDEODRIVER=dummy timeout 20 env PATH=/usr/bin/nonexistent \
+            "$RUNNER_TEMP/squashfs-root/usr/bin/gba_emulator" || rc=$?
+          echo "exit $rc"
+          test "$rc" -eq 0
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -113,9 +134,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/*.tar.gz
             dist/*.zip
             dist/*.dmg
+            dist/*.AppImage
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
