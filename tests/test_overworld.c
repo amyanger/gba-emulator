@@ -132,6 +132,10 @@ static void scene(void) {
     put_name(CLASSES + 2 * 13, "YOUNGSTER");
 }
 
+static const OwTrainer* first_trainer(const OverworldSnapshot* s) {
+    return s->trainer_count ? &s->trainers[0] : NULL;
+}
+
 TEST(ow_null_profile_gives_empty_snapshot) {
     OverworldSnapshot s;
     GameMem m = mem();
@@ -233,7 +237,130 @@ TEST(ow_hidden_without_save_block) {
     ASSERT_TRUE(!s.visible);
 }
 
+TEST(ow_trainer_resolved_from_save_template) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    overworld_read(&k_profile, &m, &s);
+    const OwTrainer* t = first_trainer(&s);
+    ASSERT_TRUE(t != NULL);
+    ASSERT_EQ(s.trainer_count, 1);          /* the player is not a trainer */
+    ASSERT_TRUE(t->known);
+    ASSERT_EQ(t->id, 10);
+    ASSERT_STR_EQ(t->class_name, "YOUNGSTER");
+    ASSERT_EQ(t->x, 64);
+    ASSERT_EQ(t->y, 24);
+    ASSERT_EQ(t->facing, OW_DIR_DOWN);
+    ASSERT_EQ(t->range, 4);
+    ASSERT_TRUE(!t->beaten && !t->buried);
+}
+
+TEST(ow_trainer_beaten_flag) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put8(SB1 + 0x1270 + ((0x500 + 10) >> 3), (uint8_t)(1u << ((0x500 + 10) & 7)));
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_TRUE(first_trainer(&s)->beaten);
+}
+
+TEST(ow_trainer_position_comes_from_sprite) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put16(OBJS + 0x24 + 0x12, 25);   /* mid-step: currentCoords already one tile on */
+    put_sprite(5, 64, 30);           /* sprite still 6 px into the step */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_EQ(first_trainer(&s)->y, 30);
+}
+
+TEST(ow_unknown_script_still_listed) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put8(SCRIPT, 0x0F);                     /* not trainerbattle */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.trainer_count, 1);
+    ASSERT_TRUE(!first_trainer(&s)->known);
+    ASSERT_STR_EQ(first_trainer(&s)->class_name, "");
+    scene();
+    put32(SB1 + 0xC70 + 0x10, 0);           /* NULL script */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.trainer_count, 1);
+    ASSERT_TRUE(!first_trainer(&s)->known);
+}
+
+TEST(ow_skips_range0_type2_and_offscreen) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put8(OBJS + 0x24 + 0x1D, 0);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.trainer_count, 0);
+    scene();
+    put8(OBJS + 0x24 + 0x07, 2);            /* SEE_ALL_DIRECTIONS: never used by the game */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.trainer_count, 0);
+    scene();
+    put_sprite(5, 300, 24);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.trainer_count, 0);
+}
+
+TEST(ow_buried_trainer_flagged) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put8(OBJS + 0x24 + 0x07, 3);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_TRUE(first_trainer(&s)->buried);
+}
+
+TEST(ow_class_name_drops_gender_symbol) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put_name(CLASSES + 2 * 13, "SWIMMER");
+    put8(CLASSES + 2 * 13 + 7, 0xB5);       /* SWIMMER♂ */
+    put8(CLASSES + 2 * 13 + 8, 0xFF);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_STR_EQ(first_trainer(&s)->class_name, "SWIMMER");
+}
+
+TEST(ow_template_from_rom_header_for_other_map) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    /* Object left over from map 0/2 after crossing a connection. */
+    put8(OBJS + 0x24 + 0x09, 2);
+    put32(GROUPS + 0, 0x08003000);           /* group 0 header list */
+    put32(0x08003000 + 4 * 2, 0x08003100);   /* map 0/2 header */
+    put32(0x08003100 + 0x04, 0x08003200);    /* its events */
+    put8(0x08003200 + 0x00, 1);
+    put32(0x08003200 + 0x04, 0x08003300);    /* its object templates */
+    put8(0x08003300 + 0x00, 3);              /* localId 3 */
+    put32(0x08003300 + 0x10, 0x08003400);
+    put8(0x08003400, 0x5C); put16(0x08003402, 11);
+    put8(TRAINERS + 11 * 0x28 + 1, 2);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_TRUE(first_trainer(&s)->known);
+    ASSERT_EQ(first_trainer(&s)->id, 11);
+}
+
 void run_overworld_tests(void) {
+    RUN_TEST(ow_trainer_resolved_from_save_template);
+    RUN_TEST(ow_trainer_beaten_flag);
+    RUN_TEST(ow_trainer_position_comes_from_sprite);
+    RUN_TEST(ow_unknown_script_still_listed);
+    RUN_TEST(ow_skips_range0_type2_and_offscreen);
+    RUN_TEST(ow_buried_trainer_flagged);
+    RUN_TEST(ow_class_name_drops_gender_symbol);
+    RUN_TEST(ow_template_from_rom_header_for_other_map);
     RUN_TEST(ow_null_profile_gives_empty_snapshot);
     RUN_TEST(ow_feed_capture_shifts_next_to_shown);
     RUN_TEST(ow_feed_clear_empties_both_slots);
