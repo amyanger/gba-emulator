@@ -38,7 +38,26 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE Debug)
 endif()
 
-find_package(SDL2 REQUIRED)
+# Release-only: build "GBA Emulator.app" against an official SDL2.framework
+# (tools/fetch_sdl2_framework.sh). Off by default so dev builds stay at
+# build/gba_emulator for the goldens and scripts.
+option(MACOS_APP_BUNDLE "Build a macOS .app bundle for release packaging" OFF)
+set(MACOS_SDL2_FRAMEWORK "" CACHE PATH "SDL2.framework to bundle (MACOS_APP_BUNDLE only)")
+
+if(MACOS_APP_BUNDLE)
+    if(NOT APPLE OR NOT EXISTS "${MACOS_SDL2_FRAMEWORK}/Headers/SDL.h")
+        message(FATAL_ERROR "MACOS_APP_BUNDLE needs macOS and -DMACOS_SDL2_FRAMEWORK=<dir>/SDL2.framework")
+    endif()
+    get_filename_component(SDL2_FRAMEWORK_DIR "${MACOS_SDL2_FRAMEWORK}" DIRECTORY)
+    # -F lets <SDL2/SDL.h> resolve to SDL2.framework/Headers/SDL.h.
+    add_compile_options("-F${SDL2_FRAMEWORK_DIR}")
+    set(SDL2_INCLUDE_DIRS "")
+    set(SDL2_LIBRARIES "-F${SDL2_FRAMEWORK_DIR}" "-framework SDL2")
+    # gba_tests runs from the build tree during the release job.
+    set(CMAKE_BUILD_RPATH "${SDL2_FRAMEWORK_DIR}")
+else()
+    find_package(SDL2 REQUIRED)
+endif()
 
 # Treat warnings as errors (used in CI; off by default so a new local
 # compiler's extra warnings don't block development)
@@ -165,6 +184,23 @@ elseif(WIN32)
     target_link_libraries(gba_emulator PRIVATE comdlg32)
 else()
     target_sources(gba_emulator PRIVATE src/frontend/rom_picker_linux.c)
+endif()
+
+if(MACOS_APP_BUNDLE)
+    set(APP_NAME "GBA Emulator")
+    set_source_files_properties(res/icon/app.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(gba_emulator PRIVATE res/icon/app.icns)
+    set_target_properties(gba_emulator PROPERTIES
+        OUTPUT_NAME "${APP_NAME}"
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/cmake/Info.plist.in"
+        MACOSX_BUNDLE_BUNDLE_NAME "${APP_NAME}"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.amyanger.gba-emulator"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_ICON_FILE "app.icns"
+        INSTALL_RPATH "@executable_path/../Frameworks"
+    )
 endif()
 
 if(ENABLE_XRAY)
@@ -313,25 +349,37 @@ add_test(NAME gba_tests COMMAND gba_tests)
 # ── Install + packaging ─────────────────────────────────────────────
 include(GNUInstallDirs)
 
-install(TARGETS gba_emulator
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)
+if(MACOS_APP_BUNDLE)
+    set(APP_DIR "${APP_NAME}.app")
+    install(TARGETS gba_emulator BUNDLE DESTINATION .)
+    install(DIRECTORY "${MACOS_SDL2_FRAMEWORK}" DESTINATION "${APP_DIR}/Contents/Frameworks"
+            USE_SOURCE_PERMISSIONS)
+    install(FILES ${CMAKE_SOURCE_DIR}/LICENSE ${CMAKE_SOURCE_DIR}/fonts/Inter-LICENSE.txt
+            DESTINATION "${APP_DIR}/Contents/Resources")
+    # Sign last: Apple Silicon won't run unsigned code, and adding the
+    # framework invalidated the linker's ad-hoc signature.
+    install(CODE "execute_process(COMMAND codesign --force --deep --sign - \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/${APP_DIR}\" COMMAND_ERROR_IS_FATAL ANY)")
+else()
+    install(TARGETS gba_emulator
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
 
-# On Windows, ship SDL2.dll (and any other runtime deps) next to the .exe so
-# end users don't need a separate SDL2 install. TARGET_RUNTIME_DLLS resolves
-# to the imported SHARED targets the binary links against. Requires CMake 3.21+.
-if(WIN32)
-    install(FILES $<TARGET_RUNTIME_DLLS:gba_emulator>
-        DESTINATION ${CMAKE_INSTALL_BINDIR}
+    # On Windows, ship SDL2.dll (and any other runtime deps) next to the .exe so
+    # end users don't need a separate SDL2 install. TARGET_RUNTIME_DLLS resolves
+    # to the imported SHARED targets the binary links against. Requires CMake 3.21+.
+    if(WIN32)
+        install(FILES $<TARGET_RUNTIME_DLLS:gba_emulator>
+            DESTINATION ${CMAKE_INSTALL_BINDIR}
+        )
+    endif()
+
+    install(FILES
+        ${CMAKE_SOURCE_DIR}/README.md
+        ${CMAKE_SOURCE_DIR}/LICENSE
+        ${CMAKE_SOURCE_DIR}/fonts/Inter-LICENSE.txt
+        DESTINATION ${CMAKE_INSTALL_DOCDIR}
     )
 endif()
-
-install(FILES
-    ${CMAKE_SOURCE_DIR}/README.md
-    ${CMAKE_SOURCE_DIR}/LICENSE
-    ${CMAKE_SOURCE_DIR}/fonts/Inter-LICENSE.txt
-    DESTINATION ${CMAKE_INSTALL_DOCDIR}
-)
 
 set(CPACK_PACKAGE_NAME "gba_emulator")
 set(CPACK_PACKAGE_VENDOR "admyanger")
@@ -345,6 +393,13 @@ if(WIN32)
     set(CPACK_GENERATOR "ZIP")
 else()
     set(CPACK_GENERATOR "TGZ")
+endif()
+if(MACOS_APP_BUNDLE)
+    set(CPACK_GENERATOR "DragNDrop")
+    set(CPACK_PACKAGE_FILE_NAME "${CPACK_PACKAGE_NAME}-${CPACK_PACKAGE_VERSION}-macOS-arm64")
+    set(CPACK_DMG_VOLUME_NAME "GBA Emulator")
+    # No click-through license on mount (and udifrez is gone on new macOS).
+    set(CPACK_DMG_SLA_USE_RESOURCE_FILE_LICENSE OFF)
 endif()
 set(CPACK_SOURCE_GENERATOR "TGZ")
 set(CPACK_SOURCE_IGNORE_FILES
