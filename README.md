@@ -110,10 +110,10 @@ The Linux and macOS binaries are dynamically linked against SDL2, so you'll need
 
 ```bash
 brew install sdl2
-curl -L -O https://github.com/amyanger/gba-emulator/releases/latest/download/gba_emulator-0.2.0-Darwin-arm64.tar.gz
-tar -xzf gba_emulator-0.2.0-Darwin-arm64.tar.gz
-xattr -d com.apple.quarantine gba_emulator-0.2.0-Darwin-arm64/bin/gba_emulator
-./gba_emulator-0.2.0-Darwin-arm64/bin/gba_emulator path/to/rom.gba --scale 3
+curl -L -O https://github.com/amyanger/gba-emulator/releases/latest/download/gba_emulator-0.3.0-Darwin-arm64.tar.gz
+tar -xzf gba_emulator-0.3.0-Darwin-arm64.tar.gz
+xattr -d com.apple.quarantine gba_emulator-0.3.0-Darwin-arm64/bin/gba_emulator
+./gba_emulator-0.3.0-Darwin-arm64/bin/gba_emulator path/to/rom.gba --scale 3
 ```
 
 The `xattr` line clears the Gatekeeper quarantine flag so macOS will run the unsigned binary. Skip it on your own risk and you'll see a "developer cannot be verified" prompt instead.
@@ -122,17 +122,17 @@ The `xattr` line clears the Gatekeeper quarantine flag so macOS will run the uns
 
 ```bash
 sudo apt install libsdl2-2.0-0   # or your distro's SDL2 runtime package
-curl -L -O https://github.com/amyanger/gba-emulator/releases/latest/download/gba_emulator-0.2.0-Linux-x86_64.tar.gz
-tar -xzf gba_emulator-0.2.0-Linux-x86_64.tar.gz
-./gba_emulator-0.2.0-Linux-x86_64/bin/gba_emulator path/to/rom.gba --scale 3
+curl -L -O https://github.com/amyanger/gba-emulator/releases/latest/download/gba_emulator-0.3.0-Linux-x86_64.tar.gz
+tar -xzf gba_emulator-0.3.0-Linux-x86_64.tar.gz
+./gba_emulator-0.3.0-Linux-x86_64/bin/gba_emulator path/to/rom.gba --scale 3
 ```
 
 ### Windows (x86_64)
 
-Download `gba_emulator-0.2.0-Windows-AMD64.zip` from the Releases page and extract it. `SDL2.dll` is bundled, no separate install needed:
+Download `gba_emulator-0.3.0-Windows-AMD64.zip` from the Releases page and extract it. `SDL2.dll` is bundled, no separate install needed:
 
 ```
-gba_emulator-0.2.0-Windows-AMD64\bin\gba_emulator.exe path\to\rom.gba --scale 3
+gba_emulator-0.3.0-Windows-AMD64\bin\gba_emulator.exe path\to\rom.gba --scale 3
 ```
 
 ### Other platforms
