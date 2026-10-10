@@ -31,6 +31,7 @@ static const GameProfile k_test_profile = {
     .experience_tables = 0x08000D00,
     .species_to_national = 0x08001800,
     .wild_mon_headers = 0x08001900, .wild_header_cap = 200,
+    .region_map_entries = 0x08001C00, .region_map_count = 2,
 };
 
 static GameMem test_mem(void) {
@@ -119,6 +120,11 @@ static void build_world(void) {
         slot[0] = 2; slot[1] = 3; fixture_put16(slot + 2, 2);
     }
 
+    /* region map sections: 0 unnamed, 1 "ROUTE ONE" */
+    fixture_put32(at(0x08001C00 + 8 * 1 + 4), 0x08001D00);
+    put_str(0x08001D00, "ROUTE ONE");
+    at(0x02000E20 + 0x14)[0] = 1;
+
     /* Overworld state: map 0:16, one party mon */
     at(SB1)[4] = 0; at(SB1)[5] = 16;
     at(0x02000000)[0] = 1;
@@ -204,7 +210,20 @@ TEST(snapshot_overworld_party_and_encounters) {
     ASSERT_STR_EQ(gs->snap.enc[ENC_LAND][0].species, "ZIGZAGOON");
     ASSERT_EQ(gs->snap.enc[ENC_LAND][0].percent, 100);
     ASSERT_TRUE(gs->snap.enc[ENC_LAND][0].caught);
+    ASSERT_STR_EQ(gs->snap.map_name, "ROUTE ONE");
     ASSERT_MEM_EQ(before, s_ewram, sizeof(s_ewram));
+}
+
+TEST(snapshot_map_name_empty_when_section_unknown) {
+    build_world();
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    at(0x02000E20 + 0x14)[0] = 2;  /* past region_map_count */
+    game_update_mem(gs, &m);
+    ASSERT_STR_EQ(gs->snap.map_name, "");
+    at(0x02000E20 + 0x14)[0] = 0;  /* null name pointer */
+    game_update_mem(gs, &m);
+    ASSERT_STR_EQ(gs->snap.map_name, "");
 }
 
 TEST(snapshot_wild_battle_matchups_and_catch) {
@@ -336,6 +355,7 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_without_profile_explains);
     RUN_TEST(snapshot_waits_when_save_pointers_invalid);
     RUN_TEST(snapshot_overworld_party_and_encounters);
+    RUN_TEST(snapshot_map_name_empty_when_section_unknown);
     RUN_TEST(snapshot_wild_battle_matchups_and_catch);
     RUN_TEST(snapshot_hidden_power_uses_the_players_ivs);
     RUN_TEST(snapshot_active_name_clamps_bad_party_index);

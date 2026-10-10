@@ -37,6 +37,7 @@ typedef struct {
     uint32_t experience_tables;                           /* u32[growth][101] */
     uint32_t species_to_national;                         /* u16, index species-1 */
     uint32_t wild_mon_headers;   uint16_t wild_header_cap; /* 20-byte stride */
+    uint32_t region_map_entries; uint8_t region_map_count; /* 8-byte stride */
 } GameProfile;
 
 extern const GameProfile g_emerald_profile;

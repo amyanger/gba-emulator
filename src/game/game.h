@@ -17,6 +17,7 @@ typedef enum {
 } GameContext;
 
 #define GAME_NAME_LEN 16
+#define GAME_MAP_NAME_LEN 24
 
 typedef struct {
     bool present, bad, egg;
@@ -82,6 +83,7 @@ typedef struct {
     uint8_t catch_count;
     GameCatchRow catch_rows[16];
     uint8_t map_group, map_num, map_type;
+    char map_name[GAME_MAP_NAME_LEN]; /* region map section name, empty when unknown */
     bool has_encounters;
     uint8_t enc_count[ENC_METHOD_COUNT];
     GameEncRow enc[ENC_METHOD_COUNT][12];

@@ -34,6 +34,7 @@ const GameProfile g_emerald_profile = {
     .experience_tables = 0x0831F72C,
     .species_to_national = 0x0831DC82,
     .wild_mon_headers = 0x08552D48, .wild_header_cap = 200,
+    .region_map_entries = 0x085A147C, .region_map_count = 213,
 };
 
 const GameProfile* game_profile_detect(const uint8_t* rom, uint32_t rom_size) {

@@ -579,7 +579,10 @@ void game_panel_route_layout(const GameSnapshot* s, RouteLayout* out) {
 static void draw_route(UiCanvas* c, const GameSnapshot* s, float top) {
     char buf[32];
     float y = top + 4.0f;
-    snprintf(buf, sizeof(buf), "Map %u:%u", s->map_group, s->map_num);
+    if (s->map_name[0])
+        game_panel_title_case(s->map_name, buf, sizeof(buf));
+    else
+        snprintf(buf, sizeof(buf), "Map %u:%u", s->map_group, s->map_num);
     ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, LEFT, y, 0, UI_ALIGN_LEFT, UI_TEXT, buf);
 
     /* The layout keeps whole rows above the footer; the clip is only a backstop. */

@@ -54,9 +54,13 @@
 
 #define BATTLE_TYPE_TRAINER (1u << 3)
 #define BATTLE_TYPE_SAFARI  (1u << 7)
+#define MAP_HEADER_REGION_MAP_SEC 0x14
 #define MAP_HEADER_MAP_TYPE 0x17
 #define MAP_TYPE_UNDERWATER 5
 #define TYPE_TABLE_MAX 512
+/* struct RegionMapLocation (include/region_map.h): x, y, width, height, name */
+#define REGION_MAP_ENTRY_SIZE 8
+#define REGION_MAP_ENTRY_NAME 4
 /* Move id from the ROM's move-name table; its matchup type comes from the user's IVs. */
 #define MOVE_HIDDEN_POWER 237
 
@@ -107,6 +111,22 @@ static void nature_name(const GameMem* m, const GameProfile* p, uint8_t nature, 
     if (nature >= 25 || !game_mem_read32(m, p->nature_name_ptrs + 4u * nature, &ptr)) return;
     while (n < sizeof(raw) && game_mem_read8(m, ptr + n, &raw[n]) && raw[n] != 0xFF) n++;
     if (n > 0) gen3_decode(raw, n, out, GAME_NAME_LEN);
+}
+
+/* Mirrors GetMapName: gRegionMapEntries[gMapHeader.regionMapSectionId].name. */
+static void map_name(const GameMem* m, const GameProfile* p, char* out) {
+    uint8_t sec;
+    uint32_t ptr;
+    uint8_t raw[GAME_MAP_NAME_LEN];
+    uint32_t n = 0;
+    out[0] = '\0';
+    if (!game_mem_read8(m, p->map_header + MAP_HEADER_REGION_MAP_SEC, &sec) ||
+        sec >= p->region_map_count ||
+        !game_mem_read32(m, p->region_map_entries + sec * REGION_MAP_ENTRY_SIZE + REGION_MAP_ENTRY_NAME,
+                         &ptr))
+        return;
+    while (n < sizeof(raw) && game_mem_read8(m, ptr + n, &raw[n]) && raw[n] != 0xFF) n++;
+    if (n > 0) gen3_decode(raw, n, out, GAME_MAP_NAME_LEN);
 }
 
 static bool species_info(const GameMem* m, const GameProfile* p, uint16_t species,
@@ -380,6 +400,7 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     game_mem_read8(m, sb1 + SB1_MAP_GROUP, &s->map_group);
     game_mem_read8(m, sb1 + SB1_MAP_NUM, &s->map_num);
     game_mem_read8(m, p->map_header + MAP_HEADER_MAP_TYPE, &s->map_type);
+    map_name(m, p, s->map_name);
     read_party(m, p, s);
 
     uint8_t enemies[2][BMON_SIZE], player[BMON_SIZE];
@@ -420,8 +441,8 @@ const char* game_method_name(EncMethod method) {
 bool game_dump(const GameSnapshot* s, FILE* out) {
     int ok = 1;
     if (!s->valid) return fprintf(out, "invalid: %s\n", s->reason) >= 0;
-    ok &= fprintf(out, "context %d map %u:%u type %u\n", (int)s->context, s->map_group,
-                  s->map_num, s->map_type) >= 0;
+    ok &= fprintf(out, "context %d map %u:%u type %u name %s\n", (int)s->context, s->map_group,
+                  s->map_num, s->map_type, s->map_name) >= 0;
     for (uint8_t i = 0; i < s->party_count; i++) {
         const GamePartyMon* p = &s->party[i];
         if (p->bad) { ok &= fprintf(out, "party %u bad\n", i) >= 0; continue; }
