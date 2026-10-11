@@ -80,14 +80,14 @@ The folder and the recently played list are kept in `library.txt` in the app's s
 
 | Flag | Description |
 |------|-------------|
-| `--bios <file>` | Path to GBA BIOS dump (optional, HLE fallback available) |
+| `--bios <file>` | Path to GBA BIOS dump (optional, HLE fallback available). Overrides the BIOS chosen in [Settings](#settings) |
 | `--scale <n>` | Window scale multiplier (default: 3) |
 | `--cheats <file>` | Cheat file to use instead of `<rom>.cht` |
 | `--cheat-report` | Print how each cheat was read (device, decoded codes, problems) and exit |
-| `--keymap <file>` | Path to a keymap `.ini` for custom keyboard bindings |
+| `--keymap <file>` | Path to a keymap `.ini`, applied on top of the bindings saved from Settings (see [Keymap file](#keymap-file)) |
 | `--link-master <path>` | Listen for a peer GBA at AF_UNIX socket path (host side) |
 | `--link-client <path>` | Connect to a peer GBA at AF_UNIX socket path (client side) |
-| `--mute` | Start with audio muted (toggle back with `M`) |
+| `--mute` | Start with audio muted for this run (toggle back with `M`). The **Start muted** setting does the same every launch |
 | `--video-filter <name>` | Screen filter for this run: `sharp`, `smooth` or `soft` (see [Screen filters](#screen-filters)) |
 | `--color-correct` | LCD color correction for this run |
 | `--trace <file>` | Write a per-instruction execution trace to `file` (expect 5-10x slowdown) |
@@ -102,6 +102,8 @@ The folder and the recently played list are kept in `library.txt` in the app's s
 ```
 
 ## Controls
+
+These are the default bindings. Change them in Settings under **Controls** (see [Settings](#settings)).
 
 | Key | GBA Button |
 |-----|------------|
@@ -134,6 +136,7 @@ The folder and the recently played list are kept in `library.txt` in the app's s
 | Backspace (hold) | Rewind (60s window, audio muted) |
 | M | Toggle audio mute |
 | Space | Pause / resume emulation |
+| Ctrl+, (Cmd+, on macOS) | Open Settings |
 | F12 | Screenshot (saved next to ROM) |
 | F11 | Toggle fullscreen |
 | Escape | Quit |
@@ -142,9 +145,63 @@ On macOS, F-keys need **fn** held (for example fn+F9) unless the keyboard is set
 
 Save files (`<rom>.sav`) and save states (`<rom>.ss<N>`) are written next to the ROM.
 
+## Settings
+
+Press Ctrl+, (Cmd+, on macOS), or use the Settings entry in the macOS menu bar. Changes apply right away and are remembered between launches. The **Video** page is described under [Screen filters](#screen-filters).
+
+### Controls
+
+Click the box next to a GBA button, in the keyboard column or the controller column, then press the key or controller button you want. Backspace clears the binding and Esc cancels. Controller triggers can be bound too.
+
+- **Turbo A** and **Turbo B** press and release the button every 2 frames (15 times a second) while the key or button is held.
+- Keys the emulator already uses can't be bound: F1 to F12, the number keys, Tab, `` ` ``, `\`, Backspace, Space, M and Escape.
+- The left stick always works as the D-pad.
+- **Reset to defaults** restores the layout in the tables above. The default controller layout is A, B, Start, Back as Select, the D-pad, and the shoulder buttons as L and R. X and Y are unbound.
+
+### General
+
+| Setting | Description |
+|---------|-------------|
+| BIOS file | **Choose** a BIOS dump, or **Use built-in** for the HLE BIOS. Takes effect the next time you open a game. `--bios` overrides it |
+| Fast-forward speed | 2x, 3x (default), 4x or Max. Applies to both Tab and `` ` `` |
+| Pause when the window loses focus | Off by default |
+
+### Audio
+
+| Setting | Description |
+|---------|-------------|
+| Volume | Slider from 0 to 100% |
+| Start muted | Launch with audio muted. `M` still toggles mute while playing, and `--mute` still works |
+
+### Keymap file
+
+Bindings are saved to `keymap.ini` in the app's settings folder, next to `prefs.ini`:
+
+| OS | Folder |
+|----|--------|
+| macOS | `~/Library/Application Support/GBA Emulator/` |
+| Windows | `%APPDATA%\GBA Emulator\` |
+| Linux | `~/.local/share/GBA Emulator/` |
+
+The file has one `NAME=value` line per button. Keyboard lines use the button name and an SDL key name. Controller lines add a `PAD_` prefix and use the SDL controller input name. The value `None` leaves a button unbound.
+
+```ini
+A=Z
+B=X
+UP=Up
+TURBO_A=C
+PAD_A=a
+PAD_B=b
+PAD_L=leftshoulder
+PAD_R=righttrigger
+PAD_TURBO_B=None
+```
+
+Button names are A, B, START, SELECT, UP, DOWN, LEFT, RIGHT, L, R, TURBO_A and TURBO_B. Controller names include a, b, x, y, back, start, leftshoulder, rightshoulder, lefttrigger and righttrigger. A file passed with `--keymap` is loaded after `keymap.ini`, so its lines win. Changing a control in Settings saves the full current layout, including anything loaded with `--keymap`, to `keymap.ini`.
+
 ## Screen filters
 
-Open Settings (Cmd+, on macOS, Ctrl+, elsewhere) and pick **Video** to change how the game image is drawn. Changes show right away and are remembered between launches.
+Open [Settings](#settings) (Cmd+, on macOS, Ctrl+, elsewhere) and pick **Video** to change how the game image is drawn. Changes show right away and are remembered between launches.
 
 | Filter | Look |
 |--------|------|
