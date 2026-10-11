@@ -30,4 +30,20 @@ RomPickResult rom_picker_choose(char* out, size_t out_size) {
     }
 }
 
+RomPickResult rom_picker_choose_folder(char* out, size_t out_size) {
+    @autoreleasepool {
+        NSOpenPanel* panel = [NSOpenPanel openPanel];
+        panel.title = @"Choose your GBA games folder";
+        panel.prompt = @"Choose";
+        panel.canChooseDirectories = YES;
+        panel.canChooseFiles = NO;
+        panel.allowsMultipleSelection = NO;
+        if ([panel runModal] != NSModalResponseOK) return ROM_PICK_CANCELLED;
+        const char* path = panel.URL.fileSystemRepresentation;
+        if (!path || strlen(path) >= out_size) return ROM_PICK_CANCELLED;
+        memcpy(out, path, strlen(path) + 1);
+        return ROM_PICK_OK;
+    }
+}
+
 bool rom_picker_hide_console(void) { return false; }

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Creates a double-clickable "GBA Emulator.app" (default: on the Desktop).
 # The app rebuilds the emulator from this repo on every launch, so it always
-# runs the latest code, then asks which ROM in roms/ to play.
+# runs the latest code, then opens the emulator's game library (roms/ the first time).
 #
 # Usage: tools/make_mac_app.sh [destination dir]
 set -euo pipefail
@@ -58,17 +58,8 @@ if ! { cmake -S "\$REPO" -B "\$BUILD" -DCMAKE_BUILD_TYPE=Release &&
     exit 1
 fi
 
-ROMS=\$(cd "\$REPO/roms" 2>/dev/null && ls *.gba 2>/dev/null)
-if [ -z "\$ROMS" ]; then
-    alert "No .gba files found in \$REPO/roms"
-    exit 1
-fi
-DEFAULT=\$(echo "\$ROMS" | grep -m1 '^emerald.gba\$' || echo "\$ROMS" | head -1)
-LIST=\$(echo "\$ROMS" | sed 's/.*/"&"/' | paste -sd, -)
-ROM=\$(osascript -e "choose from list {\$LIST} with title \"GBA Emulator\" with prompt \"Pick a ROM:\" default items {\"\$DEFAULT\"}")
-[ "\$ROM" = "false" ] && exit 0
-
-ARGS=("\$REPO/roms/\$ROM" --scale 3)
+# No ROM argument: the emulator opens its game library, starting in roms/ the first time.
+ARGS=(--scale 3 --library-folder "\$REPO/roms")
 [ -f "\$REPO/bios/gba_bios.bin" ] && ARGS+=(--bios "\$REPO/bios/gba_bios.bin")
 cd "\$REPO"
 exec "\$BUILD/gba_emulator" "\${ARGS[@]}" 2> "\$LOGDIR/emulator.log"

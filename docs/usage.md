@@ -12,7 +12,7 @@ Each download includes everything it needs, SDL2 included.
 
 1. Download `gba_emulator-0.5.0-macOS-arm64.dmg` from the Releases page and open it.
 2. Drag **GBA Emulator** into **Applications**.
-3. Double-click **GBA Emulator** and choose a `.gba` file. You can also drop a ROM onto the app icon.
+3. Double-click **GBA Emulator**. The game library opens: click **Choose folder…** once to pick where you keep your games, then double-click one to play. You can also drop a ROM onto the app icon.
 
 The app isn't signed with a paid Apple certificate, so the first launch is blocked with a "can't be opened" message. Open **System Settings > Privacy & Security**, scroll down and click **Open Anyway**. You only need to do this once. From Terminal, this does the same:
 
@@ -30,9 +30,9 @@ Saves are written next to the ROM. To use command-line options, run the binary i
 
 1. Download `gba_emulator-0.5.0-Linux-x86_64.AppImage` from the Releases page.
 2. Make it executable: right-click it, open **Properties** and allow running it as a program, or run `chmod +x gba_emulator-0.5.0-Linux-x86_64.AppImage`.
-3. Double-click it and choose a `.gba` file.
+3. Double-click it. The game library opens: click **Choose folder…** once to pick where you keep your games, then double-click one to play.
 
-The file picker uses `zenity` (GNOME and most desktops) or `kdialog` (KDE). If neither is installed, pass the ROM on the command line:
+The folder and file dialogs use `zenity` (GNOME and most desktops) or `kdialog` (KDE). If neither is installed, drop a `.gba` file on the library window, or pass the ROM on the command line:
 
 ```bash
 ./gba_emulator-0.5.0-Linux-x86_64.AppImage path/to/rom.gba --scale 3
@@ -41,7 +41,7 @@ The file picker uses `zenity` (GNOME and most desktops) or `kdialog` (KDE). If n
 ### Windows (x86_64)
 
 1. Download `gba_emulator-0.5.0-Windows-AMD64.zip` from the Releases page and extract it.
-2. Double-click `gba_emulator.exe` in the `bin` folder and choose a `.gba` file. Dragging a ROM onto the `.exe` also works.
+2. Double-click `gba_emulator.exe` in the `bin` folder. The game library opens: click **Choose folder…** once to pick where you keep your games, then double-click one to play. Dragging a ROM onto the `.exe` also works.
 
 Windows SmartScreen may warn that the app is from an unknown publisher, because it isn't signed with a paid certificate. Click **More info**, then **Run anyway**.
 
@@ -54,6 +54,21 @@ gba_emulator-0.5.0-Windows-AMD64\bin\gba_emulator.exe path\to\rom.gba --scale 3
 ### Other platforms
 
 No pre-built binaries for Intel Macs yet. Build from source, see [Building from source](development.md#building-from-source).
+
+## Game library
+
+Starting the emulator without a ROM opens the game library. It lists every `.gba` file in your games folder, plus games you've played from anywhere else, with the title and game code from each ROM's header. The last game you played sits on top as **Continue playing**, so pressing **Enter** picks up where you left off.
+
+| Input | Action |
+|-------|--------|
+| Up / Down, Page Up / Page Down, Home / End | Move the selection |
+| A letter or number | Jump to the next game starting with it |
+| Enter, double-click, or **Play** | Start the selected game |
+| Cmd+O (macOS) / Ctrl+O | Open a single file |
+| Drop a `.gba` on the window | Start that file |
+| Esc | Quit |
+
+The folder and the recently played list are kept in `library.txt` in the app's settings folder. Games the Emerald Companion supports get a **Companion** badge.
 
 ## Running from the command line
 
@@ -145,6 +160,8 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--panel-density <f>` | Panel pixels per point, 0.5 to 4.0 (default 1.0). Requires `--headless`. |
 | `--panel-page <p>` | Panel page: `auto`, `party`, `route` or `nuzlocke` (default `auto`). Requires `--headless`. |
 | `--panel-select <n>` | Selected party slot, 0 to 5, for the party page, or the Nuzlocke view: 0 routes, 1 team, 2 graveyard (default 0). Requires `--headless`. |
+| `--library-folder <dir>` | Game folder for the library, used only when none has been chosen yet. |
+| `--library-out <file>` | Render the library for `--library-folder` to a PNG and exit. Takes no ROM and never reads or writes `library.txt`. |
 | `--nuzlocke-file <file>` | Track a Nuzlocke run in `file` during the run, starting one if the file has none. `--game-dump` then adds `nuz` lines. Requires `--headless`. |
 | `--xray-out <file>` | After the run, render the Hardware X-Ray window to a 2400x1640 PNG. Requires `--headless` and an X-Ray build. |
 | `--overworld-out <file>` | After the run, write the final frame at 3x (720x480 PNG) with the Overworld X-Ray drawn on it. Requires `--headless`; original Pokemon Emerald (US) only. |
