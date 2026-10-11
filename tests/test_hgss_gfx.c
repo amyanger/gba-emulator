@@ -1,5 +1,6 @@
 #include "test_harness.h"
 #include "hgss/hgss_gfx.h"
+#include "hgss/hgss_assets.h"
 
 static void w16(uint8_t* p, uint16_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); }
 static void w32(uint8_t* p, uint32_t v) { for (int i = 0; i < 4; i++) p[i] = (uint8_t)(v >> (8 * i)); }
@@ -104,7 +105,7 @@ TEST(font_pixel_order) {
     w32(font + 0, 0x10);           /* header size */
     w32(font + 4, 0x10 + 2 * 64);  /* width table start */
     w16(font + 8, 2);              /* glyph count */
-    font[0x0A] = 16; font[0x0B] = 16; font[0x0C] = 2; font[0x0D] = 2;
+    font[0x0C] = 16; font[0x0D] = 16; font[0x0E] = 2; font[0x0F] = 2;   /* cell 16x16, 2x2 tiles */
     /* glyph 1, top-left sub-tile, row 0: byte0 = pixels 4..7, byte1 = pixels 0..3. */
     font[0x10 + 64 + 0] = 0xC0;    /* pixel 4 = 3 */
     font[0x10 + 64 + 1] = 0x40;    /* pixel 0 = 1 */
@@ -116,6 +117,65 @@ TEST(font_pixel_order) {
     ASSERT_EQ(hgss_font_pixel(&f, 1, 4, 0), 3);
     ASSERT_EQ(hgss_font_pixel(&f, 1, 1, 0), 0);
     ASSERT_EQ(hgss_font_pixel(&f, 9, 0, 0), 0);    /* out of range glyph */
+    font[0x0E] = 1;                /* not 2x2 tiles */
+    ASSERT_TRUE(!hgss_gfx_font(font, sizeof(font), nclr, sizeof(nclr), &f));
+}
+
+static HgssFont s_font;
+static void font_fixed(void) {
+    memset(&s_font, 0, sizeof(s_font));
+    s_font.count = HGSS_FONT_GLYPHS;
+    memset(s_font.width, 6, sizeof(s_font.width));
+    s_font.width[HGSS_CH_SPACE - 1] = 4;
+}
+
+TEST(layout_wraps_on_words) {
+    font_fixed();
+    uint16_t t[80];
+    uint32_t n = 0;
+    for (int w = 0; w < 8; w++) {                 /* 8 words of 5 letters: 8*30 + 7*4 = 268 px */
+        for (int k = 0; k < 5; k++) t[n++] = 0x012B;
+        if (w < 7) t[n++] = HGSS_CH_SPACE;
+    }
+    t[n] = HGSS_CH_END;
+    HgssTextPage p[HGSS_PAGE_MAX];
+    ASSERT_EQ(hgss_text_layout(&s_font, t, n, p, HGSS_PAGE_MAX), 1);
+    ASSERT_EQ(p[0].len[0], 6 * 5 + 5);           /* 6 words + 5 spaces = 200 px */
+    ASSERT_EQ(p[0].len[1], 2 * 5 + 1);
+}
+
+TEST(layout_breaks_unspaced_word) {
+    font_fixed();
+    uint16_t t[60];
+    for (int i = 0; i < 50; i++) t[i] = 0x012B;  /* 300 px, no spaces */
+    t[50] = HGSS_CH_END;
+    HgssTextPage p[HGSS_PAGE_MAX];
+    ASSERT_EQ(hgss_text_layout(&s_font, t, 50, p, HGSS_PAGE_MAX), 1);
+    ASSERT_EQ(p[0].len[0], 33);                  /* 33 * 6 = 198 */
+    ASSERT_EQ(p[0].len[1], 17);
+}
+
+TEST(layout_pages_on_newbox_and_overflow) {
+    font_fixed();
+    const uint16_t t[] = {0x012B, HGSS_CH_NEWLINE, 0x012B, HGSS_CH_NEWLINE, 0x012B, HGSS_CH_NEWBOX, 0x012B, HGSS_CH_END};
+    HgssTextPage p[HGSS_PAGE_MAX];
+    ASSERT_EQ(hgss_text_layout(&s_font, t, 7, p, HGSS_PAGE_MAX), 3);
+}
+
+TEST(text_draw_stays_in_box) {
+    font_fixed();
+    static uint16_t fb[240 * 160];
+    static HgssFrameGfx fr;
+    memset(&fr, 0, sizeof(fr));
+    fr.pal[15] = 0x7FFF;
+    for (int i = 0; i < 240 * 160; i++) fb[i] = 0x1234;
+    HgssTextPage p;
+    memset(&p, 0, sizeof(p));
+    ASSERT_TRUE(1);
+    hgss_text_draw(fb, &fr, &s_font, &p, 0, false);
+    ASSERT_EQ_HEX(fb[0], 0x1234);                          /* top of screen untouched */
+    ASSERT_EQ_HEX(fb[111 * 240 + 120], 0x1234);            /* just above the box */
+    ASSERT_EQ_HEX(fb[125 * 240 + 120], 0x7FFF);            /* interior */
 }
 
 void run_hgss_gfx_tests(void) {
@@ -124,4 +184,8 @@ void run_hgss_gfx_tests(void) {
     RUN_TEST(emote_btx_decodes_two_frames);
     RUN_TEST(frame_ncgr_nclr_decode);
     RUN_TEST(font_pixel_order);
+    RUN_TEST(layout_wraps_on_words);
+    RUN_TEST(layout_breaks_unspaced_word);
+    RUN_TEST(layout_pages_on_newbox_and_overflow);
+    RUN_TEST(text_draw_stays_in_box);
 }

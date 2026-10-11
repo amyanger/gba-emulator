@@ -128,7 +128,8 @@ bool hgss_gfx_font(const uint8_t* font, uint32_t len, const uint8_t* nclr, uint3
     if (len < 0x10 || nclr_len < 0x28 + 32 || memcmp(nclr, "RLCN", 4) != 0) return false;
     uint32_t hdr = rd32(font), wstart = rd32(font + 4);
     uint16_t count = rd16(font + 8);
-    if (count == 0 || count > HGSS_FONT_GLYPHS || font[0x0C] != 2 || font[0x0D] != 2) return false;
+    if (count == 0 || count > HGSS_FONT_GLYPHS || font[0x0C] != 16 || font[0x0D] != 16 ||
+        font[0x0E] != 2 || font[0x0F] != 2) return false;
     if (!in_range(hdr, (uint32_t)count * 64, len) || !in_range(wstart, count, len)) return false;
     memset(out, 0, sizeof(*out));
     out->count = count;
