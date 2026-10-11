@@ -20,6 +20,16 @@ typedef struct {
 } HgssEmoteGfx;
 
 typedef struct {
+    uint8_t px[16 * 16];           /* 4bpp palette indices, 0 transparent */
+    uint16_t pal[16];
+} HgssBallGfx;
+
+typedef struct {
+    uint8_t px[32 * 32];           /* 0 transparent, else colour index + 1 (1..8) */
+    uint16_t pal[16];              /* pal[1 + i] = colour i, pal[0] unused */
+} HgssBurstGfx;
+
+typedef struct {
     uint8_t tile[18][64];          /* 6x3 frame tiles, 8x8 palette indices */
     uint16_t pal[16];
 } HgssFrameGfx;
@@ -33,6 +43,9 @@ typedef struct {
 
 bool hgss_gfx_follower(const uint8_t* btx, uint32_t len, HgssFollowerGfx* out);
 bool hgss_gfx_emote(const uint8_t* btx, uint32_t len, HgssEmoteGfx* out);
+/* Field-effect models are BMD0 files; only their TEX0 block is read. */
+bool hgss_gfx_ball(const uint8_t* bmd, uint32_t len, HgssBallGfx* out);
+bool hgss_gfx_burst(const uint8_t* bmd, uint32_t len, HgssBurstGfx* out);
 bool hgss_gfx_frame(const uint8_t* ncgr, uint32_t ncgr_len, const uint8_t* nclr, uint32_t nclr_len,
                     HgssFrameGfx* out);
 bool hgss_gfx_font(const uint8_t* font, uint32_t len, const uint8_t* nclr, uint32_t nclr_len, HgssFont* out);

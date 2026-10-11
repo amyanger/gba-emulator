@@ -178,7 +178,88 @@ TEST(text_draw_stays_in_box) {
     ASSERT_EQ_HEX(fb[125 * 240 + 120], 0x7FFF);            /* interior */
 }
 
+/* BMD0 with a MDL0 stub first and TEX0 second. One texture of w x h, format fmt, `pal_colors` colours. */
+static uint32_t build_bmd(uint8_t* b, uint32_t w, uint32_t h, uint32_t fmt, uint32_t tex_bytes,
+                          uint32_t pal_colors) {
+    memset(b, 0, 0x8000);
+    memcpy(b, "BMD0", 4);
+    w16(b + 4, 0xFEFF);
+    w16(b + 0x0C, 0x10);
+    w16(b + 0x0E, 2);
+    w32(b + 0x10, 0x18);                 /* block 0: MDL0 stub */
+    w32(b + 0x14, 0x40);                 /* block 1: TEX0 */
+    memcpy(b + 0x18, "MDL0", 4);
+    uint8_t* t = b + 0x40;
+    memcpy(t, "TEX0", 4);
+    uint32_t tex_dict = 0x40, pal_dict = 0x100, tex_data = 0x200;
+    uint32_t pal_data = tex_data + tex_bytes;
+    w16(t + 0x0E, (uint16_t)tex_dict);
+    w32(t + 0x14, tex_data);
+    w32(t + 0x34, pal_dict);
+    w32(t + 0x38, pal_data);
+    uint8_t* te = dict(t, tex_dict, 1, 8);
+    uint16_t lw = (uint16_t)(w == 16 ? 1 : 2), lh = (uint16_t)(h == 16 ? 1 : 2);
+    w16(te, 0);
+    w16(te + 2, (uint16_t)((lw << 4) | (lh << 7) | (fmt << 10)));
+    uint8_t* pe = dict(t, pal_dict, 1, 4);
+    w16(pe, 0);
+    for (uint32_t c = 0; c < pal_colors; c++) w16(t + pal_data + c * 2, (uint16_t)(0x100 + c));
+    return 0x40 + pal_data + pal_colors * 2;
+}
+
+TEST(ball_bmd_decodes_second_block_tex0) {
+    static uint8_t b[0x8000];
+    static HgssBallGfx g;
+    uint32_t len = build_bmd(b, 16, 16, 3, 128, 8);       /* retail shape: 8 colours */
+    memset(b + 0x40 + 0x200, 0x21, 128);          /* pixels: low nibble 1, high nibble 2 */
+    ASSERT_TRUE(hgss_gfx_ball(b, len, &g));
+    ASSERT_EQ(g.px[0], 1);
+    ASSERT_EQ(g.px[1], 2);
+    ASSERT_EQ(g.px[255], 2);
+    ASSERT_EQ_HEX(g.pal[5], 0x105);
+    ASSERT_EQ_HEX(g.pal[8], 0);
+}
+
+TEST(ball_bmd_rejects_bad_input) {
+    static uint8_t b[0x8000];
+    static HgssBallGfx g;
+    uint32_t len = build_bmd(b, 16, 16, 3, 128, 8);
+    ASSERT_TRUE(!hgss_gfx_ball(b, len - 2, &g));  /* palette cut off */
+    ASSERT_TRUE(!hgss_gfx_ball(b, 0x30, &g));
+    b[0x40] = 'X';                                /* TEX0 magic gone */
+    ASSERT_TRUE(!hgss_gfx_ball(b, len, &g));
+    len = build_bmd(b, 16, 16, 3, 128, 16);
+    b[0] = 'X';
+    ASSERT_TRUE(!hgss_gfx_ball(b, len, &g));
+    len = build_bmd(b, 32, 32, 3, 512, 16);       /* wrong size */
+    ASSERT_TRUE(!hgss_gfx_ball(b, len, &g));
+}
+
+TEST(burst_a5i3_decodes_alpha_and_palette) {
+    static uint8_t b[0x8000];
+    static HgssBurstGfx g;
+    uint32_t len = build_bmd(b, 32, 32, 6, 1024, 8);
+    uint8_t* d = b + 0x40 + 0x200;
+    d[0] = (uint8_t)(15 << 3 | 3);                /* alpha 15: transparent */
+    d[1] = (uint8_t)(16 << 3 | 0);                /* alpha 16: index 0 -> 1 */
+    d[2] = (uint8_t)(31 << 3 | 7);                /* index 7 -> 8 */
+    d[1023] = (uint8_t)(20 << 3 | 4);
+    ASSERT_TRUE(hgss_gfx_burst(b, len, &g));
+    ASSERT_EQ(g.px[0], 0);
+    ASSERT_EQ(g.px[1], 1);
+    ASSERT_EQ(g.px[2], 8);
+    ASSERT_EQ(g.px[1023], 5);
+    ASSERT_EQ_HEX(g.pal[1], 0x100);
+    ASSERT_EQ_HEX(g.pal[8], 0x107);
+    ASSERT_TRUE(!hgss_gfx_burst(b, len - 4, &g)); /* palette cut off */
+    len = build_bmd(b, 16, 16, 3, 128, 16);
+    ASSERT_TRUE(!hgss_gfx_burst(b, len, &g));     /* ball texture is not a burst */
+}
+
 void run_hgss_gfx_tests(void) {
+    RUN_TEST(ball_bmd_decodes_second_block_tex0);
+    RUN_TEST(ball_bmd_rejects_bad_input);
+    RUN_TEST(burst_a5i3_decodes_alpha_and_palette);
     RUN_TEST(follower_btx_decodes_frames_in_offset_order);
     RUN_TEST(follower_btx_rejects_bad_input);
     RUN_TEST(emote_btx_decodes_two_frames);

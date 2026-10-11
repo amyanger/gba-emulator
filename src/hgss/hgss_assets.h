@@ -23,6 +23,9 @@ typedef struct {
     HgssFrameGfx frame;
     HgssFont font;
     HgssEmoteGfx emote[HGSS_EMOTES];
+    HgssBallGfx ball;
+    HgssBurstGfx burst;
+    bool fx_ok;                   /* ball/burst decoded; the effect is optional */
     char error[96];               /* why ok is false, for the toast/log */
 } HgssAssets;
 
