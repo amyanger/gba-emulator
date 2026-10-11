@@ -65,6 +65,11 @@ typedef struct {
     bool choose_bios, clear_bios;        /* buttons ask the frontend */
     char status[96];
     bool changed;
+    /* Following Pokemon: the frontend copies these in and handles the requests. */
+    char hgss_path[SETTINGS_PATH_LEN];   /* "" = not set */
+    bool hgss_ready;                     /* the ROM opened: the toggle is usable */
+    bool follower;
+    bool choose_hgss, follower_changed;
 } SettingsGeneralPage;
 
 typedef enum { CONTROLS_DEV_KEY, CONTROLS_DEV_PAD } ControlsDevice;
@@ -130,12 +135,14 @@ void settings_video_draw(UiCanvas* c, UiInput* in, SettingsVideoPage* p, UiRect 
 static inline uint32_t settings_id_filter(uint32_t i) { return ui_id("video-filter", i); }
 #define SETTINGS_ID_COLOR ui_id("video-color", 0)
 
-/* The General page: BIOS file, fast-forward speed, pause on focus loss. */
+/* The General page: BIOS file, fast-forward speed, pause on focus loss, Following Pokemon. */
 void settings_general_draw(UiCanvas* c, UiInput* in, SettingsGeneralPage* p, UiRect content);
 static inline uint32_t settings_id_ff(uint32_t i) { return ui_id("general-ff", i); }   /* 0=2x 1=3x 2=4x 3=Max */
 #define SETTINGS_ID_BLUR ui_id("general-blur", 0)
 #define SETTINGS_ID_BIOS_CHOOSE ui_id("general-bios", 0)
 #define SETTINGS_ID_BIOS_CLEAR  ui_id("general-bios", 1)
+#define SETTINGS_ID_HGSS_CHOOSE ui_id("general-hgss", 0)
+#define SETTINGS_ID_FOLLOWER    ui_id("general-follower", 0)
 
 /* The Audio page: volume and start muted. */
 void settings_audio_draw(UiCanvas* c, UiInput* in, SettingsAudioPage* p, UiRect content);

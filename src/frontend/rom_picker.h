@@ -20,6 +20,9 @@ bool rom_picker_hide_console(void);
 /* Per-OS file picker filtered to .bin, for the GBA BIOS. Same contract as above. */
 RomPickResult rom_picker_choose_bios(char* out, size_t out_size);
 
+/* Per-OS file picker filtered to .nds, for the HeartGold/SoulSilver ROM. Same contract as above. */
+RomPickResult rom_picker_choose_nds(char* out, size_t out_size);
+
 /* Per-OS folder picker for the library. Writes a UTF-8 path on ROM_PICK_OK. */
 RomPickResult rom_picker_choose_folder(char* out, size_t out_size);
 

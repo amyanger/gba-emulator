@@ -117,7 +117,7 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 
 | Key | Emulator Function |
 |-----|-------------------|
-| F1 | Dump CPU registers to stderr (debug builds) |
+| F1 | Show or hide [Following Pokemon](#following-pokemon) (original Pokemon Emerald US ROM plus your own HeartGold or SoulSilver ROM, set in Settings > General; remembered between launches) |
 | F2 | Toggle Hardware X-Ray Mode |
 | F3 | Toggle input display HUD (mini-GBA overlay showing held buttons) |
 | F4 | Show or hide Overworld X-Ray: trainer sight lines and hidden items on the map (original Pokemon Emerald US/English ROM only, remembered between launches) |
@@ -165,6 +165,8 @@ Click the box next to a GBA button, in the keyboard column or the controller col
 | BIOS file | **Choose** a BIOS dump, or **Use built-in** for the HLE BIOS. Takes effect the next time you open a game. `--bios` overrides it |
 | Fast-forward speed | 2x, 3x (default), 4x or Max. Applies to both Tab and `` ` `` |
 | Pause when the window loses focus | Off by default |
+| Following Pokemon | Turns [Following Pokemon](#following-pokemon) on or off, like F1. Available once a HeartGold or SoulSilver ROM is set |
+| HeartGold/SoulSilver ROM | **Choose** your own HeartGold or SoulSilver ROM (`.nds`) for Following Pokemon |
 
 ### Audio
 
@@ -221,6 +223,17 @@ Open [Settings](#settings) (Cmd+, on macOS, Ctrl+, elsewhere) and pick **Video**
 
 Filters only change what you see. Screenshots (F12) still save the original pixels.
 
+## Following Pokemon
+
+Your lead Pokemon walks one tile behind you in Pokemon Emerald, the way it does in HeartGold and SoulSilver. Face it and press A to talk: it hops, shows a bubble, sometimes cries, and says a line in the HeartGold text box. What it says depends on the place, the weather, the time of day, its health and how it feels about you.
+
+To set it up, open [Settings](#settings) > General, click **Choose** next to HeartGold/SoulSilver ROM and pick your own `.nds` file (US HeartGold or SoulSilver). Then turn on **Following Pokemon** there or press F1. Both choices are remembered between launches.
+
+- It needs the original Pokemon Emerald (US/English) ROM. Other games and ROM hacks run normally without it.
+- It is cosmetic only. The game never sees the follower: nothing is written to Emerald's memory or your save, and it never changes friendship or gives items. Its mood is kept in a small `<save>.follow` file next to your save.
+- The follower hides during battles and while you ride a bike, surf or dive, and walks out again once you are back on foot.
+- Sprites, text and the text box are read from your HeartGold or SoulSilver ROM each time the emulator starts. Nothing from that ROM is copied into the emulator or saved anywhere else.
+
 ## Headless mode
 
 Run the emulator without an SDL window or audio output, writing one
@@ -248,6 +261,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--video-out <file>` | After the run, write the final frame through the screen filter as PNG, at the filter's own size for `--scale` (for example 720x480 for Smooth at scale 3). Requires `--headless`. |
 | `--overworld-out <file>` | After the run, write the final frame at 3x (720x480 PNG) with the Overworld X-Ray drawn on it. Requires `--headless`; original Pokemon Emerald (US) only. |
 | `--gift-audit <file>` | Walk every NPC in the ROM and list the Overworld X-Ray gift tags it would show, one line per NPC (`<group>.<map> lid=<id> <item>:<flag>`, hex). For checking the gift detection; original Pokemon Emerald (US) only. Requires `--headless`. |
+| `--follower-hgss <rom>` | Turn on Following Pokemon for the run, using this HeartGold or SoulSilver ROM. `--screenshot-out` then includes the text box during a talk. Never writes the mood file. Requires `--headless`; original Pokemon Emerald (US) only. |
 | `--game-dump <file>` | After the run, write the decoded Emerald game state (party, battle, encounters, and an `[overworld]` section matching the final frame) to `file`. Requires `--headless`. |
 
 An input script has one event per line, `<frame> <press|release> <KEY>`,

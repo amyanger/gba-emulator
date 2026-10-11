@@ -12,6 +12,7 @@
 #include "frontend/prefs.h"
 #include "frontend/frame_pacer.h"
 #include "frontend/video_filter.h"
+#include "frontend/follower_draw.h"
 #include "game/overworld.h"
 
 // Forward declaration
@@ -69,6 +70,14 @@ typedef struct Frontend {
     bool ow_dirty;                /* size changed: repaint even if the snapshot did not */
     bool ow_shown;
     OverworldSnapshot ow_last;    /* what ow_buffer shows */
+
+    /* Following Pokemon (F1): the lead walks behind the player as an extra OBJ. */
+    FollowerView follower;        /* follower.enabled is the F1 state */
+    FollowerFeed* fol_feed;       /* set by main; NULL when the ROM is not supported */
+    HgssAssets* hgss;             /* set by main; !hgss->ok when no HeartGold ROM is set */
+    uint8_t fol_step;             /* talk step whose data was last handed to the player */
+    uint16_t fol_prev_keys;       /* host GBA keys held last frame (pressed = 1) */
+    uint32_t audio_rate;          /* output device rate, 0 without audio */
     SDL_AudioDeviceID audio_device;
     uint32_t audio_target_bytes;  /* frame-sync queue target: 3x the device pull size */
     AudioOut audio_out;           /* DC blocker + resampler from 32768 Hz to the device rate */
@@ -160,6 +169,19 @@ void frontend_toast_keyed(Frontend* fe, const char* key, ToastKind kind, const c
 void frontend_update_hud(Frontend* fe, uint32_t now_ms);
 /* F4: turns the overlay on or off, (un)registers the line-160 observer, saves prefs. */
 void frontend_toggle_overworld(Frontend* fe, GBA* gba);
+/* Line-160 observer hub: feeds the Overworld X-Ray and Following Pokemon (ctx = Frontend). */
+void frontend_vblank(const GBA* gba, void* ctx);
+/* Installs frontend_vblank when either feature needs it, else no observer. */
+void frontend_sync_observer(Frontend* fe, GBA* gba);
+/* F1: turns Following Pokemon on or off (or toasts why it can't), saves prefs. */
+void frontend_toggle_follower(Frontend* fe, GBA* gba);
+/* Drops follower state that no longer matches the game: savestate load, rewind, toggle. */
+void frontend_follower_reset(Frontend* fe, GBA* gba);
+/* Before a frame: loads the lead's sprite, starts a talk on A, builds the extra OBJs.
+ * The caller holds game input (KEYINPUT 0x03FF) while talk_active. */
+void follower_frame_begin(Frontend* fe, GBA* gba);
+/* After a frame: runs the talk with the host keys (KEYINPUT, active low), cries and mood. */
+void follower_frame_end(Frontend* fe, const GBA* gba, uint16_t real_keys);
 /* Sets the screen filter and color correction and saves them to prefs. */
 void frontend_set_video(Frontend* fe, VideoFilter filter, bool color_correct);
 /* Sets the volume (0-100) and start-muted default and saves them to prefs. */

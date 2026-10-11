@@ -16,6 +16,11 @@ static const char* const bios_cmds[] = {
     "kdialog --title 'Choose a GBA BIOS file' --getopenfilename . 'GBA BIOS (*.bin *.BIN)' 2>/dev/null",
 };
 
+static const char* const nds_cmds[] = {
+    "zenity --file-selection --title='Choose your HeartGold or SoulSilver ROM' --file-filter='DS ROMs | *.nds *.NDS' 2>/dev/null",
+    "kdialog --title 'Choose your HeartGold or SoulSilver ROM' --getopenfilename . 'DS ROMs (*.nds *.NDS)' 2>/dev/null",
+};
+
 static const char* const folder_cmds[] = {
     "zenity --file-selection --directory --title='Choose your GBA games folder' 2>/dev/null",
     "kdialog --title 'Choose your GBA games folder' --getexistingdirectory . 2>/dev/null",
@@ -44,6 +49,10 @@ RomPickResult rom_picker_choose(char* out, size_t out_size) {
 
 RomPickResult rom_picker_choose_bios(char* out, size_t out_size) {
     return run_dialogs(bios_cmds, sizeof(bios_cmds) / sizeof(bios_cmds[0]), out, out_size);
+}
+
+RomPickResult rom_picker_choose_nds(char* out, size_t out_size) {
+    return run_dialogs(nds_cmds, sizeof(nds_cmds) / sizeof(nds_cmds[0]), out, out_size);
 }
 
 RomPickResult rom_picker_choose_folder(char* out, size_t out_size) {

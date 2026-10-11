@@ -30,13 +30,14 @@ The apps aren't signed with a paid certificate, so macOS and Windows ask you to 
 - **[Emerald Companion](docs/emerald-companion.md)** (F9): a side panel for Pokemon Emerald with wild battle IVs, natures and catch odds, move matchups both ways, your party's hidden stats and the current route's encounter table.
 - **[Nuzlocke tracker](docs/emerald-companion.md#nuzlocke)**: a Companion page that keeps your Nuzlocke run honest, logging each area's first encounter, every death and any reload after a death.
 - **[Overworld X-Ray](docs/emerald-companion.md#overworld-x-ray)** (F4): trainer sight lines, item names and NPC gifts drawn right on the map in Pokemon Emerald.
+- **[Following Pokemon](docs/usage.md#following-pokemon)** (F1): your lead Pokemon walks behind you in Pokemon Emerald and talks like it does in HeartGold and SoulSilver, using your own HeartGold or SoulSilver ROM.
 - **Save states and rewind**: 10 save-state slots, plus hold Backspace to rewind up to 60 seconds.
 - **[Cheats](docs/usage.md#cheats)**: paste CodeBreaker, GameShark or Action Replay codes as found online. Your save is backed up before any cheat runs.
 - **[Link cable](docs/usage.md#link-cable)**: two windows on the same machine can trade and battle.
 - **[Screen filters](docs/usage.md#screen-filters)**: smooth out jagged pixel edges and match the colors of a real GBA screen.
 - **Fast-forward**, frame advance, screenshots and fullscreen.
 
-Emerald Companion and Overworld X-Ray only work with the original, unmodified Pokemon Emerald (US/English) ROM. Every other game still runs normally.
+Emerald Companion, Overworld X-Ray and Following Pokemon only work with the original, unmodified Pokemon Emerald (US/English) ROM. Every other game still runs normally.
 
 ![Emerald Companion beside a wild battle against a Poochyena, showing your Swampert's moves and the Poochyena's moves](docs/screenshots/panel-battle.png)
 

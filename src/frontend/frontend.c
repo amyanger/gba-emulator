@@ -10,10 +10,14 @@
 #include "input/input.h"
 #include "input/keymap.h"
 #include "frontend/rom_picker.h"
+#include "game/encounters.h"
+#include "game/follower_ctx.h"
+#include "game/follower_places.h"
 #include "ui/ui_theme.h"
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #ifdef ENABLE_XRAY
 #include "frontend/xray/xray.h"
@@ -414,7 +418,7 @@ void frontend_toggle_overworld(Frontend* fe, GBA* gba) {
     }
     fe->overworld_xray = !fe->overworld_xray;
     overworld_feed_clear(fe->ow_feed);
-    gba_set_vblank_observer(gba, fe->overworld_xray ? overworld_capture : NULL, fe->ow_feed);
+    frontend_sync_observer(fe, gba);
     frontend_toast_keyed(fe, "owxray", TOAST_INFO,
                          fe->overworld_xray ? "Overworld X-Ray on" : "Overworld X-Ray off", NULL);
     if (fe->prefs) {
@@ -438,6 +442,329 @@ void frontend_update_overworld(Frontend* fe, const OverworldSnapshot* s) {
     SDL_UpdateTexture(fe->ow_texture, NULL, fe->ow_buffer, fe->ow_px_w * (int)sizeof(uint32_t));
     memcpy(&fe->ow_last, s, sizeof(*s));
     fe->ow_dirty = false;
+}
+
+/* ---- Following Pokemon (F1) ----
+ * Struct offsets from pret/pokeemerald (global.h, pokemon.h, item.h, global.fieldmap.h). */
+#define FOL_SPECIES_INFO_SIZE 28
+#define FOL_SI_TYPE1          6
+#define FOL_SI_TYPE2          7
+#define FOL_SI_GENDER_RATIO   0x10
+#define FOL_ITEM_SIZE         44
+#define FOL_ITEM_POCKET       0x1A
+#define FOL_SPECIES_NAME_LEN  11
+#define FOL_ITEM_NAME_LEN     14
+#define FOL_PLAYER_NAME_LEN   8      /* 7 characters and 0xFF */
+#define FOL_SB2_LOCAL_TIME    0x98   /* struct Time localTimeOffset {s16 days; s8 hours, minutes, seconds} */
+#define FOL_AVATAR_OBJ_ID     0x05
+#define FOL_OBJ_COUNT         16
+#define FOL_OBJ_SIZE          0x24
+#define FOL_OBJ_CUR           0x10
+#define FOL_PAL_TAG_GRASS     0x1005 /* FLDEFF_PAL_TAG_GENERAL_1, the tall grass palette */
+#define FOL_FAINT_MOOD        (-80)
+#define FOL_NATIONAL_MAX      386
+
+static uint8_t s_fol_rules[HGSS_RULES][HGSS_RULE_SIZE];
+static HgssStrVars s_fol_vars;
+static uint16_t s_fol_line[HGSS_MSG_MAX];
+static uint16_t s_fol_text[HGSS_MSG_MAX];
+
+void frontend_vblank(const GBA* gba, void* ctx) {
+    Frontend* fe = (Frontend*)ctx;
+    if (fe->overworld_xray && fe->ow_feed) overworld_capture(gba, fe->ow_feed);
+    if (fe->follower.enabled && fe->fol_feed) follower_capture(gba, fe->fol_feed);
+}
+
+void frontend_sync_observer(Frontend* fe, GBA* gba) {
+    bool any = (fe->overworld_xray && fe->ow_feed) || (fe->follower.enabled && fe->fol_feed);
+    gba_set_vblank_observer(gba, any ? frontend_vblank : NULL, fe);
+}
+
+/* Ends a talk without applying its mood change. talk_abort leaves want_cry set. */
+static void follower_talk_stop(FollowerView* v) {
+    talk_abort(&v->talk);
+    v->talk.want_cry = false;
+    v->talk.phase = TALK_IDLE;
+}
+
+void frontend_follower_reset(Frontend* fe, GBA* gba) {
+    if (fe->fol_feed) follower_reset(&fe->fol_feed->sim);
+    follower_talk_stop(&fe->follower);
+    fe->follower.cry.playing = false;
+    memset(gba->ppu.extra_obj, 0, sizeof(gba->ppu.extra_obj));
+}
+
+void frontend_toggle_follower(Frontend* fe, GBA* gba) {
+    if (!fe->fol_feed) {
+        frontend_toast_keyed(fe, "follower", TOAST_INFO, "Following Pokemon needs Pokemon Emerald",
+                             "Original US ROM only");
+        return;
+    }
+    if (!fe->follower.enabled && (!fe->hgss || !fe->hgss->ok)) {
+        frontend_toast_keyed(fe, "follower", TOAST_INFO, "Following Pokemon needs your HeartGold ROM",
+                             "Set it in Settings > General");
+        return;
+    }
+    fe->follower.enabled = !fe->follower.enabled;
+    frontend_follower_reset(fe, gba);
+    if (!fe->follower.enabled) follower_mood_save(&fe->follower);
+    frontend_sync_observer(fe, gba);
+    frontend_toast_keyed(fe, "follower", TOAST_INFO,
+                         fe->follower.enabled ? "Following Pokemon on" : "Following Pokemon off", NULL);
+    if (fe->prefs) {
+        prefs_set_bool(fe->prefs, "follower", fe->follower.enabled);
+        if (!prefs_save(fe->prefs)) LOG_WARN("Couldn't save preferences to %s", fe->prefs->path);
+    }
+}
+
+static bool follower_national(const GameProfile* p, const GameMem* m, uint16_t species, uint16_t* national) {
+    *national = species;
+    if (species == 0) return false;
+    if (species > 251 && !game_mem_read16(m, p->species_to_national + 2u * (species - 1u), national)) return false;
+    return *national != 0;
+}
+
+/* Copies the tall grass palette from its OBJ palette slot once Emerald has loaded it. The
+ * hardware colours are faded during fades, so those frames keep the last clean copy. */
+static void follower_grass_palette(FollowerView* v, const GBA* gba, const GameMem* m, const FollowerFeed* fd) {
+    const FollowerInput* in = &fd->in;
+    if (!in->ok || in->fade_y != 0 || in->fade_active || in->weather_state == 1) return;
+    for (uint32_t slot = 0; slot < 16; slot++) {
+        uint16_t tag = 0;
+        if (!game_mem_read16(m, fd->profile->sprite_palette_tags + 2u * slot, &tag) || tag != FOL_PAL_TAG_GRASS)
+            continue;
+        const uint8_t* pal = gba->ppu.palette_ram + 0x200 + 32u * slot;
+        for (uint32_t i = 0; i < 16; i++) v->grass_pal[i] = (uint16_t)(pal[2 * i] | pal[2 * i + 1] << 8);
+        v->grass_ok = true;
+        return;
+    }
+}
+
+static uint32_t follower_rand(void* ud) {
+    FollowerView* v = (FollowerView*)ud;
+    uint32_t x = v->rng;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+    v->rng = x;
+    return x;
+}
+
+/* Interactions we can play: no yes/no prompt, fashion item, leaf, or Johto-only line. */
+static bool follower_script_ok(uint16_t result, void* ud) {
+    FollowerView* v = (FollowerView*)ud;
+    HgssTalkScript s;
+    if (!hgss_assets_script(v->assets, result, &s) || s.yes_no || s.fashion != 0 || s.leaf != 0) return false;
+    for (uint32_t i = 0; i < s.step_count && i < HGSS_STEPS; i++) {
+        uint16_t msg = s.step[i].msg;
+        if (msg == 0) continue;
+        uint32_t n = 0;
+        if (follower_place_msg_denied(msg) || !hgss_assets_line(v->assets, msg, s_fol_line, HGSS_MSG_MAX, &n) ||
+            hgss_msg_has_yesno(s_fol_line, n))
+            return false;
+    }
+    return true;
+}
+
+static uint8_t follower_adjacent_objects(const GameProfile* p, const GameMem* m, const FollowerInput* in) {
+    uint8_t player = 0xFF, count = 0;
+    game_mem_read8(m, p->player_avatar + FOL_AVATAR_OBJ_ID, &player);
+    for (uint32_t i = 0; i < FOL_OBJ_COUNT; i++) {
+        uint8_t obj[FOL_OBJ_CUR + 4];
+        if (i == player || !game_mem_copy(m, p->object_events + i * FOL_OBJ_SIZE, obj, sizeof(obj)) || !(obj[0] & 1))
+            continue;
+        int32_t dx = (int16_t)(obj[FOL_OBJ_CUR] | obj[FOL_OBJ_CUR + 1] << 8) - in->cur_x;
+        int32_t dy = (int16_t)(obj[FOL_OBJ_CUR + 2] | obj[FOL_OBJ_CUR + 3] << 8) - in->cur_y;
+        if (dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1) count++;
+    }
+    return count;
+}
+
+/* Grass, cave floor and water tiles of a map that has land or water encounters. An
+ * approximation of Emerald's per-metatile encounter attribute; it only picks lines. */
+static bool follower_encounter_tile(const GameProfile* p, const GameMem* m, const FollowerInput* in) {
+    uint8_t b = in->fol_behavior;
+    bool land = b == 0x02 || b == 0x03 || b == 0x08 || b == 0x0B || b == 0x24;
+    bool water = b == 0x10 || b == 0x11 || b == 0x12 || b == 0x14 || b == 0x15;
+    if (!land && !water) return false;
+    EncounterList enc[ENC_METHOD_COUNT];
+    if (!encounters_find(m, p->wild_mon_headers, p->wild_header_cap, p->species_count, in->loc_group, in->loc_num,
+                         enc))
+        return false;
+    return land ? enc[ENC_LAND].count > 0 : enc[ENC_WATER].count > 0;
+}
+
+/* The game's clock: RTC time minus the save's local time offset (pokeemerald RtcCalcLocalTime). */
+static uint8_t follower_hour(const GBA* gba, const GameProfile* p, const GameMem* m) {
+    time_t now = time(NULL) + (time_t)gba->cart.rtc.offset_secs;
+    struct tm* tm = localtime(&now);
+    int32_t minutes = tm ? tm->tm_hour * 60 + tm->tm_min : 12 * 60;
+    uint32_t sb2 = 0;
+    uint8_t h = 0, mi = 0;
+    if (game_mem_read32(m, p->save_block2_ptr, &sb2) && game_mem_read8(m, sb2 + FOL_SB2_LOCAL_TIME + 2, &h) &&
+        game_mem_read8(m, sb2 + FOL_SB2_LOCAL_TIME + 3, &mi))
+        minutes -= (int8_t)h * 60 + (int8_t)mi;
+    minutes %= 24 * 60;
+    if (minutes < 0) minutes += 24 * 60;
+    return (uint8_t)(minutes / 60);
+}
+
+static void follower_strvar(const GameMem* m, uint32_t addr, uint32_t len, uint16_t* dst) {
+    uint8_t buf[HGSS_STRVAR_MAX];
+    if (len > sizeof(buf) || !game_mem_copy(m, addr, buf, len)) return;
+    hgss_str_from_gen3(buf, len, dst, HGSS_STRVAR_MAX);
+}
+
+/* Nickname, species, player, place and held item, as HGSS text. */
+static void follower_strvars(const GameProfile* p, const GameMem* m, const FollowerInput* in) {
+    const MonData* mon = &in->lead;
+    for (uint32_t i = 0; i < HGSS_STRVARS; i++) s_fol_vars.s[i][0] = HGSS_CH_END;
+    hgss_str_from_gen3(mon->nickname_raw, sizeof(mon->nickname_raw), s_fol_vars.s[0], HGSS_STRVAR_MAX);
+    if (mon->species < p->species_count)
+        follower_strvar(m, p->species_names + (uint32_t)mon->species * FOL_SPECIES_NAME_LEN, FOL_SPECIES_NAME_LEN,
+                        s_fol_vars.s[1]);
+    uint32_t sb2 = 0, name = 0;
+    if (game_mem_read32(m, p->save_block2_ptr, &sb2))
+        follower_strvar(m, sb2, FOL_PLAYER_NAME_LEN, s_fol_vars.s[2]);
+    if (in->mapsec < p->region_map_count &&
+        game_mem_read32(m, p->region_map_entries + 8u * in->mapsec + 4, &name))
+        follower_strvar(m, name, HGSS_STRVAR_MAX, s_fol_vars.s[3]);
+    if (mon->held_item != 0 && mon->held_item < p->item_count)
+        follower_strvar(m, p->items + (uint32_t)mon->held_item * FOL_ITEM_SIZE, FOL_ITEM_NAME_LEN, s_fol_vars.s[4]);
+}
+
+/* Animation and text pages for the talk's current step. */
+static void follower_talk_step(Frontend* fe) {
+    static TalkStepData d;
+    TalkPlayer* t = &fe->follower.talk;
+    HgssAssets* a = fe->follower.assets;
+    memset(&d, 0, sizeof(d));
+    fe->fol_step = t->step;
+    if (t->step < t->script.step_count && t->step < HGSS_STEPS) {
+        const HgssTalkStep* s = &t->script.step[t->step];
+        d.anim_n = hgss_assets_anim(a, s->anim, d.anim);
+        if (d.anim_n > HGSS_ANIM_FRAMES) d.anim_n = HGSS_ANIM_FRAMES;
+        uint32_t n = 0;
+        if (s->msg && hgss_assets_line(a, s->msg, s_fol_line, HGSS_MSG_MAX, &n)) {
+            uint32_t len = hgss_msg_expand(s_fol_line, n, &s_fol_vars, s_fol_text, HGSS_MSG_MAX);
+            d.page_n = hgss_text_layout(&a->font, s_fol_text, len, d.pages, HGSS_PAGE_MAX);
+            if (d.page_n > HGSS_PAGE_MAX) d.page_n = HGSS_PAGE_MAX;
+        }
+    }
+    talk_set_step_data(t, &d);
+}
+
+/* A on the follower: pick an HGSS interaction for the lead and the place, and start it. */
+static void follower_talk_begin(Frontend* fe, const GBA* gba, const GameMem* m) {
+    FollowerView* v = &fe->follower;
+    FollowerFeed* fd = fe->fol_feed;
+    const GameProfile* p = fd->profile;
+    const FollowerInput* in = &fd->in;
+    const MonData* mon = &in->lead;
+    HgssAssets* a = v->assets;
+    uint16_t national = 0;
+    if (!a || !a->ok || !in->lead_ok || !follower_national(p, m, mon->species, &national)) return;
+
+    FollowerCtxExtra x;
+    memset(&x, 0, sizeof(x));
+    uint32_t info = p->species_info + (uint32_t)mon->species * FOL_SPECIES_INFO_SIZE;
+    x.gender_ratio = 0xFF;
+    game_mem_read8(m, info + FOL_SI_TYPE1, &x.type1);
+    game_mem_read8(m, info + FOL_SI_TYPE2, &x.type2);
+    game_mem_read8(m, info + FOL_SI_GENDER_RATIO, &x.gender_ratio);
+    if (mon->held_item != 0 && mon->held_item < p->item_count)
+        game_mem_read8(m, p->items + (uint32_t)mon->held_item * FOL_ITEM_SIZE + FOL_ITEM_POCKET, &x.item_pocket);
+    if (national <= sizeof(a->species_class_tbl)) x.species_class = a->species_class_tbl[national - 1];
+    x.adjacent_objects = follower_adjacent_objects(p, m, in);
+    if (fe->overworld_xray && fe->ow_feed)
+        for (uint32_t i = 0; i < fe->ow_feed->shown.marker_count && i < OW_MAX_MARKERS; i++)
+            if (fe->ow_feed->shown.markers[i].kind == OW_MARK_HIDDEN) x.hidden_items++;
+    x.encounter_tile = follower_encounter_tile(p, m, in);
+    x.hour = follower_hour(gba, p, m);
+    x.mood = follower_mood_get(v, mon->personality);
+    static const uint8_t k_opposite[5] = {1, 2, 1, 4, 3};   /* game facing: 1 S, 2 N, 3 W, 4 E */
+    uint8_t face = k_opposite[in->facing <= 4 ? in->facing : 0];
+    x.follower_facing = face;
+
+    HgssTalkCtx ctx;
+    follower_ctx_build(in, &x, &ctx);
+    hgss_assets_rules(a, follower_place_mapsec(in->map_type, in->mapsec, in->fol_behavior), s_fol_rules);
+    int32_t pick = hgss_rule_pick(&s_fol_rules[0][0], &ctx, follower_rand, follower_script_ok, v);
+    HgssTalkScript script;
+    if (pick < 0 || !hgss_assets_script(a, hgss_rule_result(s_fol_rules[pick]), &script)) return;
+    follower_strvars(p, m, in);
+    talk_start(&v->talk, &script);
+    follower_talk_step(fe);
+    fd->sim.facing = face;   /* turn to the player */
+}
+
+static void follower_play_cry(FollowerView* v, const GBA* gba, const FollowerFeed* fd) {
+    GameMem m = {gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size};
+    uint16_t national = 0;
+    uint32_t wave = 0;
+    if (!fd->in.lead_ok || !follower_national(fd->profile, &m, fd->in.lead.species, &national) ||
+        national > FOL_NATIONAL_MAX ||
+        !game_mem_read32(&m, fd->profile->cry_table + 12u * (national - 1u) + 4, &wave) || wave < 0x08000000u ||
+        wave - 0x08000000u >= gba->cart.rom_size)
+        return;
+    uint32_t off = wave - 0x08000000u;
+    if (cry_decode(gba->cart.rom + off, gba->cart.rom_size - off, v->cry.pcm, CRY_MAX_SAMPLES, &v->cry.len,
+                   &v->cry.rate))
+        cry_start(&v->cry);
+    else
+        LOG_WARN("Couldn't decode the cry for national dex %u", (unsigned)national);
+}
+
+void follower_frame_begin(Frontend* fe, GBA* gba) {
+    FollowerView* v = &fe->follower;
+    FollowerFeed* fd = fe->fol_feed;
+    if (!v->enabled || !fd || !fd->profile) {
+        memset(gba->ppu.extra_obj, 0, sizeof(gba->ppu.extra_obj));
+        return;
+    }
+    GameMem m = {gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size};
+    follower_view_sync(v, &m, fd->profile, fd);
+    follower_grass_palette(v, gba, &m, fd);
+    bool shown = fd->sim.vis == FOL_VISIBLE && fd->in.overworld && !fd->in.in_transition && v->gfx_pid != 0 &&
+                 v->gfx_pid == fd->sim.lead_pid;
+    if (talk_active(&v->talk) && !shown)
+        follower_talk_stop(v);
+    else if (fd->sim.talk_request && shown && !talk_active(&v->talk))
+        follower_talk_begin(fe, gba, &m);
+    follower_view_objs(v, fd, gba->ppu.oam, gba->ppu.extra_obj);
+}
+
+void follower_frame_end(Frontend* fe, const GBA* gba, uint16_t real_keys) {
+    FollowerView* v = &fe->follower;
+    FollowerFeed* fd = fe->fol_feed;
+    if (!v->enabled || !fd) return;
+    uint16_t held = (uint16_t)(~real_keys & 0x03FF);
+    uint16_t pressed = (uint16_t)(held & ~fe->fol_prev_keys);
+    fe->fol_prev_keys = held;
+
+    TalkPlayer* t = &v->talk;
+    if (talk_active(t)) {
+        talk_tick(t, pressed, held);
+        if (t->phase == TALK_ANIM && t->step != fe->fol_step) follower_talk_step(fe);
+        if (t->want_cry) {
+            t->want_cry = false;
+            follower_play_cry(v, gba, fd);
+        }
+    }
+    if (t->phase == TALK_DONE) {
+        if (t->mood_delta) follower_mood_add(v, fd->sim.lead_pid, t->mood_delta);
+        follower_mood_save(v);
+        t->phase = TALK_IDLE;
+    }
+
+    const Follower* s = &fd->sim;
+    if (s->faint_pid) follower_mood_add(v, s->faint_pid, FOL_FAINT_MOOD);
+    if (s->mood_delta && s->lead_pid) follower_mood_add(v, s->lead_pid, s->mood_delta);
+    if (s->steps && s->vis == FOL_VISIBLE && s->lead_pid) {
+        int32_t mood = follower_mood_get(v, s->lead_pid);
+        int32_t n = s->steps < (mood < 0 ? -mood : mood) ? s->steps : (mood < 0 ? -mood : mood);
+        if (n) follower_mood_add(v, s->lead_pid, (int16_t)(mood > 0 ? -n : n));
+    }
 }
 
 void frontend_destroy(Frontend* fe) {
@@ -773,6 +1100,37 @@ static void settings_handle_event(Frontend* fe, const SDL_Event* e) {
     }
 }
 
+/* Settings > General "Choose...": opens the HeartGold/SoulSilver ROM and remembers it. */
+static void frontend_choose_hgss(Frontend* fe, GBA* gba) {
+    char path[SETTINGS_PATH_LEN];
+    RomPickResult r = rom_picker_choose_nds(path, sizeof(path));
+    if (r == ROM_PICK_UNAVAILABLE) {
+        frontend_toast(fe, TOAST_ERROR, "No file picker on this system", NULL);
+        return;
+    }
+    if (r != ROM_PICK_OK || !fe->hgss) return;
+    /* Nothing may draw from the assets while they reload. */
+    bool was_on = fe->follower.enabled;
+    if (was_on) follower_mood_save(&fe->follower);
+    frontend_follower_reset(fe, gba);
+    fe->follower.enabled = false;
+    if (!hgss_assets_open(fe->hgss, path)) {
+        LOG_WARN("HeartGold ROM %s: %s", path, fe->hgss->error);
+        frontend_toast(fe, TOAST_ERROR, fe->hgss->error, NULL);
+        const char* old = fe->prefs ? prefs_get(fe->prefs, "hgss_rom") : NULL;
+        if (old && old[0]) hgss_assets_open(fe->hgss, old);   /* keep the ROM that worked */
+    } else {
+        frontend_toast(fe, TOAST_OK, "HeartGold ROM ready", NULL);
+        if (fe->prefs && prefs_set(fe->prefs, "hgss_rom", path) && !prefs_save(fe->prefs))
+            LOG_WARN("Couldn't save preferences to %s", fe->prefs->path);
+    }
+    /* Reload the sprite from the new assets; the mood comes back from the sidecar. */
+    follower_view_init(&fe->follower, fe->hgss, gba->cart.save_path);
+    fe->follower.rng ^= (uint32_t)time(NULL) | 1u;   /* talks differ between sessions */
+    fe->follower.enabled = was_on && fe->hgss->ok;
+    frontend_sync_observer(fe, gba);
+}
+
 void frontend_update_settings(Frontend* fe, GBA* gba) {
     if (!fe->settings.open) return;
     UiInput* in = &fe->ui_input;
@@ -800,7 +1158,11 @@ void frontend_update_settings(Frontend* fe, GBA* gba) {
         {
             const char* bp = fe->prefs ? prefs_get(fe->prefs, "bios_path") : NULL;
             snprintf(fe->settings.general.bios_path, sizeof(fe->settings.general.bios_path), "%s", bp ? bp : "");
+            const char* hp = fe->prefs ? prefs_get(fe->prefs, "hgss_rom") : NULL;
+            snprintf(fe->settings.general.hgss_path, sizeof(fe->settings.general.hgss_path), "%s", hp ? hp : "");
         }
+        fe->settings.general.hgss_ready = fe->hgss && fe->hgss->ok;
+        fe->settings.general.follower = fe->follower.enabled;
         settings_draw(&canvas, in, &fe->settings, &fe->settings_ctx);
         ui_input_frame_end(in);
         if (fe->settings.video.changed) {
@@ -846,6 +1208,18 @@ void frontend_update_settings(Frontend* fe, GBA* gba) {
             /* The picker is modal: drop the press that opened it. */
             fe->ui_input.down = false;
             fe->ui_input.active = 0;
+            settle = true;
+        }
+        if (gp->choose_hgss) {
+            gp->choose_hgss = false;
+            frontend_choose_hgss(fe, gba);
+            fe->ui_input.down = false;   /* the picker is modal: drop the press that opened it */
+            fe->ui_input.active = 0;
+            settle = true;
+        }
+        if (gp->follower_changed) {
+            gp->follower_changed = false;
+            if (gp->follower != fe->follower.enabled) frontend_toggle_follower(fe, gba);
             settle = true;
         }
         if (gp->clear_bios) {
@@ -934,6 +1308,8 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                                      NULL);
             }
 
+            if (event.key.keysym.scancode == SDL_SCANCODE_F1 && !event.key.repeat)
+                frontend_toggle_follower(fe, gba);
             if (event.key.keysym.scancode == SDL_SCANCODE_F4 && !event.key.repeat)
                 frontend_toggle_overworld(fe, gba);
 
@@ -1190,6 +1566,7 @@ void frontend_audio_init(Frontend* fe) {
         3u * (uint32_t)have.samples * have.channels * (uint32_t)sizeof(int16_t);
 
     audio_out_init(&fe->audio_out, CPU_FREQ / DEFAULT_SAMPLE_PERIOD, (uint32_t)have.freq);
+    fe->audio_rate = (uint32_t)have.freq;
     fe->audio_stopped = true;
 
     SDL_PauseAudioDevice(fe->audio_device, 0);
@@ -1200,6 +1577,20 @@ void frontend_audio_init(Frontend* fe) {
 #define AUDIO_CHUNK_FRAMES 2048
 static int16_t s_audio_chunk[AUDIO_CHUNK_FRAMES * 2];
 static int16_t s_scaled[SAMPLE_BUFFER_SIZE * 2];   /* input samples scaled by the volume */
+static int16_t s_cry_chunk[AUDIO_CHUNK_FRAMES * 2];   /* the follower's cry before the volume */
+
+/* Adds the follower's cry to n output frames at the user's volume. */
+static void frontend_mix_cry(Frontend* fe, int16_t* out, uint32_t n) {
+    CryPlayer* c = &fe->follower.cry;
+    if (!c->playing || n > AUDIO_CHUNK_FRAMES) return;
+    memset(s_cry_chunk, 0, n * 2 * sizeof(int16_t));
+    cry_mix(c, s_cry_chunk, n, fe->audio_rate);
+    if (fe->volume < 100) settings_audio_scale(s_cry_chunk, s_cry_chunk, n * 2, fe->volume);
+    for (uint32_t i = 0; i < n * 2; i++) {
+        int32_t v = out[i] + s_cry_chunk[i];
+        out[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+    }
+}
 
 void frontend_audio_stop(Frontend* fe, APU* apu) {
     apu->read_pos = apu->write_pos;
@@ -1234,6 +1625,7 @@ void frontend_push_audio(Frontend* fe, APU* apu) {
             in = s_scaled;
         }
         uint32_t n = audio_out_process(&fe->audio_out, in, count, s_audio_chunk);
+        frontend_mix_cry(fe, s_audio_chunk, n);
         SDL_QueueAudio(fe->audio_device, s_audio_chunk, n * 2 * (uint32_t)sizeof(int16_t));
         apu->read_pos = (apu->read_pos + count) % SAMPLE_BUFFER_SIZE;
     }

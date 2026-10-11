@@ -68,6 +68,7 @@ const GameProfile g_emerald_profile = {
     .elevation_to_priority = 0x0850E634,
     .tall_grass_pic = 0x084F8738,
     .cry_table = 0x0869DCF4,
+    .sprite_palette_tags = 0x03000CF0,
 };
 
 uint32_t game_crc32_update(uint32_t crc, const uint8_t* data, uint32_t len) {

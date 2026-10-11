@@ -15,6 +15,7 @@
 #include "frontend/overworld_draw.h"
 #include "frontend/prefs.h"
 #include "frontend/video_filter.h"
+#include "game/follower.h"
 #include "game/game.h"
 #include "game/overworld.h"
 #include "headless/headless.h"
@@ -40,6 +41,10 @@ static GameState s_game;
 static NuzSession s_nuz;
 static bool s_nuz_on;        /* tracking runs in the window, and headless only with --nuzlocke-file */
 static OverworldFeed s_ow;
+static FollowerFeed s_fol;
+static HgssAssets s_hgss;      /* ~150 KB: the HeartGold/SoulSilver ROM's follower data */
+static uint16_t s_real_keys;   /* host keys held back from the game during a follower talk */
+static uint16_t s_talk_keys;   /* keys held when a talk ended: hidden from the game until released */
 static Prefs s_prefs;
 static char s_keymap_path[PREFS_PATH_LEN]; /* <prefdir>/keymap.ini, empty when unavailable */
 
@@ -47,6 +52,46 @@ static char s_keymap_path[PREFS_PATH_LEN]; /* <prefdir>/keymap.ini, empty when u
 static void nuz_tick(GBA* gba, void* ctx) {
     GameMem m = { gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size };
     if (s_nuz_on) nuz_session_frame((NuzSession*)ctx, &m);
+}
+
+/* Following Pokemon around one emulated frame: place the follower before it runs and hold
+ * game input during a talk; afterwards restore input and advance the talk. */
+static void follower_pre_frame(GBA* gba, void* ctx) {
+    Frontend* fe = (Frontend*)ctx;
+    s_real_keys = gba->input.keyinput;
+    if (!fe->follower.enabled) return;
+    follower_frame_begin(fe, gba);
+    uint16_t held = (uint16_t)(~s_real_keys & 0x03FF);
+    if (talk_active(&fe->follower.talk)) {
+        s_talk_keys = held;
+        gba->input.keyinput = 0x03FF;
+    } else {
+        /* A held through the last page must not reach the game as a new press and talk again. */
+        s_talk_keys &= held;
+        gba->input.keyinput |= s_talk_keys;
+    }
+}
+
+static void follower_post_frame(GBA* gba, void* ctx) {
+    Frontend* fe = (Frontend*)ctx;
+    gba->input.keyinput = s_real_keys;
+    if (fe->follower.enabled) follower_frame_end(fe, gba, s_real_keys);
+}
+
+/* Headless per-frame hooks (ctx = Frontend). */
+static void headless_after(GBA* gba, void* ctx) {
+    follower_post_frame(gba, ctx);
+    nuz_tick(gba, &s_nuz);
+}
+
+/* The frame as the player sees it: with the follower's text box and emote during a talk.
+ * gba.ppu.framebuffer itself stays untouched (hashes and F12 use it). */
+static uint16_t* follower_composite(Frontend* fe, GBA* gba) {
+    static uint16_t talk_fb[SCREEN_WIDTH * SCREEN_HEIGHT];
+    if (!fe->follower.enabled || !fe->fol_feed || !talk_active(&fe->follower.talk)) return gba->ppu.framebuffer;
+    memcpy(talk_fb, gba->ppu.framebuffer, sizeof(talk_fb));
+    follower_view_overlay(&fe->follower, fe->fol_feed, talk_fb);
+    return talk_fb;
 }
 
 /* File name without its directory, for short toast details. */
@@ -93,7 +138,7 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
     frontend_update_settings(fe, gba);
     frontend_update_overworld(fe, fe->overworld_xray && fe->ow_feed ? &fe->ow_feed->shown : NULL);
     frontend_update_hud(fe, SDL_GetTicks());
-    frontend_present_frame(fe, gba->ppu.framebuffer);
+    frontend_present_frame(fe, follower_composite(fe, gba));
 }
 
 static void print_usage(const char* prog) {
@@ -125,6 +170,7 @@ static void print_usage(const char* prog) {
     printf("  --color-correct        LCD color correction (overrides Settings for this run)\n");
     printf("  --video-out <file>     Headless: final frame through the screen filter for --scale, as PNG\n");
     printf("  --gift-audit <file>    Headless: list every NPC gift tag in the ROM (Emerald only)\n");
+    printf("  --follower-hgss <rom>  Headless: Following Pokemon on, using this HeartGold/SoulSilver ROM\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
@@ -173,6 +219,7 @@ int main(int argc, char* argv[]) {
     const char* gift_audit_path = NULL;
     const char* library_folder = NULL;
     const char* library_out_path = NULL;
+    const char* follower_hgss_path = NULL;
 
     // Parse arguments
     for (int i = no_rom ? 1 : 2; i < argc; i++) {
@@ -236,6 +283,8 @@ int main(int argc, char* argv[]) {
             nuzlocke_file = argv[++i];
         } else if (strcmp(argv[i], "--gift-audit") == 0 && i + 1 < argc) {
             gift_audit_path = argv[++i];
+        } else if (strcmp(argv[i], "--follower-hgss") == 0 && i + 1 < argc) {
+            follower_hgss_path = argv[++i];
         } else if (strcmp(argv[i], "--panel-select") == 0 && i + 1 < argc) {
             panel_select_arg = argv[++i];
         } else {
@@ -280,6 +329,10 @@ int main(int argc, char* argv[]) {
     }
     if (overworld_out_path && !headless) {
         LOG_ERROR("--overworld-out requires --headless");
+        return 1;
+    }
+    if (follower_hgss_path && !headless) {
+        LOG_ERROR("--follower-hgss requires --headless (in the window, set the ROM in Settings > General)");
         return 1;
     }
     if (video_out_path && !headless) {
@@ -477,6 +530,7 @@ int main(int argc, char* argv[]) {
 
     game_init(&s_game, gba.cart.rom, gba.cart.rom_size);
     overworld_feed_init(&s_ow, s_game.profile);
+    follower_feed_init(&s_fol, s_game.profile);
     s_nuz_on = !headless || nuzlocke_file;
     nuz_session_init(&s_nuz, s_game.profile, rom_path, headless ? nuzlocke_file : NULL);
     if (s_game.support == GAME_SUPPORT_MODIFIED)
@@ -591,15 +645,34 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
-        if (s_game.profile && (game_dump_path || overworld_out_path))
-            gba_set_vblank_observer(&gba, overworld_capture, &s_ow);
+        /* A bare Frontend: only the observer hub and the follower fields are used. */
+        memset(&fe, 0, sizeof(fe));
+        fe.ow_feed = s_game.profile ? &s_ow : NULL;
+        fe.overworld_xray = s_game.profile && (game_dump_path || overworld_out_path);
+        if (follower_hgss_path) {
+            if (!s_game.profile) {
+                LOG_ERROR("--follower-hgss needs the original Pokemon Emerald (US)");
+                gba_destroy(&gba);
+                return 1;
+            }
+            if (!hgss_assets_open(&s_hgss, follower_hgss_path)) {
+                LOG_ERROR("--follower-hgss %s: %s", follower_hgss_path, s_hgss.error);
+                gba_destroy(&gba);
+                return 1;
+            }
+            fe.fol_feed = &s_fol;
+            fe.hgss = &s_hgss;
+            follower_view_init(&fe.follower, &s_hgss, NULL);   /* no mood sidecar from headless runs */
+            fe.follower.enabled = true;
+        }
+        frontend_sync_observer(&fe, &gba);
         if (overworld_out_path && !s_game.profile)
             LOG_WARN("--overworld-out: not the original Pokemon Emerald (US), drawing the game only");
-        int rc = headless_run(&gba, headless_frames, hash_out,
-                              input_script_path ? &input_script : NULL, nuz_tick, &s_nuz);
+        int rc = headless_run(&gba, headless_frames, hash_out, input_script_path ? &input_script : NULL,
+                              follower_pre_frame, headless_after, &fe);
         if (hash_out != stdout) fclose(hash_out);
         if (rc == 0 && screenshot_out_path) {
-            if (!screenshot_save(gba.ppu.framebuffer, screenshot_out_path)) {
+            if (!screenshot_save(follower_composite(&fe, &gba), screenshot_out_path)) {
                 LOG_ERROR("Failed to write screenshot: %s", screenshot_out_path);
                 rc = 1;
             }
@@ -740,10 +813,19 @@ int main(int argc, char* argv[]) {
         fe.pause_on_blur = prefs_get_bool(&s_prefs, "pause_on_blur", false);
     }
     fe.color_correct = color_correct_arg || prefs_get_bool(&s_prefs, "color_correct", false);
-    if (fe.ow_feed && prefs_get_bool(&s_prefs, "overworld_xray", false)) {
-        fe.overworld_xray = true;
-        gba_set_vblank_observer(&gba, overworld_capture, &s_ow);
+    if (fe.ow_feed && prefs_get_bool(&s_prefs, "overworld_xray", false)) fe.overworld_xray = true;
+    /* Following Pokemon: a saved HeartGold ROM that no longer opens counts as unset. */
+    fe.fol_feed = s_game.profile ? &s_fol : NULL;
+    fe.hgss = &s_hgss;
+    {
+        const char* hp = prefs_get(&s_prefs, "hgss_rom");
+        if (fe.fol_feed && hp && hp[0] && !hgss_assets_open(&s_hgss, hp))
+            LOG_WARN("Following Pokemon is off: HeartGold ROM %s: %s", hp, s_hgss.error);
     }
+    follower_view_init(&fe.follower, &s_hgss, gba.cart.save_path);
+    fe.follower.rng ^= (uint32_t)time(NULL) | 1u;   /* talks differ between sessions; headless keeps the fixed seed */
+    fe.follower.enabled = fe.fol_feed && s_hgss.ok && prefs_get_bool(&s_prefs, "follower", false);
+    frontend_sync_observer(&fe, &gba);
 
     if (!bios_loaded && bios_from_prefs)
         frontend_toast(&fe, TOAST_WARN, "BIOS file not found", path_base(pref_bios));
@@ -806,7 +888,9 @@ int main(int argc, char* argv[]) {
                 // Single-step: run exactly one frame then re-pause.
                 fe.step_pending = false;
                 frontend_input_frame(&fe, &gba);
+                follower_pre_frame(&gba, &fe);
                 gba_run_frame(&gba);
+                follower_post_frame(&gba, &fe);
                 if (gba.frame_complete) {
                     nuz_tick(&gba, &s_nuz);
                     CartFlushResult flush = cartridge_save_tick(&gba.cart, time(NULL));
@@ -850,6 +934,7 @@ int main(int argc, char* argv[]) {
                     frontend_toast(&fe, TOAST_OK, "State loaded", slot_detail);
                     frontend_audio_stop(&fe, &gba.apu);
                     overworld_feed_clear(&s_ow);
+                    frontend_follower_reset(&fe, &gba);
 #ifdef ENABLE_REWIND
                     rewind_clear(&gba.rewind);   // past is no longer valid
 #endif
@@ -892,6 +977,7 @@ int main(int argc, char* argv[]) {
                 // Hit oldest frame — freeze on screen until release.
             }
             overworld_feed_clear(&s_ow);
+            frontend_follower_reset(&fe, &gba);
             nuz_tick(&gba, &s_nuz);
             render_with_overlay(&fe, &gba);
 #ifdef ENABLE_XRAY
@@ -905,7 +991,9 @@ int main(int argc, char* argv[]) {
 #endif /* ENABLE_REWIND */
 
         frontend_input_frame(&fe, &gba);
+        follower_pre_frame(&gba, &fe);
         gba_run_frame(&gba);
+        follower_post_frame(&gba, &fe);
 
         if (gba.frame_complete) {
             trace_frame_tick();
@@ -968,6 +1056,7 @@ int main(int argc, char* argv[]) {
     // Cleanup
     trace_shutdown();
     cartridge_save_to_file(&gba.cart);
+    if (fe.follower.enabled) follower_mood_save(&fe.follower);   /* level-up and faint changes since the last talk */
 #ifdef ENABLE_XRAY
     xray_destroy(&s_xray_state);
     g_xray = NULL;

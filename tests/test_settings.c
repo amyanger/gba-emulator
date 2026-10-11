@@ -430,6 +430,23 @@ TEST(settings_general_bios_buttons) {
     ASSERT_TRUE(st.general.clear_bios);
 }
 
+TEST(settings_general_following_pokemon_row) {
+    setup();
+    st.page = SETTINGS_PAGE_GENERAL;
+    draw();
+    press_key_on(SETTINGS_ID_HGSS_CHOOSE, UI_KEY_ENTER);
+    ASSERT_TRUE(st.general.choose_hgss);
+    st.general.choose_hgss = false;
+    press_key_on(SETTINGS_ID_FOLLOWER, UI_KEY_SPACE);   /* disabled until a HeartGold ROM is ready */
+    ASSERT_TRUE(!st.general.follower && !st.general.follower_changed);
+    snprintf(st.general.hgss_path, sizeof(st.general.hgss_path), "/x/heartgold.nds");
+    st.general.hgss_ready = true;
+    draw();
+    press_key_on(SETTINGS_ID_FOLLOWER, UI_KEY_SPACE);
+    ASSERT_TRUE(st.general.follower && st.general.follower_changed);
+    ASSERT_TRUE(!st.general.changed);   /* the frontend applies it through the F1 toggle, not prefs here */
+}
+
 void run_settings_tests(void) {
     TEST_SUITE("settings");
     RUN_TEST(settings_window_centered_and_shrinks);
@@ -447,6 +464,7 @@ void run_settings_tests(void) {
     RUN_TEST(settings_video_filter_and_color);
     RUN_TEST(settings_general_bios_buttons);
     RUN_TEST(settings_general_ff_and_blur);
+    RUN_TEST(settings_general_following_pokemon_row);
     RUN_TEST(audio_scale_full_half_zero);
     RUN_TEST(audio_scale_zero_is_silence);
     RUN_TEST(settings_audio_volume_and_start_muted);

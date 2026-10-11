@@ -6,10 +6,12 @@
 #endif
 
 int headless_run(GBA* gba, int frames, FILE* hash_out, InputScript* script,
-                 void (*on_frame)(GBA* gba, void* ctx), void* ctx) {
+                 void (*before_frame)(GBA* gba, void* ctx), void (*on_frame)(GBA* gba, void* ctx),
+                 void* ctx) {
     if (frames < 0) return 1;
     for (int i = 0; i < frames; i++) {
         if (script) input_script_apply(script, i, &gba->input);
+        if (before_frame) before_frame(gba, ctx);
         gba_run_frame(gba);
         if (on_frame) on_frame(gba, ctx);
         /* Nothing plays headless audio; drop it so the ring holds the latest frame (X-Ray reads it). */
