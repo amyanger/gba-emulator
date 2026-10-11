@@ -134,6 +134,14 @@ set(SOURCES
     src/game/nuzlocke_read.c
     src/game/nuzlocke.c
     src/game/script_walk.c
+    src/game/follower.c
+    src/game/follower_ctx.c
+    src/game/follower_places.c
+    src/hgss/nds_fs.c
+    src/hgss/hgss_msg.c
+    src/hgss/hgss_gfx.c
+    src/hgss/hgss_talk.c
+    src/hgss/hgss_assets.c
     src/ui/ui_stb.c
     src/ui/ui_canvas.c
     src/ui/ui_font.c
@@ -166,6 +174,9 @@ set(SOURCES
     src/frontend/settings_controls.c
     src/frontend/hud_draw.c
     src/frontend/overworld_draw.c
+    src/frontend/follower_draw.c
+    src/frontend/follower_talk_ui.c
+    src/frontend/cry_player.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
     src/frontend/overlay_draw.c
@@ -301,6 +312,14 @@ set(LIB_SOURCES
     src/game/nuzlocke_read.c
     src/game/nuzlocke.c
     src/game/script_walk.c
+    src/game/follower.c
+    src/game/follower_ctx.c
+    src/game/follower_places.c
+    src/hgss/nds_fs.c
+    src/hgss/hgss_msg.c
+    src/hgss/hgss_gfx.c
+    src/hgss/hgss_talk.c
+    src/hgss/hgss_assets.c
     src/ui/ui_stb.c
     src/ui/ui_canvas.c
     src/ui/ui_font.c
@@ -333,6 +352,9 @@ set(LIB_SOURCES
     src/frontend/settings_controls.c
     src/frontend/hud_draw.c
     src/frontend/overworld_draw.c
+    src/frontend/follower_draw.c
+    src/frontend/follower_talk_ui.c
+    src/frontend/cry_player.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
     src/frontend/overlay_draw.c
@@ -396,6 +418,16 @@ set(TEST_SOURCES
     tests/test_game_snapshot.c
     tests/test_game_panel.c
     tests/test_overworld.c
+    tests/test_nds_fs.c
+    tests/test_hgss_msg.c
+    tests/test_hgss_gfx.c
+    tests/test_hgss_talk.c
+    tests/test_follower.c
+    tests/test_follower_ctx.c
+    tests/test_follower_places.c
+    tests/test_follower_draw.c
+    tests/test_follower_talk_ui.c
+    tests/test_cry_player.c
     tests/test_script_walk.c
     tests/test_ui_font_data.c
     tests/test_ui_canvas.c

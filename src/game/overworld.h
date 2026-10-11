@@ -79,4 +79,12 @@ bool overworld_dump(const OverworldSnapshot* s, FILE* out);
  * the walker against a known list; not used while playing. */
 bool overworld_gift_audit(const GameProfile* p, const GameMem* m, FILE* out);
 
+typedef struct { int16_t pos_x, pos_y, cam_dx, cam_dy; } OwScreenOrigin;
+/* Top-left map coords and sub-tile camera offset used by tile_to_screen.
+ * Screen px of VMap tile (vx, vy): ((vx - pos_x) * 16 + cam_dx, (vy - pos_y) * 16 + cam_dy). */
+bool overworld_screen_origin(const GameProfile* p, const GameMem* m, OwScreenOrigin* out);
+/* Map grid word at VMap tile: metatile behavior (attr & 0xFF) and elevation (bits 12-15). */
+bool overworld_tile_info(const GameProfile* p, const GameMem* m, int16_t vx, int16_t vy, uint8_t* behavior,
+                         uint8_t* elevation);
+
 #endif // OVERWORLD_H

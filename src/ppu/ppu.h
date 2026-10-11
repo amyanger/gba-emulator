@@ -8,6 +8,22 @@
 #define IRQ_HBLANK  (1 << 1)
 #define IRQ_VCOUNT  (1 << 2)
 
+#define PPU_EXTRA_OBJ_MAX 4
+
+/* Emulator-owned sprite drawn inside the OBJ pipeline (Following Pokemon).
+ * Not emulated hardware: never saved, never visible to the game. pixels holds
+ * one palette index per pixel (0 = transparent), row stride w. */
+typedef struct {
+    bool on;
+    int16_t x, y;
+    uint8_t w, h;
+    uint8_t priority;      /* 0-3 */
+    int16_t slot;          /* draw just before OAM entry `slot` in the 127..0 loop;
+                              128 = behind all, -1 = in front of all */
+    const uint8_t* pixels;
+    uint16_t pal[16];
+} PpuExtraObj;
+
 struct PPU {
     // Control registers
     uint16_t dispcnt;

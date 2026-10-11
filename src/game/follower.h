@@ -1,0 +1,89 @@
+#ifndef FOLLOWER_H
+#define FOLLOWER_H
+
+#include <stdbool.h>
+#include <stdint.h>
+#include "game/emerald_profile.h"
+#include "game/game_mem.h"
+#include "game/overworld.h"
+#include "game/pokemon.h"
+
+typedef struct GBA GBA;
+
+/* Raw per-frame Emerald state at line 160. Filled by follower_read. */
+typedef struct {
+    bool ok;
+    bool overworld;            /* callback2 == CB2_Overworld */
+    bool free;                 /* overworld, lock 0, no fade (y==0 and not active), no transition */
+    uint8_t avatar_flags, tile_state;
+    int16_t cur_x, cur_y, prev_x, prev_y;   /* player VMap coords */
+    uint8_t facing;            /* 1 S, 2 N, 3 W, 4 E (game values) */
+    uint8_t move_action, obj_flags0;
+    uint8_t loc_group, loc_num, map_type, mapsec;
+    bool cam_active;
+    int32_t cam_x, cam_y;
+    OwScreenOrigin origin;
+    uint16_t new_keys;
+    uint8_t lock, script_status;
+    uint8_t fol_behavior, fol_elevation;    /* at the follower tile passed to follower_read */
+    bool lead_ok;
+    uint8_t lead_slot;
+    MonData lead;
+    uint32_t fade_mask;
+    uint8_t fade_y;
+    uint16_t fade_color;
+    bool fade_active;
+    uint8_t weather_state, weather_counter, weather;
+    uint16_t weather_color;
+} FollowerInput;
+
+typedef enum { FOL_OFF, FOL_HIDDEN, FOL_VISIBLE } FollowerVis;
+
+typedef struct {
+    FollowerVis vis;
+    bool reveal_pending;       /* appear on the player's next step */
+    bool in_ball;              /* bike/surf/dive/too tall: hidden until reveal */
+    int16_t tx, ty;            /* follower tile (VMap) */
+    int16_t from_x, from_y;    /* tile the current step started on */
+    uint8_t step_len, step_t;  /* frames per tile, frames done; idle when step_t >= step_len */
+    uint8_t facing;            /* game value 1..4 */
+    uint16_t anim_tick;
+    int8_t hop_y;              /* extra upward offset during a ledge hop */
+    bool jump_pending;
+    uint8_t jump_dir;          /* game value, 0 none */
+    uint8_t flash;             /* pop-in frames left */
+    bool talk_request;         /* set for one frame when A is pressed on the follower */
+    uint32_t lead_pid;
+    uint8_t lead_level;
+    bool lead_changed;         /* lead pid changed this frame */
+    int16_t mood_delta;        /* accumulated mood events this frame, consumed by the frontend */
+    uint16_t steps;            /* player steps this frame (mood decay) */
+    /* edge detection */
+    bool p_valid, p_free, p_cam_active, p_in_battle;
+    int16_t p_cur_x, p_cur_y;
+    uint8_t p_loc_group, p_loc_num;
+    uint8_t p_party_hp_zero;   /* bitmask of slots with hp 0 last frame */
+} Follower;
+
+void follower_init(Follower* f);
+/* Hide on the player's tile and arm reveal; call on savestate load, rewind, toggle. */
+void follower_reset(Follower* f);
+bool follower_read(const GameProfile* p, const GameMem* m, int16_t fol_x, int16_t fol_y, FollowerInput* out);
+/* One frame of simulation. too_tall: lead uses a 64x64 HGSS sprite. */
+void follower_step(Follower* f, const FollowerInput* in, bool too_tall);
+/* Feet point (bottom-centre of the tile, plus walk interpolation and hop), GBA px. */
+void follower_feet(const Follower* f, const FollowerInput* in, int16_t* x, int16_t* y);
+/* Sprite frame 0..7 for the current facing and animation tick. */
+uint8_t follower_frame(const Follower* f);
+
+/* VBlank observer glue: ctx is a FollowerFeed. */
+typedef struct {
+    const GameProfile* profile;
+    Follower sim;
+    FollowerInput in;          /* last read */
+    bool too_tall;             /* set by the frontend when it loads the sprite */
+} FollowerFeed;
+void follower_feed_init(FollowerFeed* fd, const GameProfile* p);
+void follower_capture(const GBA* gba, void* feed);
+
+#endif // FOLLOWER_H
