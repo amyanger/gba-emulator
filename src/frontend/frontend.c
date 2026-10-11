@@ -744,15 +744,22 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 fe->panel_page = (uint8_t)game_panel_next_page((GamePage)fe->panel_page);
                 fe->panel_follow.restore = false;
             }
-            /* [ and ] move the party selection unless the keymap binds them. */
+            /* [ and ] move the party selection (or switch Nuzlocke views) unless the keymap
+             * binds them; N starts a Nuzlocke run from its page. */
+            GamePage shown_page = game_panel_resolve_page((GamePage)fe->panel_page, fe->last_snap.context);
             if ((event.key.keysym.scancode == SDL_SCANCODE_LEFTBRACKET ||
                  event.key.keysym.scancode == SDL_SCANCODE_RIGHTBRACKET) &&
-                fe->panel_visible && keymap_lookup(event.key.keysym.scancode) == 0 &&
-                game_panel_resolve_page((GamePage)fe->panel_page, fe->last_snap.context) ==
-                    GAME_PAGE_PARTY) {
+                fe->panel_visible && keymap_lookup(event.key.keysym.scancode) == 0) {
                 int delta = event.key.keysym.scancode == SDL_SCANCODE_LEFTBRACKET ? -1 : 1;
-                fe->panel_sel = game_panel_select(fe->panel_sel, delta, fe->last_snap.party_count);
+                if (shown_page == GAME_PAGE_PARTY)
+                    fe->panel_sel = game_panel_select(fe->panel_sel, delta, fe->last_snap.party_count);
+                else if (shown_page == GAME_PAGE_NUZLOCKE)
+                    fe->nuz_sub = game_panel_nuz_sub(fe->nuz_sub, delta);
             }
+            if (event.key.keysym.scancode == SDL_SCANCODE_N && !event.key.repeat && fe->panel_visible &&
+                shown_page == GAME_PAGE_NUZLOCKE && fe->nuz && keymap_lookup(SDL_SCANCODE_N) == 0 &&
+                nuz_session_request_start(fe->nuz))
+                frontend_toast(fe, TOAST_OK, "Nuzlocke run started", "Your current Pok\xC3\xA9mon joined the run");
 
             // Save state and screenshot files are named after the ROM; main.c clears
             // rom_path when it was too long to keep.

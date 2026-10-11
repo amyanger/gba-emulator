@@ -25,6 +25,8 @@ const GameProfile g_emerald_profile = {
     .save_block1_ptr = 0x03005D8C,
     .save_block2_ptr = 0x03005D90,
     .map_header = 0x02037318,
+    .battle_outcome = 0x0202433A,
+    .pokemon_storage_ptr = 0x03005D94,
 
     .species_names = 0x083185C8, .species_count = 412,
     .move_names = 0x0831977C, .move_count = 355,
@@ -39,6 +41,7 @@ const GameProfile g_emerald_profile = {
     .species_to_national = 0x0831DC82,
     .wild_mon_headers = 0x08552D48, .wild_header_cap = 200,
     .region_map_entries = 0x085A147C, .region_map_count = 213,
+    .evolution_table = 0x0832531C,
 
     .object_events = 0x02037350,
     .sprites = 0x02020630,

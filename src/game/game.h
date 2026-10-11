@@ -105,6 +105,9 @@ void game_init(GameState* gs, const uint8_t* rom, uint32_t rom_size);
 void game_update_mem(GameState* gs, const GameMem* mem);
 /* Builds a GameMem from gba->bus / gba->cart and calls game_update_mem. */
 void game_update(GameState* gs, const GBA* gba);
+/* ROM name lookups; species gives "???" and mapsec "" when out of range. */
+void game_species_name(const GameMem* m, const GameProfile* p, uint16_t species, char* out);
+void game_mapsec_name(const GameMem* m, const GameProfile* p, uint8_t sec, char* out);
 /* Plain-text dump of a snapshot (used by --game-dump). */
 bool game_dump(const GameSnapshot* snap, FILE* out);
 /* "Grass", "Surf", "Rock Smash", "Old Rod", "Good Rod", "Super Rod" */

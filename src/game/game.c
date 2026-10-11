@@ -81,7 +81,7 @@ static void table_name(const GameMem* m, uint32_t base, uint32_t count, uint32_t
     gen3_decode(raw, len, out, GAME_NAME_LEN);
 }
 
-static void species_name(const GameMem* m, const GameProfile* p, uint16_t s, char* out) {
+void game_species_name(const GameMem* m, const GameProfile* p, uint16_t s, char* out) {
     table_name(m, p->species_names, p->species_count, SPECIES_NAME_STRIDE,
                SPECIES_NAME_STRIDE, s, out);
 }
@@ -113,20 +113,25 @@ static void nature_name(const GameMem* m, const GameProfile* p, uint8_t nature, 
     if (n > 0) gen3_decode(raw, n, out, GAME_NAME_LEN);
 }
 
-/* Mirrors GetMapName: gRegionMapEntries[gMapHeader.regionMapSectionId].name. */
-static void map_name(const GameMem* m, const GameProfile* p, char* out) {
-    uint8_t sec;
+/* gRegionMapEntries[sec].name, as GetMapName reads it; empty when unknown. */
+void game_mapsec_name(const GameMem* m, const GameProfile* p, uint8_t sec, char* out) {
     uint32_t ptr;
     uint8_t raw[GAME_MAP_NAME_LEN];
     uint32_t n = 0;
     out[0] = '\0';
-    if (!game_mem_read8(m, p->map_header + MAP_HEADER_REGION_MAP_SEC, &sec) ||
-        sec >= p->region_map_count ||
+    if (sec >= p->region_map_count ||
         !game_mem_read32(m, p->region_map_entries + sec * REGION_MAP_ENTRY_SIZE + REGION_MAP_ENTRY_NAME,
                          &ptr))
         return;
     while (n < sizeof(raw) && game_mem_read8(m, ptr + n, &raw[n]) && raw[n] != 0xFF) n++;
     if (n > 0) gen3_decode(raw, n, out, GAME_MAP_NAME_LEN);
+}
+
+/* Name of the current map's region map section (gMapHeader.regionMapSectionId). */
+static void map_name(const GameMem* m, const GameProfile* p, char* out) {
+    uint8_t sec;
+    out[0] = '\0';
+    if (game_mem_read8(m, p->map_header + MAP_HEADER_REGION_MAP_SEC, &sec)) game_mapsec_name(m, p, sec, out);
 }
 
 static bool species_info(const GameMem* m, const GameProfile* p, uint16_t species,
@@ -177,7 +182,7 @@ static void fill_party_mon(const GameMem* m, const GameProfile* p, const MonData
     out->hp = d->hp;
     out->max_hp = d->max_hp;
     gen3_decode(d->nickname_raw, sizeof(d->nickname_raw), out->nickname, GAME_NAME_LEN);
-    species_name(m, p, d->species, out->species);
+    game_species_name(m, p, d->species, out->species);
     out->level = d->level;
     memcpy(out->ivs, d->ivs, 6);
     memcpy(out->evs, d->evs, 6);
@@ -299,7 +304,7 @@ static void fill_enemy(const GameMem* m, const GameProfile* p, const uint8_t* mo
     memset(e, 0, sizeof(*e));
     e->type_ids[0] = t1;
     e->type_ids[1] = t2;
-    species_name(m, p, species, e->species);
+    game_species_name(m, p, species, e->species);
     e->level = mon[BMON_LEVEL];
     e->gender = species_info(m, p, species, info)
                     ? pokemon_gender(info[SI_GENDER_RATIO], personality) : MON_GENDER_NONE;
@@ -383,7 +388,7 @@ static void read_encounters(const GameMem* m, const GameProfile* p, uint32_t sb1
         for (uint8_t i = 0; i < lists[k].count; i++) {
             const EncounterEntry* src = &lists[k].entries[i];
             GameEncRow* row = &s->enc[k][i];
-            species_name(m, p, src->species, row->species);
+            game_species_name(m, p, src->species, row->species);
             row->min_level = src->min_level;
             row->max_level = src->max_level;
             row->percent = src->percent;

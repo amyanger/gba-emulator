@@ -131,6 +131,8 @@ set(SOURCES
     src/game/encounters.c
     src/game/game.c
     src/game/overworld.c
+    src/game/nuzlocke_read.c
+    src/game/nuzlocke.c
     src/ui/ui_stb.c
     src/ui/ui_canvas.c
     src/ui/ui_font.c
@@ -146,6 +148,7 @@ set(SOURCES
     src/frontend/rom_picker.c
     src/frontend/toast.c
     src/frontend/prefs.c
+    src/frontend/nuzlocke_session.c
     src/frontend/settings.c
     src/frontend/settings_cheats.c
     src/frontend/hud_draw.c
@@ -282,6 +285,8 @@ set(LIB_SOURCES
     src/game/encounters.c
     src/game/game.c
     src/game/overworld.c
+    src/game/nuzlocke_read.c
+    src/game/nuzlocke.c
     src/ui/ui_stb.c
     src/ui/ui_canvas.c
     src/ui/ui_font.c
@@ -298,6 +303,7 @@ set(LIB_SOURCES
     src/frontend/panel_layout.c
     src/frontend/toast.c
     src/frontend/prefs.c
+    src/frontend/nuzlocke_session.c
     src/frontend/settings.c
     src/frontend/settings_cheats.c
     src/frontend/hud_draw.c
@@ -375,6 +381,9 @@ set(TEST_SOURCES
     tests/test_prefs.c
     tests/test_hud.c
     tests/test_overworld_draw.c
+    tests/test_nuzlocke_read.c
+    tests/test_nuzlocke.c
+    tests/test_nuzlocke_session.c
 )
 
 # Several tests rely on POSIX-only APIs (unistd.h, pthreads, AF_UNIX

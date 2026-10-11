@@ -13,7 +13,8 @@ static uint32_t s_buf[BUF_W * BUF_H + GUARD];
 TEST(panel_page_cycles) {
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_AUTO), GAME_PAGE_PARTY);
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_PARTY), GAME_PAGE_ENCOUNTERS);
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_ENCOUNTERS), GAME_PAGE_AUTO);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_ENCOUNTERS), GAME_PAGE_NUZLOCKE);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_NUZLOCKE), GAME_PAGE_AUTO);
 }
 
 TEST(panel_auto_page_follows_context) {
@@ -188,15 +189,103 @@ static void fill_party_and_route(GameSnapshot* s) {
     }
 }
 
-static bool draw_checked(float density, const GameSnapshot* snap, GamePage page, uint8_t sel) {
+static bool draw_checked_nuz(float density, const GameSnapshot* snap, GamePage page, uint8_t sel,
+                             const NuzView* nuz) {
     int w = (int)(600 * density + 0.5f), h = (int)(480 * density + 0.5f);
     for (int i = 0; i < GUARD; i++) s_buf[w * h + i] = SENTINEL;
     UiCanvas c;
     ui_canvas_init(&c, s_buf, w, h, density);
-    game_panel_draw(&c, snap, page, sel);
+    game_panel_draw(&c, snap, page, sel, nuz, (uint8_t)(sel % NUZ_SUB_COUNT));
     for (int i = 0; i < GUARD; i++)
         if (s_buf[w * h + i] != SENTINEL) return false;
     return (s_buf[w * h - 1] >> 24) == 0xFF;
+}
+
+static bool draw_checked(float density, const GameSnapshot* snap, GamePage page, uint8_t sel) {
+    return draw_checked_nuz(density, snap, page, sel, NULL);
+}
+
+/* A busy run: more routes, team and graves than fit, long names everywhere. */
+static void fill_nuz(NuzView* v) {
+    memset(v, 0, sizeof(*v));
+    v->state = NUZ_VIEW_RUN;
+    v->alive = 30; v->dead = 12; v->routes_used = 60; v->reloads = 3; v->deadused = 2; v->rerolls = 1;
+    v->wiped = true; v->reloaded_after_death = true;
+    strcpy(v->reroll_place, "GRANITE CAVE");
+    strcpy(v->start_time, "123:45:06");
+    v->route_count = NUZ_VIEW_ROUTES;
+    v->here_row = 50;
+    for (int i = 0; i < NUZ_VIEW_ROUTES; i++) {
+        NuzViewRoute* r = &v->routes[i];
+        strcpy(r->place, "SAFARI ZONE NORTHWEST");
+        strcpy(r->who, i % 5 ? "CRAWDAUNTXXXXX" : "");
+        r->pill = (uint8_t)(i % 7);
+        r->here = i == 50;
+        r->reroll = i % 3 == 0;
+    }
+    v->team_total = 60;
+    v->team_count = NUZ_VIEW_TEAM;
+    for (int i = 0; i < NUZ_VIEW_TEAM; i++) {
+        strcpy(v->team[i].nick, "WWWWWWWWWW");
+        strcpy(v->team[i].species, "CRAWDAUNTXXXXX");
+        v->team[i].level = 100;
+        v->team[i].where = (uint8_t)(i % 4);
+    }
+    v->grave_total = 20;
+    v->grave_count = NUZ_VIEW_GRAVES;
+    for (int i = 0; i < NUZ_VIEW_GRAVES; i++) {
+        NuzViewGrave* g = &v->graves[i];
+        strcpy(g->nick, "WWWWWWWWWW");
+        strcpy(g->species, "CRAWDAUNTXXXXX");
+        g->level = 100;
+        strcpy(g->caught_at, "SAFARI ZONE NORTHWEST");
+        strcpy(g->died_at, "SAFARI ZONE NORTHWEST");
+        strcpy(g->foe, "CRAWDAUNTXXXXX");
+        strcpy(g->time, "999:59:59");
+        g->reloaded_after = true;
+    }
+}
+
+TEST(panel_nuzlocke_views_stay_in_bounds) {
+    static const float densities[] = {0.75f, 1.0f, 2.0f, 3.0f};
+    static GameSnapshot rest;
+    static NuzView full, empty, none;
+    fill_party_and_route(&rest);
+    fill_nuz(&full);
+    memset(&empty, 0, sizeof(empty));
+    empty.state = NUZ_VIEW_RUN;
+    empty.here_row = -1;
+    memset(&none, 0, sizeof(none));
+    none.state = NUZ_VIEW_NO_RUN;
+    for (size_t d = 0; d < sizeof(densities) / sizeof(densities[0]); d++)
+        for (uint8_t sub = 0; sub < NUZ_SUB_COUNT; sub++) {
+            ASSERT_TRUE(draw_checked_nuz(densities[d], &rest, GAME_PAGE_NUZLOCKE, sub, &full));
+            ASSERT_TRUE(draw_checked_nuz(densities[d], &rest, GAME_PAGE_NUZLOCKE, sub, &empty));
+            ASSERT_TRUE(draw_checked_nuz(densities[d], &rest, GAME_PAGE_NUZLOCKE, sub, &none));
+            ASSERT_TRUE(draw_checked_nuz(densities[d], &rest, GAME_PAGE_NUZLOCKE, sub, NULL));
+        }
+}
+
+TEST(panel_nuzlocke_sub_views_cycle) {
+    ASSERT_EQ(game_panel_nuz_sub(NUZ_SUB_ROUTES, 1), NUZ_SUB_TEAM);
+    ASSERT_EQ(game_panel_nuz_sub(NUZ_SUB_GRAVEYARD, 1), NUZ_SUB_ROUTES);
+    ASSERT_EQ(game_panel_nuz_sub(NUZ_SUB_ROUTES, -1), NUZ_SUB_GRAVEYARD);
+}
+
+TEST(panel_nuzlocke_route_window_keeps_current_place) {
+    static NuzView v;
+    memset(&v, 0, sizeof(v));
+    v.route_count = 40;
+    v.here_row = -1;
+    ASSERT_EQ(game_panel_nuz_route_start(&v, 15), 0);
+    v.here_row = 30;
+    uint8_t start = game_panel_nuz_route_start(&v, 15);
+    ASSERT_TRUE(start <= 30 && 30 < start + 15);
+    ASSERT_TRUE(start + 15 >= 33);  /* a couple of rows after the current place */
+    v.here_row = 39;
+    ASSERT_EQ(game_panel_nuz_route_start(&v, 15), 25);
+    v.route_count = 10;
+    ASSERT_EQ(game_panel_nuz_route_start(&v, 15), 0);
 }
 
 TEST(panel_pages_stay_in_bounds_at_all_densities) {
@@ -219,7 +308,7 @@ TEST(panel_long_names_stay_in_columns) {
     snap.enemy_count = 1;
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0);
     /* Rows between the HP bar and the bottom of the enemy's move list; the gap between
      * the left column (ends at x 292) and the right one (starts at x 308),
      * minus a pixel either side for anti-aliasing. */
@@ -236,7 +325,7 @@ TEST(panel_invalid_snapshot_shows_reason) {
     game_strcpy(snap.reason, sizeof(snap.reason), "Waiting for save data");
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0);
     int lit = 0;
     for (int y = 220; y < 240; y++)
         for (int x = 0; x < 600; x++)
@@ -260,7 +349,7 @@ TEST(panel_unsupported_rom_explains_why) {
         snap.support = kinds[k];
         UiCanvas c;
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0);
+        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0);
         ASSERT_TRUE(lit_rows(160, 190) > 0);  /* heading */
         ASSERT_TRUE(lit_rows(200, 300) > 0);  /* explanation */
     }
@@ -284,7 +373,7 @@ static int lit_rect(int x0, int x1, int y0, int y1, bool tinted) {
 static void draw_1x(const GameSnapshot* snap) {
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0);
+    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0, NULL, 0);
 }
 
 /* The enemy's moves sit in the right column under the IVs (which end near y 230). */
@@ -406,7 +495,7 @@ TEST(panel_route_overflow_keeps_whole_rows_and_counts_the_rest) {
     ASSERT_TRUE(l.height[0] <= l.avail && l.height[1] <= l.avail);
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0);
+    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0, NULL, 0);
 }
 
 void run_game_panel_tests(void) {
@@ -429,4 +518,7 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_route_busy_water_route_shows_every_row);
     RUN_TEST(panel_route_short_list_keeps_roomy_single_column);
     RUN_TEST(panel_route_overflow_keeps_whole_rows_and_counts_the_rest);
+    RUN_TEST(panel_nuzlocke_views_stay_in_bounds);
+    RUN_TEST(panel_nuzlocke_sub_views_cycle);
+    RUN_TEST(panel_nuzlocke_route_window_keeps_current_place);
 }

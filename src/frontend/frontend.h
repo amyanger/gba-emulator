@@ -29,12 +29,15 @@ typedef struct Frontend {
     uint8_t panel_page;           /* GamePage, F10 */
     PanelBattleFollow panel_follow; /* switches to Auto while a battle runs */
     uint8_t panel_sel;            /* selected party slot, [ and ] */
+    uint8_t nuz_sub;              /* NuzSubView on the Nuzlocke page, [ and ] */
+    NuzSession* nuz;              /* set by main; N starts a run on the Nuzlocke page */
     LayoutPlan plan;
     PxRect game_rect, panel_rect; /* drawable pixels */
 
     /* What the panel buffer currently shows, so unchanged frames skip the redraw. */
     GameSnapshot last_snap;
-    uint8_t last_page, last_sel;
+    uint8_t last_page, last_sel, last_nuz_sub;
+    uint32_t last_nuz_version;
     bool panel_dirty;
 
     /* Toasts and status badges, drawn over the top of the game at full resolution. */

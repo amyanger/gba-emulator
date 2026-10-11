@@ -6,8 +6,11 @@
 #include <stdint.h>
 #include "game/game.h"
 #include "ui/ui_canvas.h"
+#include "frontend/nuzlocke_session.h"
 
-typedef enum { GAME_PAGE_AUTO, GAME_PAGE_PARTY, GAME_PAGE_ENCOUNTERS, GAME_PAGE_COUNT } GamePage;
+typedef enum { GAME_PAGE_AUTO, GAME_PAGE_PARTY, GAME_PAGE_ENCOUNTERS, GAME_PAGE_NUZLOCKE, GAME_PAGE_COUNT } GamePage;
+/* Views inside the Nuzlocke page, switched with [ and ]. */
+typedef enum { NUZ_SUB_ROUTES, NUZ_SUB_TEAM, NUZ_SUB_GRAVEYARD, NUZ_SUB_COUNT } NuzSubView;
 
 GamePage game_panel_next_page(GamePage page);
 /* GAME_PAGE_COUNT means "show the battle page". */
@@ -21,8 +24,13 @@ typedef struct {
 } PanelBattleFollow;
 /* Returns the page to show after the context becomes ctx. GAME_CTX_NONE is ignored. */
 GamePage game_panel_follow_battle(GamePage page, GameContext ctx, PanelBattleFollow* f);
-/* Draws the panel into a canvas sized 600*density by 480*density pixels. */
-void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel);
+/* Draws the panel into a canvas sized 600*density by 480*density pixels. nuz may be
+ * NULL (no tracking); nuz_sub is a NuzSubView. */
+void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel,
+                     const NuzView* nuz, uint8_t nuz_sub);
+uint8_t game_panel_nuz_sub(uint8_t sub, int delta);
+/* First route row shown when only `fit` rows fit: keeps the current location in view. */
+uint8_t game_panel_nuz_route_start(const NuzView* v, uint8_t fit);
 /* Moves the party selection by delta; wraps, and returns 0 when the party is empty. */
 uint8_t game_panel_select(uint8_t sel, int delta, uint8_t party_count);
 /* "WATER GUN" -> "Water Gun". The whole words POKE, HP and PP become "Poké", "HP" and

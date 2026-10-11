@@ -103,8 +103,9 @@ No pre-built binaries for Intel Macs yet. Build from source, see [Building from 
 | F3 | Toggle input display HUD (mini-GBA overlay showing held buttons) |
 | F4 | Show or hide Overworld X-Ray: trainer sight lines and hidden items on the map (original Pokemon Emerald US/English ROM only, remembered between launches) |
 | F9 | Show or hide Emerald Companion (original Pokemon Emerald US/English ROM only) |
-| F10 | Cycle the Emerald Companion page: Auto, Party, Route (Auto shows the battle page during battles; a battle switches to Auto and the old page returns afterwards) |
-| [ and ] | Select the previous or next Pokemon on the Party page (unless bound to a GBA button) |
+| F10 | Cycle the Emerald Companion page: Auto, Party, Route, Nuzlocke (Auto shows the battle page during battles; a battle switches to Auto and the old page returns afterwards) |
+| [ and ] | Select the previous or next Pokemon on the Party page, or switch Nuzlocke views (unless bound to a GBA button) |
+| N | Start a Nuzlocke run, on the Nuzlocke page (unless bound to a GBA button) |
 | F5 | Save state to current slot |
 | F6 | Edit label of current save-state slot |
 | F7 | Open save-state slot picker |
@@ -142,8 +143,9 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--input-script <file>` | Replay scripted keypad input. Headless only. Format below. |
 | `--panel-out <file>` | After the run, render the Emerald Companion panel to a PNG. Requires `--headless`. |
 | `--panel-density <f>` | Panel pixels per point, 0.5 to 4.0 (default 1.0). Requires `--headless`. |
-| `--panel-page <p>` | Panel page: `auto`, `party` or `route` (default `auto`). Requires `--headless`. |
-| `--panel-select <n>` | Selected party slot, 0 to 5, for the party page (default 0). Requires `--headless`. |
+| `--panel-page <p>` | Panel page: `auto`, `party`, `route` or `nuzlocke` (default `auto`). Requires `--headless`. |
+| `--panel-select <n>` | Selected party slot, 0 to 5, for the party page, or the Nuzlocke view: 0 routes, 1 team, 2 graveyard (default 0). Requires `--headless`. |
+| `--nuzlocke-file <file>` | Track a Nuzlocke run in `file` during the run, starting one if the file has none. `--game-dump` then adds `nuz` lines. Requires `--headless`. |
 | `--xray-out <file>` | After the run, render the Hardware X-Ray window to a 2400x1640 PNG. Requires `--headless` and an X-Ray build. |
 | `--overworld-out <file>` | After the run, write the final frame at 3x (720x480 PNG) with the Overworld X-Ray drawn on it. Requires `--headless`; original Pokemon Emerald (US) only. |
 | `--game-dump <file>` | After the run, write the decoded Emerald game state (party, battle, encounters, and an `[overworld]` section matching the final frame) to `file`. Requires `--headless`. |

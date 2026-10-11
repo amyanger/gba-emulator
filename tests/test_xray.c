@@ -271,7 +271,7 @@ TEST(xray_headless_run_fades_flashes) {
     s_state.dma_flash[3] = XRAY_FLASH_FRAMES;
     g_xray = &s_state;
     FILE* sink = tmpfile();
-    int rc = headless_run(gba, XRAY_FLASH_FRAMES, sink, NULL);
+    int rc = headless_run(gba, XRAY_FLASH_FRAMES, sink, NULL, NULL, NULL);
     fclose(sink);
     g_xray = NULL;
     uint8_t t0 = s_state.timer_flash[0], d3 = s_state.dma_flash[3];

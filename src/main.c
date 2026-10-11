@@ -35,8 +35,16 @@ static XRayState s_xray_state;
 #endif
 
 static GameState s_game;
+static NuzSession s_nuz;
+static bool s_nuz_on;        /* tracking runs in the window, and headless only with --nuzlocke-file */
 static OverworldFeed s_ow;
 static Prefs s_prefs;
+
+/* One emulated frame for the Nuzlocke tracker (also the headless per-frame hook). */
+static void nuz_tick(GBA* gba, void* ctx) {
+    GameMem m = { gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size };
+    if (s_nuz_on) nuz_session_frame((NuzSession*)ctx, &m);
+}
 
 /* File name without its directory, for short toast details. */
 static const char* path_base(const char* p) {
@@ -62,11 +70,15 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
                                                            s_game.snap.context, &fe->panel_follow);
         /* Redraw only when something on the panel can have changed. */
         if (fe->panel_dirty || fe->last_page != fe->panel_page || fe->last_sel != fe->panel_sel ||
+            fe->last_nuz_sub != fe->nuz_sub || fe->last_nuz_version != s_nuz.view_version ||
             memcmp(&fe->last_snap, &s_game.snap, sizeof(s_game.snap)) != 0) {
             UiCanvas canvas;
             ui_canvas_init(&canvas, fe->panel_buffer, fe->panel_px_w, fe->panel_px_h,
                            fe->panel_density);
-            game_panel_draw(&canvas, &s_game.snap, (GamePage)fe->panel_page, fe->panel_sel);
+            game_panel_draw(&canvas, &s_game.snap, (GamePage)fe->panel_page, fe->panel_sel,
+                            &s_nuz.view, fe->nuz_sub);
+            fe->last_nuz_sub = fe->nuz_sub;
+            fe->last_nuz_version = s_nuz.view_version;
             SDL_UpdateTexture(fe->panel_texture, NULL, fe->panel_buffer,
                               fe->panel_px_w * (int)sizeof(uint32_t));
             fe->last_snap = s_game.snap;
@@ -98,8 +110,9 @@ static void print_usage(const char* prog) {
     printf("  --game-dump <file>     Headless: write decoded Emerald state after the run\n");
     printf("  --panel-out <file>     Headless: render the Emerald Companion panel to a PNG after the run\n");
     printf("  --panel-density <f>    Headless: panel pixels per point, 0.5 to 4.0 (default: 1.0)\n");
-    printf("  --panel-page <p>       Headless: panel page, auto|party|route (default: auto)\n");
-    printf("  --panel-select <n>     Headless: selected party slot on the party page (default: 0)\n");
+    printf("  --panel-page <p>       Headless: panel page, auto|party|route|nuzlocke (default: auto)\n");
+    printf("  --panel-select <n>     Headless: party slot, or Nuzlocke view 0-2 (routes, team, graveyard)\n");
+    printf("  --nuzlocke-file <f>    Headless: track a Nuzlocke run in this file, starting one if it has none\n");
     printf("  --xray-out <file>      Headless: render the Hardware X-Ray window to a PNG after the run\n");
     printf("  --overworld-out <f>    Headless: final frame at 3x with the Overworld X-Ray drawn, as PNG\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
@@ -151,6 +164,7 @@ int main(int argc, char* argv[]) {
     const char* panel_select_arg = NULL;
     const char* xray_out_path = NULL;
     const char* overworld_out_path = NULL;
+    const char* nuzlocke_file = NULL;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -200,6 +214,8 @@ int main(int argc, char* argv[]) {
             xray_out_path = argv[++i];
         } else if (strcmp(argv[i], "--overworld-out") == 0 && i + 1 < argc) {
             overworld_out_path = argv[++i];
+        } else if (strcmp(argv[i], "--nuzlocke-file") == 0 && i + 1 < argc) {
+            nuzlocke_file = argv[++i];
         } else if (strcmp(argv[i], "--panel-select") == 0 && i + 1 < argc) {
             panel_select_arg = argv[++i];
         } else {
@@ -228,6 +244,10 @@ int main(int argc, char* argv[]) {
 
     if ((panel_out_path || panel_density_arg || panel_page_arg || panel_select_arg) && !headless) {
         LOG_ERROR("--panel-out, --panel-density, --panel-page and --panel-select require --headless");
+        return 1;
+    }
+    if (nuzlocke_file && !headless) {
+        LOG_ERROR("--nuzlocke-file requires --headless");
         return 1;
     }
     if (xray_out_path && !headless) {
@@ -261,8 +281,10 @@ int main(int argc, char* argv[]) {
             panel_page = GAME_PAGE_PARTY;
         } else if (strcmp(panel_page_arg, "route") == 0) {
             panel_page = GAME_PAGE_ENCOUNTERS;
+        } else if (strcmp(panel_page_arg, "nuzlocke") == 0) {
+            panel_page = GAME_PAGE_NUZLOCKE;
         } else if (strcmp(panel_page_arg, "auto") != 0) {
-            LOG_ERROR("--panel-page must be auto, party or route (got %s)", panel_page_arg);
+            LOG_ERROR("--panel-page must be auto, party, route or nuzlocke (got %s)", panel_page_arg);
             return 1;
         }
     }
@@ -339,6 +361,8 @@ int main(int argc, char* argv[]) {
 
     game_init(&s_game, gba.cart.rom, gba.cart.rom_size);
     overworld_feed_init(&s_ow, s_game.profile);
+    s_nuz_on = !headless || nuzlocke_file;
+    nuz_session_init(&s_nuz, s_game.profile, rom_path, headless ? nuzlocke_file : NULL);
     if (s_game.support == GAME_SUPPORT_MODIFIED)
         LOG_WARN("Emerald Companion (F9) is off: this ROM is a hack or modified copy of Pokemon "
                  "Emerald. It only supports the original Pokemon Emerald (US/English) ROM.");
@@ -444,7 +468,7 @@ int main(int argc, char* argv[]) {
         if (overworld_out_path && !s_game.profile)
             LOG_WARN("--overworld-out: not the original Pokemon Emerald (US), drawing the game only");
         int rc = headless_run(&gba, headless_frames, hash_out,
-                              input_script_path ? &input_script : NULL);
+                              input_script_path ? &input_script : NULL, nuz_tick, &s_nuz);
         if (hash_out != stdout) fclose(hash_out);
         if (rc == 0 && screenshot_out_path) {
             if (!screenshot_save(gba.ppu.framebuffer, screenshot_out_path)) {
@@ -459,7 +483,8 @@ int main(int argc, char* argv[]) {
         }
         if (rc == 0 && game_dump_path) {
             FILE* f = fopen(game_dump_path, "w");
-            if (!f || !game_dump(&dump_state.snap, f) || (s_game.profile && !overworld_dump(&s_ow.shown, f))) {
+            if (!f || !game_dump(&dump_state.snap, f) || (s_game.profile && !overworld_dump(&s_ow.shown, f)) ||
+                (nuzlocke_file && !nuz_session_dump(&s_nuz, f))) {
                 LOG_ERROR("Failed to write --game-dump file: %s", game_dump_path);
                 rc = 1;
             }
@@ -475,7 +500,8 @@ int main(int argc, char* argv[]) {
             } else {
                 UiCanvas canvas;
                 ui_canvas_init(&canvas, px, w, h, panel_density);
-                game_panel_draw(&canvas, &dump_state.snap, panel_page, panel_select);
+                game_panel_draw(&canvas, &dump_state.snap, panel_page, panel_select,
+                                nuzlocke_file ? &s_nuz.view : NULL, (uint8_t)(panel_select % NUZ_SUB_COUNT));
                 if (!screenshot_save_argb(px, w, h, panel_out_path)) {
                     LOG_ERROR("Failed to write --panel-out file: %s", panel_out_path);
                     rc = 1;
@@ -561,6 +587,7 @@ int main(int argc, char* argv[]) {
     LOG_INFO("Preferences: %s", prefs_path[0] ? prefs_path : "(none)");
     fe.prefs = &s_prefs;
     fe.ow_feed = s_game.profile ? &s_ow : NULL;
+    fe.nuz = &s_nuz;
     if (fe.ow_feed && prefs_get_bool(&s_prefs, "overworld_xray", false)) {
         fe.overworld_xray = true;
         gba_set_vblank_observer(&gba, overworld_capture, &s_ow);
@@ -625,6 +652,7 @@ int main(int argc, char* argv[]) {
                 fe.step_pending = false;
                 gba_run_frame(&gba);
                 if (gba.frame_complete) {
+                    nuz_tick(&gba, &s_nuz);
                     CartFlushResult flush = cartridge_save_tick(&gba.cart, time(NULL));
                     if (toast_failure_edge(&save_fail_reported, flush != CART_FLUSH_NONE,
                                            flush == CART_FLUSH_OK))
@@ -710,6 +738,7 @@ int main(int argc, char* argv[]) {
                 // Hit oldest frame — freeze on screen until release.
             }
             overworld_feed_clear(&s_ow);
+            nuz_tick(&gba, &s_nuz);
             render_with_overlay(&fe, &gba);
 #ifdef ENABLE_XRAY
             xray_render(&s_xray_state, &gba);
@@ -725,6 +754,7 @@ int main(int argc, char* argv[]) {
 
         if (gba.frame_complete) {
             trace_frame_tick();
+            nuz_tick(&gba, &s_nuz);
             CartFlushResult flush = cartridge_save_tick(&gba.cart, time(NULL));
             if (toast_failure_edge(&save_fail_reported, flush != CART_FLUSH_NONE,
                                    flush == CART_FLUSH_OK))

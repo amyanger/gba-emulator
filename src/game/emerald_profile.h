@@ -33,6 +33,8 @@ typedef struct {
     uint32_t save_block1_ptr;       /* IWRAM pointers; blocks move at runtime */
     uint32_t save_block2_ptr;
     uint32_t map_header;            /* struct MapHeader gMapHeader */
+    uint32_t battle_outcome;        /* u8 gBattleOutcome, 0 while a battle runs */
+    uint32_t pokemon_storage_ptr;   /* IWRAM pointer to struct PokemonStorage (PC boxes) */
 
     /* ROM tables */
     uint32_t species_names;      uint16_t species_count;  /* 11-byte stride */
@@ -48,6 +50,7 @@ typedef struct {
     uint32_t species_to_national;                         /* u16, index species-1 */
     uint32_t wild_mon_headers;   uint16_t wild_header_cap; /* 20-byte stride */
     uint32_t region_map_entries; uint8_t region_map_count; /* 8-byte stride */
+    uint32_t evolution_table;                             /* 5 x 8-byte entries per species */
 
     /* Overworld X-Ray (docs/superpowers/specs/emerald-game-layer/overworld-*.md) */
     uint32_t object_events;         /* struct ObjectEvent[16], 0x24 each */

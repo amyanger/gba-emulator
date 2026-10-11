@@ -664,6 +664,265 @@ static void draw_route(UiCanvas* c, const GameSnapshot* s, float top) {
             "lead abilities, Pyramid/Pike.");
 }
 
+/* ---- Nuzlocke page ---- */
+
+#define NUZ_ROW_H    20.0f
+#define NUZ_LIST_END 450.0f
+#define NUZ_FOOT_Y   456.0f
+
+uint8_t game_panel_nuz_sub(uint8_t sub, int delta) {
+    return (uint8_t)(((sub + delta) % NUZ_SUB_COUNT + NUZ_SUB_COUNT) % NUZ_SUB_COUNT);
+}
+
+uint8_t game_panel_nuz_route_start(const NuzView* v, uint8_t fit) {
+    if (fit == 0 || v->route_count <= fit) return 0;
+    int start = 0;
+    /* Keep a couple of rows after the current location so the next routes show. */
+    if (v->here_row >= 0) start = v->here_row - (int)fit + 3;
+    if (start < 0) start = 0;
+    if (start > v->route_count - fit) start = v->route_count - fit;
+    return (uint8_t)start;
+}
+
+static void place_title(const char* in, char* out, size_t out_size) {
+    game_panel_title_case(in, out, out_size);
+}
+
+static void nuz_stat(UiCanvas* c, float x, float y, float w, unsigned value, const char* label,
+                     uint32_t color) {
+    char buf[12];
+    ui_fill_round_rect(c, (UiRect){x, y, w, 40.0f}, UI_RADIUS, UI_SURFACE);
+    snprintf(buf, sizeof(buf), "%u", value);
+    ui_text(c, UI_FONT_SEMIBOLD, 16.0f, x + 10.0f, y + 4.0f, w - 20.0f, UI_ALIGN_LEFT, color, buf);
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, x + 10.0f, y + 24.0f, w - 20.0f, UI_ALIGN_LEFT,
+            UI_MUTED, label);
+}
+
+static void nuz_route_row(UiCanvas* c, float y, const NuzViewRoute* r) {
+    static const char* const labels[] = {"You are here", "In battle", "Caught", "Missed", "Dead",
+                                         "Owned", "Gift"};
+    static const uint32_t colors[] = {UI_ACCENT, UI_MID, UI_GOOD, UI_DIVIDER, UI_BAD, UI_DIVIDER,
+                                      UI_ACCENT};
+    char place[GAME_MAP_NAME_LEN + 8];
+    Name who = title(r->who);
+    place_title(r->place, place, sizeof(place));
+    ui_text(c, r->here ? UI_FONT_SEMIBOLD : UI_FONT_REGULAR, KV_SIZE, LEFT, y, 200.0f, UI_ALIGN_LEFT,
+            r->here ? UI_ACCENT : UI_MUTED, place);
+    bool struck = r->pill == NUZ_PILL_MISSED || r->pill == NUZ_PILL_DEAD;
+    if (r->who[0]) {
+        float w = ui_text(c, UI_FONT_REGULAR, KV_SIZE, 228.0f, y, 170.0f, UI_ALIGN_LEFT,
+                          struck ? UI_MUTED : UI_TEXT, who.s);
+        if (struck) ui_hline(c, 228.0f, y + ui_text_cap_middle(c, UI_FONT_REGULAR, KV_SIZE), w, UI_MUTED);
+    } else {
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, 228.0f, y, 170.0f, UI_ALIGN_LEFT, UI_FAINT,
+                "No encounter yet");
+    }
+    uint8_t pi = r->pill <= NUZ_PILL_GIFT ? r->pill : NUZ_PILL_MISSED;
+    float pw = ui_text_width(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL, labels[pi]) + 14.0f;
+    float py = y + ui_text_cap_middle(c, UI_FONT_REGULAR, KV_SIZE) - (UI_SIZE_PILL + 5.0f) / 2;
+    ui_pill(c, RIGHT - pw, py, labels[pi], colors[pi]);
+    if (r->reroll) {
+        float rw = ui_text_width(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL, "Re-roll") + 14.0f;
+        ui_pill(c, RIGHT - pw - 6.0f - rw, py, "Re-roll", UI_WARN);
+    }
+}
+
+static void nuz_routes(UiCanvas* c, const NuzView* v, float y) {
+    uint8_t fit = (uint8_t)((NUZ_LIST_END - y) / NUZ_ROW_H);
+    if (v->route_count == 0) {
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT, y, 0, UI_ALIGN_LEFT, UI_MUTED,
+                "No routes yet. Walk into tall grass to find your first encounter.");
+        return;
+    }
+    if (v->route_count > fit) fit--;  /* room for the "showing" line */
+    uint8_t start = game_panel_nuz_route_start(v, fit);
+    for (uint8_t i = start; i < v->route_count && i < start + fit; i++, y += NUZ_ROW_H)
+        nuz_route_row(c, y, &v->routes[i]);
+    if (v->route_count > fit) {
+        char buf[48];
+        snprintf(buf, sizeof(buf), "Showing %u" NDASH "%u of %u places", start + 1u,
+                 (unsigned)(start + fit), (unsigned)v->route_count);
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, y + 2.0f, 0, UI_ALIGN_LEFT, UI_FAINT, buf);
+    }
+}
+
+static void nuz_team(UiCanvas* c, const NuzView* v, float y) {
+    static const uint32_t strip[] = {UI_GOOD, UI_DIVIDER, UI_FAINT, UI_BAD};
+    static const char* const where[] = {"", MDOT "PC", MDOT "Away", MDOT "Dead"};
+    const float gap = 8.0f, w = (RIGHT - LEFT - 2 * gap) / 3, h = 40.0f;
+    if (v->team_count == 0) {
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT, y, 0, UI_ALIGN_LEFT, UI_MUTED,
+                "No Pok\xC3\xA9mon in this run yet");
+        return;
+    }
+    int rows_fit = (int)((NUZ_LIST_END - y + gap) / (h + gap));
+    int shown = 0;
+    for (uint8_t i = 0; i < v->team_count; i++) {
+        int row = i / 3, col = i % 3;
+        if (row >= rows_fit) break;
+        if (row == rows_fit - 1 && col == 2 && v->team_total > (unsigned)(i + 1)) break;  /* "+N" */
+        const NuzViewMon* m = &v->team[i];
+        float x = LEFT + col * (w + gap), cy = y + row * (h + gap);
+        bool dead = m->where == NUZ_WHERE_DEAD;
+        ui_fill_round_rect(c, (UiRect){x, cy, w, h}, UI_RADIUS, UI_SURFACE);
+        ui_fill_rect(c, (UiRect){x, cy + 4.0f, 3.0f, h - 8.0f}, strip[m->where & 3]);
+        ui_text(c, UI_FONT_SEMIBOLD, KV_SIZE, x + 10.0f, cy + 5.0f, w - 16.0f, UI_ALIGN_LEFT,
+                dead ? UI_MUTED : UI_TEXT, m->nick);
+        char line[64];
+        Name sp = title(m->species);
+        if (m->level) snprintf(line, sizeof(line), "%s" MDOT "Lv %u%s", sp.s, m->level, where[m->where & 3]);
+        else snprintf(line, sizeof(line), "%s%s", sp.s, where[m->where & 3]);
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL - 1.0f, x + 10.0f, cy + 22.0f, w - 16.0f,
+                UI_ALIGN_LEFT, UI_MUTED, line);
+        shown++;
+    }
+    if (v->team_total > (unsigned)shown) {
+        int row = shown / 3, col = shown % 3;
+        char buf[16];
+        snprintf(buf, sizeof(buf), "+%u more", (unsigned)(v->team_total - shown));
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT + col * (w + gap) + 10.0f,
+                y + row * (h + gap) + 12.0f, 0, UI_ALIGN_LEFT, UI_MUTED, buf);
+    }
+}
+
+static void nuz_check_row(UiCanvas* c, float y, const char* label, const char* value, uint32_t bg) {
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, y, 400.0f, UI_ALIGN_LEFT, UI_TEXT, label);
+    float pw = ui_text_width(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL, value) + 14.0f;
+    float py = y + ui_text_cap_middle(c, UI_FONT_REGULAR, KV_SIZE) - (UI_SIZE_PILL + 5.0f) / 2;
+    ui_pill(c, RIGHT - pw, py, value, bg);
+}
+
+static void nuz_graveyard(UiCanvas* c, const NuzView* v, float y) {
+    char buf[96];
+    const float checks_h = 3 * NUZ_ROW_H + 30.0f;
+    if (v->grave_count == 0) {
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT, y, 0, UI_ALIGN_LEFT, UI_MUTED,
+                "No deaths yet.");
+        y += 30.0f;
+    }
+    uint8_t shown = 0;
+    for (uint8_t i = 0; i < v->grave_count; i++) {
+        const NuzViewGrave* g = &v->graves[i];
+        float h = 46.0f + (g->foe[0] ? 0.0f : -16.0f) + (g->reloaded_after ? 18.0f : 0.0f) + 16.0f;
+        if (y + h > NUZ_LIST_END - checks_h) break;
+        ui_fill_round_rect(c, (UiRect){LEFT, y, RIGHT - LEFT, h - 6.0f}, UI_RADIUS, UI_SURFACE);
+        ui_fill_rect(c, (UiRect){LEFT, y + 4.0f, 3.0f, h - 14.0f}, UI_BAD);
+        float tx = LEFT + 12.0f, ty = y + 6.0f;
+        float nw = ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, tx, ty, 200.0f, UI_ALIGN_LEFT, UI_TEXT,
+                           g->nick);
+        Name sp = title(g->species);
+        snprintf(buf, sizeof(buf), "  %s" MDOT "Lv %u", sp.s, g->level);
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, tx + nw, ty, 300.0f, UI_ALIGN_LEFT, UI_MUTED, buf);
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, RIGHT - 10.0f, ty + 2.0f, 0, UI_ALIGN_RIGHT,
+                UI_FAINT, g->time);
+        char a[GAME_MAP_NAME_LEN + 8], b[GAME_MAP_NAME_LEN + 8];
+        place_title(g->caught_at[0] ? g->caught_at : "unknown", a, sizeof(a));
+        place_title(g->died_at[0] ? g->died_at : "unknown", b, sizeof(b));
+        snprintf(buf, sizeof(buf), "Met at %s" MDOT "died at %s", a, b);
+        ty += 18.0f;
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, tx, ty, RIGHT - tx - 10.0f, UI_ALIGN_LEFT, UI_MUTED, buf);
+        if (g->foe[0]) {
+            Name foe = title(g->foe);
+            snprintf(buf, sizeof(buf), "Fell to %s", foe.s);
+            ty += 16.0f;
+            ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, tx, ty, RIGHT - tx - 10.0f, UI_ALIGN_LEFT,
+                    UI_MUTED, buf);
+        }
+        if (g->reloaded_after) {
+            ty += 18.0f;
+            ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_SMALL, tx, ty, RIGHT - tx - 10.0f, UI_ALIGN_LEFT, UI_WARN,
+                    "Reloaded after this death. The death still counts.");
+        }
+        y += h;
+        shown++;
+    }
+    if (v->grave_total > shown && shown > 0) {
+        snprintf(buf, sizeof(buf), "+%u more", (unsigned)(v->grave_total - shown));
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, y - 2.0f, 0, UI_ALIGN_LEFT, UI_FAINT, buf);
+        y += 14.0f;
+    }
+
+    y = NUZ_LIST_END - checks_h + 6.0f;
+    section(c, LEFT, y, RIGHT - LEFT, "RULE CHECKS");
+    y += 18.0f;
+    snprintf(buf, sizeof(buf), "%u", (unsigned)v->deadused);
+    nuz_check_row(c, y, "Dead Pok\xC3\xA9mon sent into battle", v->deadused ? buf : "None",
+                  v->deadused ? UI_BAD : UI_GOOD);
+    y += NUZ_ROW_H;
+    if (v->rerolls) {
+        char place[GAME_MAP_NAME_LEN + 8];
+        place_title(v->reroll_place, place, sizeof(place));
+        snprintf(buf, sizeof(buf), "%u" MDOT "%s", (unsigned)v->rerolls, place);
+    }
+    nuz_check_row(c, y, "Encounters re-rolled after a reload", v->rerolls ? buf : "None",
+                  v->rerolls ? UI_WARN : UI_GOOD);
+    y += NUZ_ROW_H;
+    nuz_check_row(c, y, "Reloaded after a death", v->reloaded_after_death ? "Yes" : "No",
+                  v->reloaded_after_death ? UI_WARN : UI_GOOD);
+}
+
+static void nuz_no_run(UiCanvas* c, const NuzView* v) {
+    static const char* const lines[] = {
+        "Track a Nuzlocke run for this save: the first encounter on",
+        "each route, every death, and any reload after a death.",
+        "",
+        "Rules: dupes clause by evolution line, shiny clause.",
+        "Gift Pok\xC3\xA9mon don't use up a route.",
+        "Pok\xC3\xA9mon you already have join the run as they are.",
+    };
+    float x = PANEL_W / 2, w = RIGHT - LEFT, y = 140.0f;
+    ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, x, y, w, UI_ALIGN_CENTER, UI_TEXT, "Nuzlocke");
+    y += 34.0f;
+    if (v->state == NUZ_VIEW_OFF) {
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, x, y, w, UI_ALIGN_CENTER, UI_MUTED, v->reason);
+        return;
+    }
+    for (size_t i = 0; i < sizeof(lines) / sizeof(lines[0]); i++, y += 20.0f)
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, x, y, w, UI_ALIGN_CENTER, UI_MUTED, lines[i]);
+    y += 16.0f;
+    float pw = ui_text_width(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, "Press N to start a run") + 28.0f;
+    ui_fill_round_rect(c, (UiRect){x - pw / 2, y - 6.0f, pw, 30.0f}, 15.0f, UI_ACCENT);
+    ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, x, y, w, UI_ALIGN_CENTER, 0xFFFFFFFFu,
+            "Press N to start a run");
+}
+
+static void draw_nuzlocke(UiCanvas* c, const NuzView* v, float top, uint8_t sub) {
+    static const char* const subs[NUZ_SUB_COUNT] = {"Routes", "Team", "Graveyard"};
+    if (!v || v->state != NUZ_VIEW_RUN) {
+        static const NuzView off = { .state = NUZ_VIEW_OFF, .reason = "Waiting for save data" };
+        nuz_no_run(c, v ? v : &off);
+        return;
+    }
+    float y = top + 6.0f, gap = 8.0f, sw = (RIGHT - LEFT - 3 * gap) / 4;
+    nuz_stat(c, LEFT, y, sw, v->alive, "alive", UI_GOOD);
+    nuz_stat(c, LEFT + (sw + gap), y, sw, v->dead, "dead", v->dead ? UI_BAD : UI_TEXT);
+    nuz_stat(c, LEFT + 2 * (sw + gap), y, sw, v->routes_used, "routes used", UI_TEXT);
+    nuz_stat(c, LEFT + 3 * (sw + gap), y, sw, v->reloads, "reloads", v->reloads ? UI_WARN : UI_TEXT);
+
+    y += 52.0f;
+    float x = LEFT;
+    for (uint8_t i = 0; i < NUZ_SUB_COUNT; i++)
+        x += ui_pill(c, x, y, subs[i], i == sub ? UI_ACCENT : UI_SURFACE) + 6.0f;
+    y += 28.0f;
+
+    ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, NUZ_LIST_END + 2.0f - top});
+    if (sub == NUZ_SUB_TEAM) nuz_team(c, v, y);
+    else if (sub == NUZ_SUB_GRAVEYARD) nuz_graveyard(c, v, y);
+    else nuz_routes(c, v, y);
+    ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, PANEL_H - top - 4.0f});
+
+    char foot[96];
+    if (v->write_failed) {
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, NUZ_FOOT_Y, RIGHT - LEFT, UI_ALIGN_LEFT, UI_WARN,
+                "Can't write the run file: this run is only kept until you quit.");
+        return;
+    }
+    snprintf(foot, sizeof(foot), "%sDupes clause" MDOT "shiny clause" MDOT "started at %s",
+             v->wiped ? "Party wiped: run over." MDOT : "", v->start_time);
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, NUZ_FOOT_Y, RIGHT - LEFT, UI_ALIGN_LEFT,
+            v->wiped ? UI_BAD : UI_FAINT, foot);
+}
+
 /* The ROM itself is unsupported: say so plainly, since a hack would otherwise look broken. */
 static void draw_unsupported(UiCanvas* c, GameSupport support) {
     static const char* const hack[] = {
@@ -693,20 +952,26 @@ static void draw_unsupported(UiCanvas* c, GameSupport support) {
         ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, x, y, w, UI_ALIGN_CENTER, UI_MUTED, scope[i]);
 }
 
-void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel) {
-    static const char* const labels[3] = {"Battle", "Party", "Route"};
+void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel,
+                     const NuzView* nuz, uint8_t nuz_sub) {
+    static const char* const labels[4] = {"Battle", "Party", "Route", "Nuzlocke"};
     GamePage shown = game_panel_resolve_page(page, snap->context);
-    int active = shown == GAME_PAGE_PARTY ? 1 : shown == GAME_PAGE_ENCOUNTERS ? 2 : 0;
+    int active = shown == GAME_PAGE_PARTY ? 1 : shown == GAME_PAGE_ENCOUNTERS ? 2
+               : shown == GAME_PAGE_NUZLOCKE ? 3 : 0;
+    const char* hint = "F10 page";
+    if (active == 1) hint = "F10 page   [ ] select";
+    else if (active == 3) hint = nuz && nuz->state == NUZ_VIEW_NO_RUN ? "F10 page   N start" : "F10 page   [ ] view";
 
     ui_canvas_unclip(c);
     ui_canvas_clear(c, UI_BG);
-    float top = ui_tabs(c, LEFT, 12.0f, RIGHT - LEFT, labels, 3, active,
-                        page == GAME_PAGE_AUTO ? "Auto" : NULL,
-                        active == 1 ? "F10 page   [ ] select" : "F10 page");
+    float top = ui_tabs(c, LEFT, 12.0f, RIGHT - LEFT, labels, 4, active,
+                        page == GAME_PAGE_AUTO ? "Auto" : NULL, hint);
 
     ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, PANEL_H - top - 4.0f});
     if (!snap->valid && snap->support != GAME_SUPPORT_OK) {
         draw_unsupported(c, snap->support);
+    } else if (active == 3) {
+        draw_nuzlocke(c, nuz, top, nuz_sub);
     } else if (!snap->valid) {
         ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, PANEL_W / 2, 220.0f, RIGHT - LEFT,
                 UI_ALIGN_CENTER, UI_MUTED, snap->reason);

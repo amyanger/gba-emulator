@@ -24,6 +24,7 @@ typedef struct MonData {
     uint32_t iv_word;
     uint8_t ivs[6];      /* HP, Atk, Def, Spe, SpA, SpD */
     uint8_t ability_num;
+    uint8_t met_location; /* region map section where it was met or hatched */
     /* Party-only fields (party == true) */
     uint32_t status;
     uint8_t level;
