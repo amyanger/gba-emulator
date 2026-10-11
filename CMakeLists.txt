@@ -133,6 +133,7 @@ set(SOURCES
     src/game/overworld.c
     src/game/nuzlocke_read.c
     src/game/nuzlocke.c
+    src/game/script_walk.c
     src/ui/ui_stb.c
     src/ui/ui_canvas.c
     src/ui/ui_font.c
@@ -287,6 +288,7 @@ set(LIB_SOURCES
     src/game/overworld.c
     src/game/nuzlocke_read.c
     src/game/nuzlocke.c
+    src/game/script_walk.c
     src/ui/ui_stb.c
     src/ui/ui_canvas.c
     src/ui/ui_font.c
@@ -370,6 +372,7 @@ set(TEST_SOURCES
     tests/test_game_snapshot.c
     tests/test_game_panel.c
     tests/test_overworld.c
+    tests/test_script_walk.c
     tests/test_ui_font_data.c
     tests/test_ui_canvas.c
     tests/test_ui_font.c
