@@ -135,20 +135,16 @@ static void apu_mix_sample(APU* apu) {
         if (BIT(cnt_l, 8 + i))  legacy_right += ch_out[i];  /* Right enable */
     }
 
-    /* Apply master volume (0-7) */
+    /* GBATEK: each PSG spans a quarter of the output range (+/-80h) and
+     * the FIFOs the full range. Scaled like mGBA: x8, times master volume
+     * (0-7) + 1, then SOUNDCNT_H bits 0-1 (0=25%, 1=50%, 2=100%, 3 is
+     * prohibited, treated as 100%). One channel at volume 15 reaches 240. */
     uint8_t vol_left = BITS(cnt_l, 6, 4);
     uint8_t vol_right = BITS(cnt_l, 2, 0);
-    legacy_left = (legacy_left * (vol_left + 1)) / 8;
-    legacy_right = (legacy_right * (vol_right + 1)) / 8;
-
-    /* Apply legacy volume ratio from SOUNDCNT_H bits 0-1 */
     uint8_t legacy_ratio = cnt_h & 3;
-    switch (legacy_ratio) {
-    case 0: legacy_left >>= 2; legacy_right >>= 2; break; /* 25% */
-    case 1: legacy_left >>= 1; legacy_right >>= 1; break; /* 50% */
-    case 2: break;                                          /* 100% */
-    default: break;                                         /* prohibited, treat as 100% */
-    }
+    int psg_shift = 4 - (legacy_ratio == 3 ? 2 : legacy_ratio);
+    legacy_left = (legacy_left * 8 * (vol_left + 1)) >> psg_shift;
+    legacy_right = (legacy_right * 8 * (vol_right + 1)) >> psg_shift;
 
     left += legacy_left;
     right += legacy_right;

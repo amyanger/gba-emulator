@@ -132,6 +132,34 @@ TEST(fifo_negative_samples_mix_correctly) {
     free(gba);
 }
 
+TEST(psg_mixes_at_quarter_of_output_range) {
+    /* GBATEK: each PSG spans a quarter of the output range (FIFOs span
+     * all of it). Like mGBA: sum << 3, times (1 + master volume), then
+     * >> (4 - SOUNDCNT_H ratio), so volume 15 at full settings is 240. */
+    GBA* gba = make_gba();
+    APU* apu = &gba->apu;
+
+    apu->soundcnt_x = 0x80;
+    /* Ch1 to both sides, master volume left 7, right 3. */
+    apu->soundcnt_l = 0x1173;
+    apu->soundcnt_h = 2; /* PSG 100%, FIFOs off */
+    apu->ch1.enabled = true;
+    apu->ch1.volume = 9;
+    apu->ch1.duty_cycle = 2; /* 50%: step 0 is high */
+    apu->ch1.duty_pos = 0;
+    apu->ch1.frequency = 0;  /* longest period, stays on step 0 */
+
+    uint32_t before = apu->write_pos;
+    apu_tick(apu, (int)apu->sample_period);
+
+    /* left: 9*8*8 >> 2 = 144, *32 = 4608; right: 9*8*4 >> 2 = 72, *32 =
+     * 2304. The IIR filter starting from 0 then yields 3/4 of each. */
+    ASSERT_EQ(apu->sample_buffer[before * 2], 3456);
+    ASSERT_EQ(apu->sample_buffer[before * 2 + 1], 1728);
+
+    free(gba);
+}
+
 void run_apu_tests(void) {
     TEST_SUITE("apu");
     RUN_TEST(fifo_full_write_drops_incoming_word);
@@ -139,4 +167,5 @@ void run_apu_tests(void) {
     RUN_TEST(square_retrigger_reloads_envelope_volume);
     RUN_TEST(noise_period_uses_gba_cycles);
     RUN_TEST(fifo_negative_samples_mix_correctly);
+    RUN_TEST(psg_mixes_at_quarter_of_output_range);
 }
