@@ -152,7 +152,15 @@ Open Settings (Cmd+, on macOS, Ctrl+, elsewhere) and pick **Video** to change ho
 | Smooth | Rounds jagged edges into clean curves, using the xBR scaler |
 | Soft | A softer, painted look, using the Super xBR scaler |
 
+| Sharp | Smooth | Soft |
+|:-----:|:------:|:----:|
+| ![Swampert's summary card with the original square pixels and stair-stepped edges](screenshots/filter-sharp.png) | ![The same card with Smooth: outlines and curves redrawn as clean lines](screenshots/filter-smooth.png) | ![The same card with Soft: blended, painted-looking edges](screenshots/filter-soft.png) |
+
 **Color correction** turns the bright, saturated colors games were drawn with into the darker, softer colors of a real GBA screen. It works with any filter.
+
+| Color correction off | Color correction on |
+|:--------------------:|:-------------------:|
+| ![Route 118 in the bright colors the game was drawn with](screenshots/color-correction-off.png) | ![Route 118 with color correction: darker, muted colors like a real GBA screen](screenshots/color-correction-on.png) |
 
 Filters only change what you see. Screenshots (F12) still save the original pixels.
 
