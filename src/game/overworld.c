@@ -41,6 +41,7 @@
 
 #define TEMPLATE_SIZE      0x18
 #define TEMPLATE_SCRIPT    0x10
+#define TEMPLATE_FLAG      0x14
 #define MAP_HEADER_SIZE    0x1C
 #define MAP_HEADER_LAYOUT  0x00
 #define MAP_HEADER_EVENTS  0x04
@@ -99,6 +100,7 @@ typedef struct {
     uint32_t attrs[2];               /* primary, secondary metatile attribute tables */
     uint8_t objs[OBJ_COUNT][OBJ_SIZE];
     bool obj_ok[OBJ_COUNT];
+    OwGiftCache* cache;              /* NULL: no gift tags */
 } OwCtx;
 
 static int16_t s16_at(const uint8_t* b) { return (int16_t)(b[0] | (b[1] << 8)); }
@@ -335,6 +337,38 @@ static void read_item_ball(const OwCtx* c, const uint8_t* o, OverworldSnapshot* 
     item_name(c, (uint16_t)(b[3] | (b[4] << 8)), mk->name[0]);
 }
 
+/* The walk runs once per script per map; later frames only read the flag bits. */
+static const ScriptGifts* gifts_for(const OwCtx* c, const uint8_t* o, uint32_t t) {
+    static ScriptGifts scratch;   /* used when the cache is full */
+    uint32_t script = 0;
+    uint16_t hide = 0;
+    if (!game_mem_read32(c->m, t + TEMPLATE_SCRIPT, &script) || script < 0x08000000u) return NULL;
+    for (uint8_t i = 0; i < c->cache->count; i++)
+        if (c->cache->entry[i].script == script) return &c->cache->entry[i].gifts;
+    game_mem_read16(c->m, t + TEMPLATE_FLAG, &hide);
+    ScriptGifts* dst = c->cache->count < OW_GIFT_CACHE ? &c->cache->entry[c->cache->count].gifts : &scratch;
+    script_walk_gifts(c->m, script, o[OBJ_LOCAL_ID], hide, dst);
+    if (dst != &scratch) c->cache->entry[c->cache->count++].script = script;
+    return dst;
+}
+
+static void read_gift(const OwCtx* c, const uint8_t* o, OverworldSnapshot* s) {
+    uint32_t t;
+    int16_t x, y;
+    if (!c->cache || !(t = template_addr(c, o))) return;
+    const ScriptGifts* g = gifts_for(c, o, t);
+    if (!g) return;
+    for (uint8_t k = 0; k < g->count; k++) {
+        if (flag_set(c, g->gift[k].flag)) continue;
+        if (!object_screen_pos(c, o, &x, &y) || !on_screen(x, y)) return;
+        OwMarker* mk = add_marker(s, OW_MARK_GIFT, x, y);
+        if (!mk) return;
+        mk->name_count = g->gift[k].item_count;
+        for (uint8_t i = 0; i < mk->name_count; i++) item_name(c, g->gift[k].item[i], mk->name[i]);
+        return;   /* the first gift not yet received */
+    }
+}
+
 static bool field_visible(const OwCtx* c) {
     uint32_t cb2 = 0;
     uint8_t fade = 0, lock = 0;
@@ -408,6 +442,11 @@ static void read_hidden(const OwCtx* c, OverworldSnapshot* s) {
 }
 
 void overworld_read(const GameProfile* p, const GameMem* m, OverworldSnapshot* out) {
+    overworld_read_cached(p, m, NULL, out);
+}
+
+void overworld_read_cached(const GameProfile* p, const GameMem* m, OwGiftCache* cache,
+                           OverworldSnapshot* out) {
     OwCtx c;
     uint8_t sb[6];
     uint32_t fx = 0, fy = 0;
@@ -426,6 +465,13 @@ void overworld_read(const GameProfile* p, const GameMem* m, OverworldSnapshot* o
     c.loc_group = sb[SB1_LOC_GROUP];
     c.loc_num = sb[SB1_LOC_NUM];
     if (!field_visible(&c)) return;
+    if (cache && (!cache->valid || cache->group != c.loc_group || cache->num != c.loc_num)) {
+        memset(cache, 0, sizeof(*cache));
+        cache->valid = true;
+        cache->group = c.loc_group;
+        cache->num = c.loc_num;
+    }
+    c.cache = cache;
 
     game_mem_read32(m, p->field_camera + 0x10, &fx);
     game_mem_read32(m, p->field_camera + 0x14, &fy);
@@ -446,6 +492,7 @@ void overworld_read(const GameProfile* p, const GameMem* m, OverworldSnapshot* o
         if (c.obj_ok[i] && (c.objs[i][OBJ_FLAGS0] & 1) && !(c.objs[i][OBJ_FLAGS2] & 1)) {
             read_trainer(&c, i, out);
             read_item_ball(&c, c.objs[i], out);
+            read_gift(&c, c.objs[i], out);
         }
     read_hidden(&c, out);
 }
@@ -458,12 +505,13 @@ void overworld_feed_init(OverworldFeed* f, const GameProfile* p) {
 void overworld_feed_clear(OverworldFeed* f) {
     memset(&f->next, 0, sizeof(f->next));
     memset(&f->shown, 0, sizeof(f->shown));
+    memset(&f->gifts, 0, sizeof(f->gifts));
 }
 
 void overworld_feed_capture(OverworldFeed* f, const GameMem* m) {
     /* memcpy, not assignment: padding bytes must stay zero for memcmp. */
     memcpy(&f->shown, &f->next, sizeof(f->shown));
-    overworld_read(f->profile, m, &f->next);
+    overworld_read_cached(f->profile, m, &f->gifts, &f->next);
 }
 
 void overworld_capture(const GBA* gba, void* feed) {

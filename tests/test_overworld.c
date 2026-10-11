@@ -633,7 +633,94 @@ TEST(ow_ball_sprite_with_other_script_not_tagged) {
     ASSERT_EQ(s.marker_count, 0);
 }
 
+/* Gift NPC: object slot 2, localId 7, template 1, script at 0x08002200 giving item 5 under flag 0x123. */
+static void put_gift_npc(void) {
+    put8(EVENTS + 0x00, 2);
+    put_obj(2, false, 0, 7, 0, 1, 20, 25, 1, 0, 7);
+    put_sprite(7, 160, 40);
+    put8(SB1 + 0xC70 + 0x18, 7);
+    put32(SB1 + 0xC70 + 0x18 + 0x10, 0x08002200);
+    const uint8_t bytes[] = {0x1A, 0x00, 0x80, 0x05, 0x00, 0x1A, 0x01, 0x80, 0x01, 0x00, 0x09, 0x00,
+                             0x29, 0x23, 0x01, 0x02};
+    memcpy(at(0x08002200), bytes, sizeof(bytes));
+    put_name(ITEMS + 5 * 44, "TM36");
+}
+
+TEST(ow_gift_tag_shown_until_received) {
+    static OwGiftCache cache;
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put_gift_npc();
+    memset(&cache, 0, sizeof(cache));
+    overworld_read_cached(&k_profile, &m, &cache, &s);
+    ASSERT_EQ(s.marker_count, 1);
+    ASSERT_EQ(s.markers[0].kind, OW_MARK_GIFT);
+    ASSERT_EQ(s.markers[0].x, 160);
+    ASSERT_STR_EQ(s.markers[0].name[0], "TM36");
+    put8(SB1 + 0x1270 + (0x123 >> 3), (uint8_t)(1u << (0x123 & 7)));
+    overworld_read_cached(&k_profile, &m, &cache, &s);
+    ASSERT_EQ(s.marker_count, 0);
+}
+
+TEST(ow_no_gift_tags_without_cache) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put_gift_npc();
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.marker_count, 0);
+}
+
+TEST(ow_gift_cache_shared_script_walks_once) {
+    static OwGiftCache cache;
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put_gift_npc();
+    memset(&cache, 0, sizeof(cache));
+    overworld_read_cached(&k_profile, &m, &cache, &s);
+    ASSERT_EQ(cache.count, 2);              /* the trainer's script and the gift script */
+    put16(0x08002200 + 13, 0x930);          /* a daily flag: a re-walk would drop the tag */
+    overworld_read_cached(&k_profile, &m, &cache, &s);
+    ASSERT_EQ(cache.count, 2);
+    ASSERT_EQ(s.marker_count, 1);           /* served from the cache */
+}
+
+TEST(ow_gift_cache_resets_on_map_change) {
+    static OwGiftCache cache;
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put_gift_npc();
+    memset(&cache, 0, sizeof(cache));
+    overworld_read_cached(&k_profile, &m, &cache, &s);
+    put8(SB1 + 0x05, 2);                    /* now on map 0/2: objects' templates no longer resolve */
+    overworld_read_cached(&k_profile, &m, &cache, &s);
+    ASSERT_EQ(cache.num, 2);
+    ASSERT_EQ(cache.count, 0);
+    ASSERT_EQ(s.marker_count, 0);
+}
+
+TEST(ow_feed_clear_empties_gift_cache) {
+    static OverworldFeed f;
+    GameMem m = mem();
+    scene();
+    put_gift_npc();
+    overworld_feed_init(&f, &k_profile);
+    overworld_feed_capture(&f, &m);
+    ASSERT_TRUE(f.gifts.count > 0);
+    overworld_feed_clear(&f);
+    ASSERT_EQ(f.gifts.count, 0);
+    ASSERT_TRUE(!f.gifts.valid);
+}
+
 void run_overworld_tests(void) {
+    RUN_TEST(ow_gift_tag_shown_until_received);
+    RUN_TEST(ow_no_gift_tags_without_cache);
+    RUN_TEST(ow_gift_cache_shared_script_walks_once);
+    RUN_TEST(ow_gift_cache_resets_on_map_change);
+    RUN_TEST(ow_feed_clear_empties_gift_cache);
     RUN_TEST(ow_item_ball_named);
     RUN_TEST(ow_ball_sprite_with_other_script_not_tagged);
     RUN_TEST(ow_offscreen_trainer_kept_when_cone_reaches_screen);

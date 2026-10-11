@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include "game/game_mem.h"
 #include "game/emerald_profile.h"
+#include "game/script_walk.h"
 
 typedef struct GBA GBA;
 
@@ -47,12 +48,26 @@ typedef struct {
 
 /* next = captured at the last line 160; shown = the capture before it, which is
  * what the frame just rendered displays. */
+/* Gift walks per script, for the map the player is on. Not emulated state. */
+#define OW_GIFT_CACHE 64
+typedef struct { uint32_t script; ScriptGifts gifts; } OwGiftEntry;
+typedef struct {
+    bool valid;
+    uint8_t group, num;             /* map the entries belong to */
+    uint8_t count;
+    OwGiftEntry entry[OW_GIFT_CACHE];
+} OwGiftCache;
+
 typedef struct {
     const GameProfile* profile;     /* NULL = unsupported ROM: snapshots stay empty */
     OverworldSnapshot next, shown;
+    OwGiftCache gifts;
 } OverworldFeed;
 
 void overworld_read(const GameProfile* p, const GameMem* m, OverworldSnapshot* out);
+/* Like overworld_read, plus NPC gift tags; cache may be NULL (no gift tags). */
+void overworld_read_cached(const GameProfile* p, const GameMem* m, OwGiftCache* cache,
+                           OverworldSnapshot* out);
 void overworld_feed_init(OverworldFeed* f, const GameProfile* p);
 void overworld_feed_clear(OverworldFeed* f);
 void overworld_feed_capture(OverworldFeed* f, const GameMem* m);
