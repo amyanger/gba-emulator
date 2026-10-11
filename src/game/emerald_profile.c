@@ -57,6 +57,17 @@ const GameProfile g_emerald_profile = {
     .trainers = 0x08310030, .trainer_count = 855,
     .trainer_class_names = 0x0830FCD4, .trainer_class_count = 66,
     .map_groups = 0x08486578, .map_group_count = 34,
+
+    .player_avatar = 0x02037590,
+    .camera = 0x02037334,
+    .palette_fade = 0x02037FD4,
+    .weather = 0x02038454,
+    .script_status = 0x03000E38,
+    .main_new_keys = 0x030022EE,
+    .transition_data = 0x0203ABA0,
+    .elevation_to_priority = 0x0850E634,
+    .tall_grass_pic = 0x084F8738,
+    .cry_table = 0x0869DCF4,
 };
 
 uint32_t game_crc32_update(uint32_t crc, const uint8_t* data, uint32_t len) {

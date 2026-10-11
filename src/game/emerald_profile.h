@@ -67,6 +67,18 @@ typedef struct {
     uint32_t trainers;            uint16_t trainer_count;        /* 0x28-byte stride */
     uint32_t trainer_class_names; uint8_t trainer_class_count;   /* 13-byte stride */
     uint32_t map_groups;          uint8_t map_group_count;       /* pointer per group */
+
+    /* Following Pokemon */
+    uint32_t player_avatar;        /* 0x02037590 struct PlayerAvatar */
+    uint32_t camera;               /* 0x02037334 struct Camera {u8 active; s32 x @4; s32 y @8} */
+    uint32_t palette_fade;         /* 0x02037FD4 struct PaletteFadeControl */
+    uint32_t weather;              /* 0x02038454 struct Weather */
+    uint32_t script_status;        /* 0x03000E38 u8 sGlobalScriptContextStatus */
+    uint32_t main_new_keys;        /* 0x030022EE u16 gMain.newKeys */
+    uint32_t transition_data;      /* 0x0203ABA0 sTransitionData pointer, non-zero during a battle transition */
+    uint32_t elevation_to_priority;/* 0x0850E634 u8[16] */
+    uint32_t tall_grass_pic;       /* 0x084F8738 5 frames of 16x16 4bpp */
+    uint32_t cry_table;            /* 0x0869DCF4 ToneData[388] */
 } GameProfile;
 
 extern const GameProfile g_emerald_profile;
