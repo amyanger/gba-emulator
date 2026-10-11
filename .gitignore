@@ -25,6 +25,7 @@ bios/*.rom
 # Save files (cart saves + savestates live next to the ROM)
 roms/*.sav
 roms/*.ss[0-9]
+roms/*.nuzlocke
 # Legacy saves/ dir (pre-2026-04 layout)
 saves/*.sav
 saves/*.ss[0-9]

@@ -11,9 +11,14 @@ static const char* const dialog_cmds[] = {
     "kdialog --title 'Choose a GBA ROM' --getopenfilename . 'GBA ROMs (*.gba *.GBA)' 2>/dev/null",
 };
 
-RomPickResult rom_picker_choose(char* out, size_t out_size) {
-    for (size_t i = 0; i < sizeof(dialog_cmds) / sizeof(dialog_cmds[0]); i++) {
-        FILE* p = popen(dialog_cmds[i], "r");
+static const char* const folder_cmds[] = {
+    "zenity --file-selection --directory --title='Choose your GBA games folder' 2>/dev/null",
+    "kdialog --title 'Choose your GBA games folder' --getexistingdirectory . 2>/dev/null",
+};
+
+static RomPickResult run_dialogs(const char* const* cmds, size_t count, char* out, size_t out_size) {
+    for (size_t i = 0; i < count; i++) {
+        FILE* p = popen(cmds[i], "r");
         if (!p) continue;
         bool got = fgets(out, (int)out_size, p) != NULL;
         int status = pclose(p);
@@ -26,6 +31,14 @@ RomPickResult rom_picker_choose(char* out, size_t out_size) {
         return out[0] ? ROM_PICK_OK : ROM_PICK_CANCELLED;
     }
     return ROM_PICK_UNAVAILABLE;
+}
+
+RomPickResult rom_picker_choose(char* out, size_t out_size) {
+    return run_dialogs(dialog_cmds, sizeof(dialog_cmds) / sizeof(dialog_cmds[0]), out, out_size);
+}
+
+RomPickResult rom_picker_choose_folder(char* out, size_t out_size) {
+    return run_dialogs(folder_cmds, sizeof(folder_cmds) / sizeof(folder_cmds[0]), out, out_size);
 }
 
 bool rom_picker_hide_console(void) { return false; }

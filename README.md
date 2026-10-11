@@ -14,7 +14,7 @@ Built around an ARM7TDMI CPU interpreter, scanline-based PPU, and an SDL2 fronte
 
 ## Download
 
-Ready-to-run apps for **macOS** (Apple Silicon), **Windows** and **Linux** are on the [latest release](https://github.com/amyanger/gba-emulator/releases/latest). Download the one for your system, double-click it and pick a `.gba` file. There's nothing else to install.
+Ready-to-run apps for **macOS** (Apple Silicon), **Windows** and **Linux** are on the [latest release](https://github.com/amyanger/gba-emulator/releases/latest). Download the one for your system, double-click it and pick a game from the library. There's nothing else to install.
 
 | System | File |
 |--------|------|

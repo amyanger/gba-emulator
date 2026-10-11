@@ -26,28 +26,14 @@ static bool take_launch_drop(char* out, size_t out_size) {
 }
 #endif
 
-bool rom_picker_launch(char* out, size_t out_size) {
-    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
-        LOG_ERROR("SDL init failed: %s", SDL_GetError());
-        return false;
-    }
+bool rom_picker_take_launch_drop(char* out, size_t out_size) {
 #ifdef __APPLE__
-    if (take_launch_drop(out, out_size)) return true;
-#endif
-
-    switch (rom_picker_choose(out, out_size)) {
-    case ROM_PICK_OK:
-        return true;
-    case ROM_PICK_UNAVAILABLE:
-        rom_picker_alert("No file picker was found on this system.\n\n"
-                         "Open a ROM from a terminal instead:\n"
-                         "  gba_emulator path/to/rom.gba");
-        break;
-    case ROM_PICK_CANCELLED:
-        break;
-    }
-    SDL_Quit();
+    return take_launch_drop(out, out_size);
+#else
+    (void)out;
+    (void)out_size;
     return false;
+#endif
 }
 
 void rom_picker_alert(const char* message) {

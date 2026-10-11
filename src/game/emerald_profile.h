@@ -75,7 +75,8 @@ extern const GameProfile g_emerald_profile;
 GameSupport game_profile_match(const GameProfile* p, const uint8_t* rom, uint32_t rom_size);
 /* Returns the profile matching this ROM, or NULL when unsupported; *support says why. */
 const GameProfile* game_profile_detect(const uint8_t* rom, uint32_t rom_size, GameSupport* support);
-/* Standard CRC-32 (zlib, IEEE 802.3). */
+/* Standard CRC-32 (zlib, IEEE 802.3). _update continues a running value (start at 0), like zlib's crc32(). */
 uint32_t game_crc32(const uint8_t* data, uint32_t len);
+uint32_t game_crc32_update(uint32_t crc, const uint8_t* data, uint32_t len);
 
 #endif // EMERALD_PROFILE_H

@@ -11,6 +11,7 @@
 #include "frontend/toast.h"
 #include "frontend/game_panel.h"
 #include "frontend/rom_picker.h"
+#include "frontend/library_run.h"
 #include "frontend/overworld_draw.h"
 #include "frontend/prefs.h"
 #include "game/game.h"
@@ -94,7 +95,8 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
 }
 
 static void print_usage(const char* prog) {
-    printf("Usage: %s <rom.gba> [options]\n", prog);
+    printf("Usage: %s [rom.gba] [options]\n", prog);
+    printf("Without a ROM the game library opens.\n");
     printf("Options:\n");
     printf("  --bios <file>          Load GBA BIOS ROM\n");
     printf("  --scale <n>            Window scale factor (default: 3)\n");
@@ -113,6 +115,8 @@ static void print_usage(const char* prog) {
     printf("  --panel-page <p>       Headless: panel page, auto|party|route|nuzlocke (default: auto)\n");
     printf("  --panel-select <n>     Headless: party slot, or Nuzlocke view 0-2 (routes, team, graveyard)\n");
     printf("  --nuzlocke-file <f>    Headless: track a Nuzlocke run in this file, starting one if it has none\n");
+    printf("  --library-folder <dir> Game folder for the library, used when none has been chosen yet\n");
+    printf("  --library-out <file>   Render the library for --library-folder to a PNG and exit (no ROM)\n");
     printf("  --xray-out <file>      Headless: render the Hardware X-Ray window to a PNG after the run\n");
     printf("  --overworld-out <f>    Headless: final frame at 3x with the Overworld X-Ray drawn, as PNG\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
@@ -126,20 +130,12 @@ static void print_usage(const char* prog) {
 int main(int argc, char* argv[]) {
     bool console_hidden = rom_picker_hide_console();
 
-    /* No arguments means a double-click: ask for a ROM instead of printing usage. */
+    /* No ROM argument (a double-click, or a launcher passing only options) opens the library. */
     static char picked_rom[1024];
-    bool gui_launch = argc < 2;
+    const char* rom_path = argc >= 2 && strncmp(argv[1], "--", 2) != 0 ? argv[1] : NULL;
+    bool no_rom = rom_path == NULL;
     /* No terminal to read stderr: report failures in a dialog instead. */
-    bool no_terminal = gui_launch || console_hidden;
-    const char* rom_path = argv[1];
-    if (gui_launch) {
-        frontend_set_hints();
-        if (!rom_picker_launch(picked_rom, sizeof(picked_rom))) {
-            print_usage(argv[0]);
-            return 0;
-        }
-        rom_path = picked_rom;
-    }
+    bool no_terminal = no_rom || console_hidden;
     const char* bios_path = NULL;
     const char* cheat_path = NULL;
     bool cheat_report = false;
@@ -165,9 +161,11 @@ int main(int argc, char* argv[]) {
     const char* xray_out_path = NULL;
     const char* overworld_out_path = NULL;
     const char* nuzlocke_file = NULL;
+    const char* library_folder = NULL;
+    const char* library_out_path = NULL;
 
     // Parse arguments
-    for (int i = 2; i < argc; i++) {
+    for (int i = no_rom ? 1 : 2; i < argc; i++) {
         if (strcmp(argv[i], "--bios") == 0 && i + 1 < argc) {
             bios_path = argv[++i];
         } else if (strcmp(argv[i], "--scale") == 0 && i + 1 < argc) {
@@ -214,6 +212,10 @@ int main(int argc, char* argv[]) {
             xray_out_path = argv[++i];
         } else if (strcmp(argv[i], "--overworld-out") == 0 && i + 1 < argc) {
             overworld_out_path = argv[++i];
+        } else if (strcmp(argv[i], "--library-folder") == 0 && i + 1 < argc) {
+            library_folder = argv[++i];
+        } else if (strcmp(argv[i], "--library-out") == 0 && i + 1 < argc) {
+            library_out_path = argv[++i];
         } else if (strcmp(argv[i], "--nuzlocke-file") == 0 && i + 1 < argc) {
             nuzlocke_file = argv[++i];
         } else if (strcmp(argv[i], "--panel-select") == 0 && i + 1 < argc) {
@@ -305,6 +307,53 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    if (library_out_path) {
+        if (!library_render_png(library_folder, panel_density, library_out_path)) {
+            LOG_ERROR("Failed to write --library-out file: %s", library_out_path);
+            return 1;
+        }
+        return 0;
+    }
+    if (no_rom && headless) {
+        LOG_ERROR("--headless needs a ROM");
+        return 1;
+    }
+
+    /* The library runs in the game window, so the window opens before the ROM loads. */
+    Frontend fe;
+    bool fe_ready = false;
+    static Library s_library;
+    if (no_rom) {
+        frontend_set_hints();
+        if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+            print_usage(argv[0]);
+            return 0;
+        }
+        if (rom_picker_take_launch_drop(picked_rom, sizeof(picked_rom))) {
+            rom_path = picked_rom;
+        } else {
+            /* No display to show the library on (CI, SSH): behave like a terminal launch. */
+            const char* driver = SDL_GetCurrentVideoDriver();
+            if (!driver || strcmp(driver, "dummy") == 0 || strcmp(driver, "offscreen") == 0) {
+                SDL_Quit();
+                print_usage(argv[0]);
+                return 0;
+            }
+            if (!frontend_init(&fe, scale)) {
+                LOG_ERROR("Failed to initialize frontend");
+                rom_picker_alert("Couldn't open the game window.");
+                return 1;
+            }
+            fe_ready = true;
+            library_prepare(&s_library, library_folder);
+            if (!library_run(&fe, &s_library, NULL, picked_rom, sizeof(picked_rom))) {
+                frontend_destroy(&fe);
+                return 0;
+            }
+            rom_path = picked_rom;
+        }
+    }
+
     // Initialize GBA
     GBA gba;
     gba_init(&gba);
@@ -350,7 +399,20 @@ int main(int argc, char* argv[]) {
         cpu_skip_bios(&gba.cpu);
     }
 
-    if (!gba_load_rom(&gba, rom_path)) {
+    /* From the library, a file that won't load sends you back to it with the reason. */
+    while (fe_ready && !gba_load_rom(&gba, rom_path)) {
+        char reason[160];
+        LOG_ERROR("Failed to load ROM: %s", rom_path);
+        snprintf(reason, sizeof(reason), "Couldn't load %s as a GBA ROM", path_base(rom_path));
+        if (!library_run(&fe, &s_library, reason, picked_rom, sizeof(picked_rom))) {
+            if (link_peer) link_peer_shutdown(link_peer);
+            frontend_destroy(&fe);
+            gba_destroy(&gba);
+            return 0;
+        }
+        rom_path = picked_rom;
+    }
+    if (!fe_ready && !gba_load_rom(&gba, rom_path)) {
         LOG_ERROR("Failed to load ROM: %s", rom_path);
         if (no_terminal) rom_picker_alert("Couldn't load that file as a GBA ROM.");
         // Mirror the normal-cleanup path so a failed ROM load doesn't leak
@@ -358,6 +420,8 @@ int main(int argc, char* argv[]) {
         if (link_peer) link_peer_shutdown(link_peer);
         return 1;
     }
+
+    if (!headless) library_record_launch(rom_path);
 
     game_init(&s_game, gba.cart.rom, gba.cart.rom_size);
     overworld_feed_init(&s_ow, s_game.profile);
@@ -551,9 +615,8 @@ int main(int argc, char* argv[]) {
         return rc;
     }
 
-    // Initialize frontend (SDL2)
-    Frontend fe;
-    if (!frontend_init(&fe, scale)) {
+    // Initialize frontend (SDL2), unless the library already opened the window
+    if (!fe_ready && !frontend_init(&fe, scale)) {
         LOG_ERROR("Failed to initialize frontend");
         if (no_terminal) rom_picker_alert("Couldn't open the game window.");
         if (link_peer) link_peer_shutdown(link_peer);

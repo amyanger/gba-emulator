@@ -149,6 +149,9 @@ set(SOURCES
     src/frontend/toast.c
     src/frontend/prefs.c
     src/frontend/nuzlocke_session.c
+    src/frontend/library.c
+    src/frontend/library_view.c
+    src/frontend/library_run.c
     src/frontend/settings.c
     src/frontend/settings_cheats.c
     src/frontend/hud_draw.c
@@ -206,7 +209,7 @@ elseif(WIN32)
     # .rc: exe icon. .manifest: UTF-8 code page so argv and fopen take Unicode paths.
     target_sources(gba_emulator PRIVATE src/frontend/rom_picker_win.c
                    res/gba_emulator.rc res/gba_emulator.manifest)
-    target_link_libraries(gba_emulator PRIVATE comdlg32)
+    target_link_libraries(gba_emulator PRIVATE comdlg32 shell32 ole32)
 else()
     target_sources(gba_emulator PRIVATE src/frontend/rom_picker_linux.c)
 endif()
@@ -304,6 +307,8 @@ set(LIB_SOURCES
     src/frontend/toast.c
     src/frontend/prefs.c
     src/frontend/nuzlocke_session.c
+    src/frontend/library.c
+    src/frontend/library_view.c
     src/frontend/settings.c
     src/frontend/settings_cheats.c
     src/frontend/hud_draw.c
@@ -384,6 +389,8 @@ set(TEST_SOURCES
     tests/test_nuzlocke_read.c
     tests/test_nuzlocke.c
     tests/test_nuzlocke_session.c
+    tests/test_library.c
+    tests/test_library_view.c
 )
 
 # Several tests rely on POSIX-only APIs (unistd.h, pthreads, AF_UNIX

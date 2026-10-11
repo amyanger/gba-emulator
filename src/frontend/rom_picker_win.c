@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <commdlg.h>
+#include <shlobj.h>
 
 RomPickResult rom_picker_choose(char* out, size_t out_size) {
     wchar_t path[1024] = L"";
@@ -15,6 +16,22 @@ RomPickResult rom_picker_choose(char* out, size_t out_size) {
     if (!GetOpenFileNameW(&ofn)) return ROM_PICK_CANCELLED;
 
     /* The UTF-8 code page in the manifest makes fopen accept this. */
+    int n = WideCharToMultiByte(CP_UTF8, 0, path, -1, out, (int)out_size, NULL, NULL);
+    return n > 0 ? ROM_PICK_OK : ROM_PICK_CANCELLED;
+}
+
+RomPickResult rom_picker_choose_folder(char* out, size_t out_size) {
+    wchar_t path[MAX_PATH] = L"";
+    BROWSEINFOW bi = {0};
+    bi.lpszTitle = L"Choose your GBA games folder";
+    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    /* The new-style dialog needs COM on this thread. */
+    HRESULT co = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    PIDLIST_ABSOLUTE item = SHBrowseForFolderW(&bi);
+    bool ok = item && SHGetPathFromIDListW(item, path);
+    if (item) CoTaskMemFree(item);
+    if (SUCCEEDED(co)) CoUninitialize();
+    if (!ok) return ROM_PICK_CANCELLED;
     int n = WideCharToMultiByte(CP_UTF8, 0, path, -1, out, (int)out_size, NULL, NULL);
     return n > 0 ? ROM_PICK_OK : ROM_PICK_CANCELLED;
 }

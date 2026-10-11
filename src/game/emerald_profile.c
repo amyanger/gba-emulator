@@ -59,7 +59,7 @@ const GameProfile g_emerald_profile = {
     .map_groups = 0x08486578, .map_group_count = 34,
 };
 
-uint32_t game_crc32(const uint8_t* data, uint32_t len) {
+uint32_t game_crc32_update(uint32_t crc, const uint8_t* data, uint32_t len) {
     static uint32_t table[256];
     static bool ready;
     if (!ready) {
@@ -70,9 +70,13 @@ uint32_t game_crc32(const uint8_t* data, uint32_t len) {
         }
         ready = true;
     }
-    uint32_t crc = 0xFFFFFFFFu;
+    crc ^= 0xFFFFFFFFu;
     for (uint32_t i = 0; i < len; i++) crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
     return crc ^ 0xFFFFFFFFu;
+}
+
+uint32_t game_crc32(const uint8_t* data, uint32_t len) {
+    return game_crc32_update(0, data, len);
 }
 
 GameSupport game_profile_match(const GameProfile* p, const uint8_t* rom, uint32_t rom_size) {
