@@ -109,6 +109,26 @@ TEST(timer_cascade_increments_only_on_lower_overflow) {
     ASSERT_EQ(ts[1].counter, 1);
 }
 
+TEST(timer_long_tick_handles_several_overflows) {
+    /* One tick spanning several overflows must reload each time, step a
+     * cascade timer once per overflow and keep the prescaler remainder. */
+    Timer ts[4];
+    InterruptController ic;
+    timer_init(ts);
+    interrupt_init(&ic);
+
+    timer_write_reload(&ts[0], 0xFFF0);         /* 16 ticks per overflow */
+    timer_write_control(&ts[0], 0x81);          /* prescaler=64, enabled */
+    timer_write_control(&ts[1], 0x84);          /* enabled + cascade */
+
+    /* 5000 cycles = 78 ticks (4992) + 8: overflows at ticks 16/32/48/64,
+     * then 14 more ticks from the reload. */
+    timer_tick(ts, 5000, &ic, NULL);
+    ASSERT_EQ(ts[0].counter, 0xFFFE);
+    ASSERT_EQ(ts[0].prescaler_counter, 8);
+    ASSERT_EQ(ts[1].counter, 4);
+}
+
 TEST(timer_read_projects_unsynced_cycles) {
     /* Timers only sync at scanline-chunk boundaries; a mid-chunk read
      * must project the counter forward by the cycles the CPU has run
@@ -264,6 +284,7 @@ void run_timer_tests(void) {
     RUN_TEST(timer_overflow_fires_irq_when_enabled);
     RUN_TEST(timer_overflow_does_not_fire_irq_when_disabled);
     RUN_TEST(timer_cascade_increments_only_on_lower_overflow);
+    RUN_TEST(timer_long_tick_handles_several_overflows);
     RUN_TEST(timer_read_projects_unsynced_cycles);
     RUN_TEST(timer_read_projection_respects_prescaler_and_wrap);
     RUN_TEST(timer_cycles_until_irq_finds_nearest_irq_timer);

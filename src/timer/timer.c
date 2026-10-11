@@ -120,8 +120,13 @@ void timer_tick(Timer timers[4], int cycles, InterruptController* interrupts, AP
         t->prescaler_counter += cycles;
 
         while (t->prescaler_counter >= t->prescaler) {
-            t->prescaler_counter -= t->prescaler;
-            t->counter++;
+            // Jump straight to the next overflow (or the end of the tick)
+            // instead of counting one prescaler step at a time.
+            uint32_t ticks = t->prescaler_counter / t->prescaler;
+            uint32_t to_overflow = 0x10000u - t->counter;
+            if (ticks > to_overflow) ticks = to_overflow;
+            t->prescaler_counter -= ticks * t->prescaler;
+            t->counter = (uint16_t)(t->counter + ticks);
 
             if (t->counter == 0) {
                 // Overflow: reload and fire IRQ/audio callbacks
