@@ -758,8 +758,7 @@ int main(int argc, char* argv[]) {
         // Pause: skip emulation, keep window responsive, mute audio.
         if (fe.paused != prev_paused) {
             if (fe.paused) {
-                SDL_ClearQueuedAudio(fe.audio_device);
-                gba.apu.read_pos = gba.apu.write_pos;
+                frontend_audio_stop(&fe, &gba.apu);
             }
             prev_paused = fe.paused;
         }
@@ -781,7 +780,7 @@ int main(int argc, char* argv[]) {
 #ifdef ENABLE_XRAY
             xray_render(&s_xray_state, &gba);
 #endif
-            gba.apu.read_pos = gba.apu.write_pos;
+            frontend_audio_stop(&fe, &gba.apu);
             frontend_frame_sync(&fe);
             continue;
         }
@@ -810,7 +809,7 @@ int main(int argc, char* argv[]) {
                 if (res == SS_OK) {
                     LOG_INFO("State loaded from slot %d", fe.savestate_slot);
                     frontend_toast(&fe, TOAST_OK, "State loaded", slot_detail);
-                    SDL_ClearQueuedAudio(fe.audio_device);
+                    frontend_audio_stop(&fe, &gba.apu);
                     overworld_feed_clear(&s_ow);
 #ifdef ENABLE_REWIND
                     rewind_clear(&gba.rewind);   // past is no longer valid
@@ -838,14 +837,12 @@ int main(int argc, char* argv[]) {
             static bool prev_rewind = false;
             if (prev_rewind && !rewind_active_now) {
                 rewind_end(&gba.rewind);
-                SDL_ClearQueuedAudio(fe.audio_device);
-                gba.apu.read_pos = gba.apu.write_pos;
+                frontend_audio_stop(&fe, &gba.apu);
             }
             // Detect transitions INTO rewind
             if (!prev_rewind && rewind_active_now) {
                 rewind_begin(&gba.rewind);
-                SDL_ClearQueuedAudio(fe.audio_device);
-                gba.apu.read_pos = gba.apu.write_pos;
+                frontend_audio_stop(&fe, &gba.apu);
             }
             prev_rewind = rewind_active_now;
         }
@@ -862,7 +859,7 @@ int main(int argc, char* argv[]) {
             xray_render(&s_xray_state, &gba);
 #endif
             // Drain APU ring buffer (state was restored from snapshot)
-            gba.apu.read_pos = gba.apu.write_pos;
+            frontend_audio_stop(&fe, &gba.apu);
             frontend_frame_sync(&fe);
             continue;
         }
@@ -885,8 +882,7 @@ int main(int argc, char* argv[]) {
                 if (ff_active != prev_ff) {
                     if (!ff_active) {
                         // Returning to normal speed: clean audio state
-                        SDL_ClearQueuedAudio(fe.audio_device);
-                        gba.apu.read_pos = gba.apu.write_pos;
+                        frontend_audio_stop(&fe, &gba.apu);
                         fe.ff_frame_count = 0;
                     }
                     prev_ff = ff_active;
@@ -902,7 +898,7 @@ int main(int argc, char* argv[]) {
 #endif
                 }
                 // Drain APU ring buffer to prevent stall
-                gba.apu.read_pos = gba.apu.write_pos;
+                frontend_audio_stop(&fe, &gba.apu);
             } else {
                 render_with_overlay(&fe, &gba);
                 frontend_push_audio(&fe, &gba.apu);

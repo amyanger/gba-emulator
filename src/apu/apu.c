@@ -165,8 +165,10 @@ static void apu_mix_sample(APU* apu) {
     if (BIT(cnt_h, 13)) left += fifo_b;   /* FIFO B to left */
     if (BIT(cnt_h, 12)) right += fifo_b;  /* FIFO B to right */
 
-    /* --- Apply SOUNDBIAS and clamp --- */
-    uint16_t bias = (apu->soundbias >> 1) & 0x1FF;
+    /* --- Apply SOUNDBIAS and clamp ---
+     * GBATEK: bits 1-9 hold the bias in place (bit 0 reads as 0), so the
+     * default 200h is added to the signed mix unshifted. */
+    uint16_t bias = apu->soundbias & 0x3FE;
 
     left += (int32_t)bias;
     right += (int32_t)bias;
@@ -178,8 +180,8 @@ static void apu_mix_sample(APU* apu) {
     if (right > 0x3FF) right = 0x3FF;
 
     /* Convert 10-bit unsigned (centered at bias) to int16_t for SDL.
-     * Signed range is [-bias, 0x3FF-bias]. With default bias 0x100,
-     * that's [-256, +767]. Scale by 32 to fill int16_t without overflow. */
+     * Signed range is [-bias, 0x3FF-bias]. With default bias 0x200,
+     * that's [-512, +511]. Scale by 32, leaving headroom in int16_t. */
     int32_t left_signed = (left - (int32_t)bias) * 32;
     int32_t right_signed = (right - (int32_t)bias) * 32;
     if (left_signed > 32767) left_signed = 32767;

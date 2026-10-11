@@ -7,6 +7,7 @@
 #include "frontend/game_panel.h"
 #include "frontend/panel_layout.h"
 #include "frontend/toast.h"
+#include "frontend/audio_out.h"
 #include "frontend/settings.h"
 #include "frontend/prefs.h"
 #include "frontend/video_filter.h"
@@ -67,6 +68,8 @@ typedef struct Frontend {
     OverworldSnapshot ow_last;    /* what ow_buffer shows */
     SDL_AudioDeviceID audio_device;
     uint32_t audio_target_bytes;  /* frame-sync queue target: 3x the device pull size */
+    AudioOut audio_out;           /* DC blocker + resampler from 32768 Hz to the device rate */
+    bool audio_stopped;           /* fade-out queued; the next push fades back in */
     SDL_GameController* controller;
 
     int scale;
@@ -124,6 +127,9 @@ void frontend_present_frame(Frontend* fe, uint16_t* framebuffer);
 void frontend_poll_input(Frontend* fe, GBA* gba);
 void frontend_audio_init(Frontend* fe);
 void frontend_push_audio(Frontend* fe, APU* apu);
+/* Drop pending APU samples and end playback with a short fade instead of a
+ * hard cut. Safe to call every frame while audio is off. */
+void frontend_audio_stop(Frontend* fe, APU* apu);
 void frontend_frame_sync(Frontend* fe);
 void frontend_toast(Frontend* fe, ToastKind kind, const char* title, const char* detail);
 void frontend_toast_keyed(Frontend* fe, const char* key, ToastKind kind, const char* title,

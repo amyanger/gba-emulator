@@ -141,6 +141,7 @@ set(SOURCES
     src/ui/ui_input.c
     src/ui/ui_controls.c
     src/frontend/frontend.c
+    src/frontend/audio_out.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
     src/frontend/slot_picker.c
@@ -310,6 +311,7 @@ set(LIB_SOURCES
     src/frontend/slot_picker.c
     src/frontend/game_panel.c
     src/frontend/panel_layout.c
+    src/frontend/audio_out.c
     src/frontend/toast.c
     src/frontend/prefs.c
     src/frontend/video_filter.c
@@ -365,6 +367,7 @@ set(TEST_SOURCES
     tests/test_cheat_report.c
     tests/test_cheat_session.c
     tests/test_apu.c
+    tests/test_audio_out.c
     tests/test_ppu.c
     tests/test_input.c
     tests/test_rewind.c

@@ -117,6 +117,7 @@ bool frontend_init(Frontend* fe, int scale) {
     fe->muted = false;
     fe->audio_device = 0;
     fe->audio_target_bytes = 0;
+    fe->audio_stopped = true;
     fe->controller_keys = 0;
     fe->slot_picker.mode = SLOT_PICKER_CLOSED;
     frontend_apply_layout(fe);
@@ -901,7 +902,6 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             if (event.key.keysym.scancode == SDL_SCANCODE_M &&
                 !event.key.repeat) {
                 fe->muted = !fe->muted;
-                if (fe->audio_device) SDL_ClearQueuedAudio(fe->audio_device);
                 LOG_INFO("Mute %s", fe->muted ? "ON" : "OFF");
                 frontend_toast_keyed(fe, "mute", TOAST_INFO, fe->muted ? "Muted" : "Sound on", NULL);
             }
@@ -1023,15 +1023,25 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
 }
 
 void frontend_audio_init(Frontend* fe) {
+    /* Open at the device's own rate and resample ourselves (audio_out.c), so
+     * SDL does not insert its own converter. */
+    int native_freq = 48000;
+#if SDL_VERSION_ATLEAST(2, 24, 0)
+    SDL_AudioSpec native;
+    if (SDL_GetDefaultAudioInfo(NULL, &native, 0) == 0 && native.freq > 0)
+        native_freq = native.freq;
+#endif
+
     SDL_AudioSpec want, have;
     SDL_zero(want);
-    want.freq = 32768;
+    want.freq = native_freq;
     want.format = AUDIO_S16SYS;
     want.channels = 2;
     want.samples = 1024;
     want.callback = NULL; /* Push mode via SDL_QueueAudio */
 
-    fe->audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+    fe->audio_device = SDL_OpenAudioDevice(NULL, 0, &want, &have,
+                                           SDL_AUDIO_ALLOW_FREQUENCY_CHANGE);
     if (fe->audio_device == 0) {
         LOG_WARN("SDL audio failed: %s", SDL_GetError());
         return;
@@ -1044,8 +1054,25 @@ void frontend_audio_init(Frontend* fe) {
     fe->audio_target_bytes =
         3u * (uint32_t)have.samples * have.channels * (uint32_t)sizeof(int16_t);
 
+    audio_out_init(&fe->audio_out, CPU_FREQ / DEFAULT_SAMPLE_PERIOD, (uint32_t)have.freq);
+    fe->audio_stopped = true;
+
     SDL_PauseAudioDevice(fe->audio_device, 0);
     LOG_INFO("Audio initialized: %d Hz, %d channels", have.freq, have.channels);
+}
+
+/* Output frames per chunk; input chunks are sized so any device rate fits. */
+#define AUDIO_CHUNK_FRAMES 2048
+static int16_t s_audio_chunk[AUDIO_CHUNK_FRAMES * 2];
+
+void frontend_audio_stop(Frontend* fe, APU* apu) {
+    apu->read_pos = apu->write_pos;
+    if (fe->audio_device == 0 || fe->audio_stopped) return;
+    /* Appended after what is already queued, so the ramp starts exactly where
+     * playback leaves off. */
+    uint32_t n = audio_out_fade_out(&fe->audio_out, s_audio_chunk);
+    SDL_QueueAudio(fe->audio_device, s_audio_chunk, n * 2 * (uint32_t)sizeof(int16_t));
+    fe->audio_stopped = true;
 }
 
 void frontend_push_audio(Frontend* fe, APU* apu) {
@@ -1053,43 +1080,23 @@ void frontend_push_audio(Frontend* fe, APU* apu) {
 
     if (fe->muted) {
         /* Drain APU ring without queueing to SDL so emulation pacing still works */
-        apu->read_pos = apu->write_pos;
+        frontend_audio_stop(fe, apu);
         return;
     }
+    fe->audio_stopped = false;
 
-    /* Calculate how many samples are available in the ring buffer */
-    uint32_t write_pos = apu->write_pos;
-    uint32_t read_pos = apu->read_pos;
-
-    uint32_t available;
-    if (write_pos >= read_pos) {
-        available = write_pos - read_pos;
-    } else {
-        available = SAMPLE_BUFFER_SIZE - read_pos + write_pos;
+    uint32_t max_in = (uint32_t)((AUDIO_CHUNK_FRAMES - 2) * fe->audio_out.step);
+    if (max_in == 0) max_in = 1;
+    while (apu->read_pos != apu->write_pos) {
+        /* Contiguous run up to the ring's end or the writer. */
+        uint32_t end = apu->write_pos > apu->read_pos ? apu->write_pos : SAMPLE_BUFFER_SIZE;
+        uint32_t count = end - apu->read_pos;
+        if (count > max_in) count = max_in;
+        uint32_t n = audio_out_process(&fe->audio_out, &apu->sample_buffer[apu->read_pos * 2],
+                                       count, s_audio_chunk);
+        SDL_QueueAudio(fe->audio_device, s_audio_chunk, n * 2 * (uint32_t)sizeof(int16_t));
+        apu->read_pos = (apu->read_pos + count) % SAMPLE_BUFFER_SIZE;
     }
-
-    if (available == 0) return;
-
-    /* Push samples from ring buffer to SDL */
-    if (write_pos > read_pos) {
-        /* Contiguous region */
-        SDL_QueueAudio(fe->audio_device,
-                       &apu->sample_buffer[read_pos * 2],
-                       available * 2 * sizeof(int16_t));
-    } else {
-        /* Wraps around: push in two parts */
-        uint32_t first_part = SAMPLE_BUFFER_SIZE - read_pos;
-        SDL_QueueAudio(fe->audio_device,
-                       &apu->sample_buffer[read_pos * 2],
-                       first_part * 2 * sizeof(int16_t));
-        if (write_pos > 0) {
-            SDL_QueueAudio(fe->audio_device,
-                           &apu->sample_buffer[0],
-                           write_pos * 2 * sizeof(int16_t));
-        }
-    }
-
-    apu->read_pos = write_pos;
 }
 
 void frontend_frame_sync(Frontend* fe) {

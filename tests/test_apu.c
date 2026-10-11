@@ -132,6 +132,29 @@ TEST(fifo_negative_samples_mix_correctly) {
     free(gba);
 }
 
+TEST(default_bias_gives_symmetric_fifo_swing) {
+    /* GBATEK: SOUNDBIAS 200h is added to the signed mix as-is and the
+     * result is clipped to 0..3FFh, so each FIFO swings a full +/-200h.
+     * A full-scale negative sample must not clip at -100h. */
+    GBA* gba = make_gba();
+    APU* apu = &gba->apu;
+
+    apu->soundcnt_x = 0x80;
+    apu->soundcnt_l = 0;
+    /* FIFO A 100% to left and right. */
+    apu->soundcnt_h = (uint16_t)((1u << 2) | (1u << 9) | (1u << 8));
+    apu->fifo_a_latch = -128;
+
+    uint32_t before = apu->write_pos;
+    apu_tick(apu, (int)apu->sample_period);
+
+    /* -128*4 = -512, *32 = -16384; the IIR filter yields 3/4. */
+    ASSERT_EQ(apu->sample_buffer[before * 2], -12288);
+    ASSERT_EQ(apu->sample_buffer[before * 2 + 1], -12288);
+
+    free(gba);
+}
+
 TEST(psg_mixes_at_quarter_of_output_range) {
     /* GBATEK: each PSG spans a quarter of the output range (FIFOs span
      * all of it). Like mGBA: sum << 3, times (1 + master volume), then
@@ -167,5 +190,6 @@ void run_apu_tests(void) {
     RUN_TEST(square_retrigger_reloads_envelope_volume);
     RUN_TEST(noise_period_uses_gba_cycles);
     RUN_TEST(fifo_negative_samples_mix_correctly);
+    RUN_TEST(default_bias_gives_symmetric_fifo_swing);
     RUN_TEST(psg_mixes_at_quarter_of_output_range);
 }
