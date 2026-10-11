@@ -442,6 +442,49 @@ static void read_hidden(const OwCtx* c, OverworldSnapshot* s) {
     }
 }
 
+/* Screen px added to (tile - pos) * 16: camera scroll progress and pan. */
+static void camera_offsets(const GameProfile* p, const GameMem* m, int32_t* dx, int32_t* dy) {
+    uint32_t fx = 0, fy = 0;
+    uint16_t pan[2] = {0, 0};
+    game_mem_read32(m, p->field_camera + 0x10, &fx);
+    game_mem_read32(m, p->field_camera + 0x14, &fy);
+    game_mem_read16(m, p->camera_pan, &pan[0]);
+    game_mem_read16(m, p->camera_pan + 2, &pan[1]);
+    *dx = cam_adjust((int32_t)fx) - (int16_t)pan[0];
+    *dy = cam_adjust((int32_t)fy) - (int16_t)pan[1] - 8;
+}
+
+bool overworld_screen_origin(const GameProfile* p, const GameMem* m, OwScreenOrigin* out) {
+    uint32_t sb1 = 0;
+    uint8_t sb[4];
+    int32_t dx, dy;
+    memset(out, 0, sizeof(*out));
+    if (!p || !game_mem_read32(m, p->save_block1_ptr, &sb1) || !game_mem_in_ewram(sb1, sizeof(sb)) ||
+        !game_mem_copy(m, sb1 + SB1_POS, sb, sizeof(sb)))
+        return false;
+    camera_offsets(p, m, &dx, &dy);
+    out->pos_x = s16_at(sb);
+    out->pos_y = s16_at(sb + 2);
+    out->cam_dx = (int16_t)dx;
+    out->cam_dy = (int16_t)dy;
+    return true;
+}
+
+bool overworld_tile_info(const GameProfile* p, const GameMem* m, int16_t vx, int16_t vy, uint8_t* behavior,
+                         uint8_t* elevation) {
+    OwCtx c;
+    uint16_t block = 0;
+    if (!p) return false;
+    memset(&c, 0, sizeof(c));
+    c.p = p;
+    c.m = m;
+    grid_init(&c);
+    if (!c.grid_ok || !grid_cell(&c, vx, vy, &block)) return false;
+    *behavior = behavior_of(&c, block);
+    *elevation = (uint8_t)(block >> 12);
+    return true;
+}
+
 void overworld_read(const GameProfile* p, const GameMem* m, OverworldSnapshot* out) {
     overworld_read_cached(p, m, NULL, out);
 }
@@ -450,8 +493,7 @@ void overworld_read_cached(const GameProfile* p, const GameMem* m, OwGiftCache* 
                            OverworldSnapshot* out) {
     OwCtx c;
     uint8_t sb[6];
-    uint32_t fx = 0, fy = 0;
-    uint16_t pan[2] = {0, 0}, off[2] = {0, 0};
+    uint16_t off[2] = {0, 0};
 
     memset(out, 0, sizeof(*out));
     if (!p) return;
@@ -474,14 +516,9 @@ void overworld_read_cached(const GameProfile* p, const GameMem* m, OwGiftCache* 
     }
     c.cache = cache;
 
-    game_mem_read32(m, p->field_camera + 0x10, &fx);
-    game_mem_read32(m, p->field_camera + 0x14, &fy);
-    game_mem_read16(m, p->camera_pan, &pan[0]);
-    game_mem_read16(m, p->camera_pan + 2, &pan[1]);
+    camera_offsets(p, m, &c.cam_dx, &c.cam_dy);
     game_mem_read16(m, p->sprite_coord_offset, &off[0]);
     game_mem_read16(m, p->sprite_coord_offset + 2, &off[1]);
-    c.cam_dx = cam_adjust((int32_t)fx) - (int16_t)pan[0];
-    c.cam_dy = cam_adjust((int32_t)fy) - (int16_t)pan[1] - 8;
     c.spr_off_x = (int16_t)off[0];
     c.spr_off_y = (int16_t)off[1];
     out->visible = true;

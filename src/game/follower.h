@@ -29,6 +29,8 @@ typedef struct {
     bool lead_ok;
     uint8_t lead_slot;
     MonData lead;
+    uint8_t party_hp_zero;     /* bitmask of present, non-egg party slots with hp 0 */
+    bool in_transition;        /* battle transition running (sTransitionData non-zero) */
     uint32_t fade_mask;
     uint8_t fade_y;
     uint16_t fade_color;
@@ -57,12 +59,14 @@ typedef struct {
     uint8_t lead_level;
     bool lead_changed;         /* lead pid changed this frame */
     int16_t mood_delta;        /* accumulated mood events this frame, consumed by the frontend */
+    uint32_t faint_pid;        /* set for one frame: personality of a lead that fainted in battle, 0 none */
     uint16_t steps;            /* player steps this frame (mood decay) */
     /* edge detection */
     bool p_valid, p_free, p_cam_active, p_in_battle;
     int16_t p_cur_x, p_cur_y;
     uint8_t p_loc_group, p_loc_num;
-    uint8_t p_party_hp_zero;   /* bitmask of slots with hp 0 last frame */
+    uint8_t p_party_hp_zero;   /* bitmask of slots with hp 0 on the last overworld frame */
+    uint8_t p_lead_slot;       /* lead slot on the last overworld frame */
 } Follower;
 
 void follower_init(Follower* f);
