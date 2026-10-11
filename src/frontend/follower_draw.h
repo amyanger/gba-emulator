@@ -27,6 +27,13 @@ typedef struct {
     TalkPlayer talk;
     CryPlayer cry;
     uint32_t rng;
+    /* Private to follower_draw.c */
+    uint32_t tried_pid;            /* last pid follower_view_sync tried to load, 0 none */
+    bool rom_loaded;               /* elev_prio and grass_px read from the Emerald ROM */
+    uint8_t mood_n;                /* used mood entries, most recently changed first */
+    bool grass_in;                 /* follower tile was tall grass last frame */
+    int16_t grass_tx, grass_ty;    /* that tile */
+    uint8_t grass_t;               /* frames since entering it, saturates */
 } FollowerView;
 
 void follower_view_init(FollowerView* v, HgssAssets* assets, const char* save_path);
