@@ -4,6 +4,7 @@
 #include "ppu/ppu.h"
 #include "apu/apu.h"
 #include "cartridge/cartridge.h"
+#include "cartridge/eeprom.h"
 #include "interrupt/interrupt.h"
 #include "timer/timer.h"
 #include "input/input.h"
@@ -1489,12 +1490,44 @@ static bool is_sram_region(uint32_t addr) {
     return region == 0x0E || region == 0x0F;
 }
 
+/* Plain memory an aligned wide read can load in one go, or NULL where
+ * bytes have side effects or special rules (BIOS, I/O, SRAM, GPIO,
+ * EEPROM, out-of-range ROM). Saves 2-4 trips through bus_read8_raw on
+ * every instruction fetch. */
+static const uint8_t* bus_direct_ptr(const Bus* bus, uint32_t addr, uint32_t size) {
+    switch (decode_region(addr)) {
+    case 0x02: return &bus->ewram[addr & (EWRAM_SIZE - 1)];
+    case 0x03: return &bus->iwram[addr & (IWRAM_SIZE - 1)];
+    case 0x05: return &bus->palette_ram[addr & (PALETTE_SIZE - 1)];
+    case 0x06: {
+        uint32_t off = addr & 0x1FFFF;
+        if (off >= VRAM_SIZE) off -= 0x8000;
+        return &bus->vram[off];
+    }
+    case 0x07: return &bus->oam[addr & (OAM_SIZE - 1)];
+    case 0x08: case 0x09:
+    case 0x0A: case 0x0B:
+    case 0x0C: case 0x0D: {
+        const Cartridge* cart = bus->cart;
+        if (!cart || eeprom_addr_in_range(cart, addr)) return NULL;
+        uint32_t offset = addr & 0x01FFFFFF;
+        if (offset + size > cart->rom_size) return NULL;
+        if ((cart->gpio.control & 1) && offset < 0xCA && offset + size > 0xC4) return NULL;
+        return &cart->rom[offset];
+    }
+    default:
+        return NULL;
+    }
+}
+
 uint16_t bus_read16(Bus* bus, uint32_t addr) {
     bus_charge_access(bus, addr & ~1u, 2, true);
     if (is_sram_region(addr)) {
         return (uint16_t)(bus_read8_raw(bus, addr) * 0x0101u);
     }
     addr &= ~1u; /* Force halfword alignment */
+    const uint8_t* p = bus_direct_ptr(bus, addr, 2);
+    if (p) return (uint16_t)(p[0] | (p[1] << 8));
     return (uint16_t)bus_read8_raw(bus, addr)
          | ((uint16_t)bus_read8_raw(bus, addr + 1) << 8);
 }
@@ -1505,6 +1538,11 @@ uint32_t bus_read32(Bus* bus, uint32_t addr) {
         return bus_read8_raw(bus, addr) * 0x01010101u;
     }
     addr &= ~3u; /* Force word alignment */
+    const uint8_t* p = bus_direct_ptr(bus, addr, 4);
+    if (p) {
+        return (uint32_t)p[0] | ((uint32_t)p[1] << 8)
+             | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
+    }
     return (uint32_t)bus_read8_raw(bus, addr)
          | ((uint32_t)bus_read8_raw(bus, addr + 1) << 8)
          | ((uint32_t)bus_read8_raw(bus, addr + 2) << 16)
