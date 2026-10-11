@@ -88,6 +88,8 @@ The folder and the recently played list are kept in `library.txt` in the app's s
 | `--link-master <path>` | Listen for a peer GBA at AF_UNIX socket path (host side) |
 | `--link-client <path>` | Connect to a peer GBA at AF_UNIX socket path (client side) |
 | `--mute` | Start with audio muted (toggle back with `M`) |
+| `--video-filter <name>` | Screen filter for this run: `sharp`, `smooth` or `soft` (see [Screen filters](#screen-filters)) |
+| `--color-correct` | LCD color correction for this run |
 | `--trace <file>` | Write a per-instruction execution trace to `file` (expect 5-10x slowdown) |
 | `--trace-from <hex>` | Only trace instructions at PC >= this address (hex) |
 | `--trace-to <hex>` | Only trace instructions at PC <= this address (hex) |
@@ -140,6 +142,20 @@ On macOS, F-keys need **fn** held (for example fn+F9) unless the keyboard is set
 
 Save files (`<rom>.sav`) and save states (`<rom>.ss<N>`) are written next to the ROM.
 
+## Screen filters
+
+Open Settings (Cmd+, on macOS, Ctrl+, elsewhere) and pick **Video** to change how the game image is drawn. Changes show right away and are remembered between launches.
+
+| Filter | Look |
+|--------|------|
+| Sharp | The original pixels, as the GBA drew them (default) |
+| Smooth | Rounds jagged edges into clean curves, using the xBR scaler |
+| Soft | A softer, painted look, using the Super xBR scaler |
+
+**Color correction** turns the bright, saturated colors games were drawn with into the darker, softer colors of a real GBA screen. It works with any filter.
+
+Filters only change what you see. Screenshots (F12) still save the original pixels.
+
 ## Headless mode
 
 Run the emulator without an SDL window or audio output, writing one
@@ -164,6 +180,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--library-out <file>` | Render the library for `--library-folder` to a PNG and exit. Takes no ROM and never reads or writes `library.txt`. |
 | `--nuzlocke-file <file>` | Track a Nuzlocke run in `file` during the run, starting one if the file has none. `--game-dump` then adds `nuz` lines. Requires `--headless`. |
 | `--xray-out <file>` | After the run, render the Hardware X-Ray window to a 2400x1640 PNG. Requires `--headless` and an X-Ray build. |
+| `--video-out <file>` | After the run, write the final frame through the screen filter as PNG, at the filter's own size for `--scale` (for example 720x480 for Smooth at scale 3). Requires `--headless`. |
 | `--overworld-out <file>` | After the run, write the final frame at 3x (720x480 PNG) with the Overworld X-Ray drawn on it. Requires `--headless`; original Pokemon Emerald (US) only. |
 | `--gift-audit <file>` | Walk every NPC in the ROM and list the Overworld X-Ray gift tags it would show, one line per NPC (`<group>.<map> lid=<id> <item>:<flag>`, hex). For checking the gift detection; original Pokemon Emerald (US) only. Requires `--headless`. |
 | `--game-dump <file>` | After the run, write the decoded Emerald game state (party, battle, encounters, and an `[overworld]` section matching the final frame) to `file`. Requires `--headless`. |

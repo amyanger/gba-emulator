@@ -9,6 +9,7 @@
 #include "frontend/toast.h"
 #include "frontend/settings.h"
 #include "frontend/prefs.h"
+#include "frontend/video_filter.h"
 #include "game/overworld.h"
 
 // Forward declaration
@@ -18,6 +19,12 @@ typedef struct Frontend {
     SDL_Window* window;
     SDL_Renderer* renderer;
     SDL_Texture* texture;
+    /* Screen filter and LCD color correction (Settings > Video); Sharp without correction
+     * keeps uploading the BGR555 framebuffer to texture as is. */
+    VideoFilter video_filter;
+    bool color_correct;
+    SDL_Texture* video_texture;   /* filter output, ARGB8888, video_tex_w x video_tex_h */
+    int video_tex_w, video_tex_h;
     SDL_Texture* overlay_texture;
     uint32_t* overlay_buffer;     /* SCREEN_WIDTH * SCREEN_HEIGHT pixels, ARGB8888 */
     bool overlay_dirty;  /* set by overlay producers each frame; cleared by frontend_overlay_clear */
@@ -125,6 +132,8 @@ void frontend_toast_keyed(Frontend* fe, const char* key, ToastKind kind, const c
 void frontend_update_hud(Frontend* fe, uint32_t now_ms);
 /* F4: turns the overlay on or off, (un)registers the line-160 observer, saves prefs. */
 void frontend_toggle_overworld(Frontend* fe, GBA* gba);
+/* Sets the screen filter and color correction and saves them to prefs. */
+void frontend_set_video(Frontend* fe, VideoFilter filter, bool color_correct);
 /* Repaints the overlay when s changed; s = NULL or !s->visible hides it. */
 void frontend_update_overworld(Frontend* fe, const OverworldSnapshot* s);
 void frontend_settings_open(Frontend* fe, GBA* gba);

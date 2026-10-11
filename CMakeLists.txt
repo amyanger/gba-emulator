@@ -149,12 +149,16 @@ set(SOURCES
     src/frontend/rom_picker.c
     src/frontend/toast.c
     src/frontend/prefs.c
+    src/frontend/video_filter.c
+    src/frontend/xbr.c
+    src/frontend/super_xbr.c
     src/frontend/nuzlocke_session.c
     src/frontend/library.c
     src/frontend/library_view.c
     src/frontend/library_run.c
     src/frontend/settings.c
     src/frontend/settings_cheats.c
+    src/frontend/settings_video.c
     src/frontend/hud_draw.c
     src/frontend/overworld_draw.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
@@ -308,11 +312,15 @@ set(LIB_SOURCES
     src/frontend/panel_layout.c
     src/frontend/toast.c
     src/frontend/prefs.c
+    src/frontend/video_filter.c
+    src/frontend/xbr.c
+    src/frontend/super_xbr.c
     src/frontend/nuzlocke_session.c
     src/frontend/library.c
     src/frontend/library_view.c
     src/frontend/settings.c
     src/frontend/settings_cheats.c
+    src/frontend/settings_video.c
     src/frontend/hud_draw.c
     src/frontend/overworld_draw.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
@@ -387,6 +395,7 @@ set(TEST_SOURCES
     tests/test_panel_layout.c
     tests/test_toast.c
     tests/test_prefs.c
+    tests/test_video_filter.c
     tests/test_hud.c
     tests/test_overworld_draw.c
     tests/test_nuzlocke_read.c

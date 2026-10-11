@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "cheat/cheat.h"
 #include "frontend/toast.h"
+#include "frontend/video_filter.h"
 #include "ui/ui_controls.h"
 
 /* The in-app Settings window: a 640x440 pt panel over the dimmed game with a
@@ -43,11 +44,19 @@ typedef struct {
     bool scroll_to_end;
 } SettingsCheatsPage;
 
+/* The frontend copies its values in before drawing and applies them when changed is set. */
+typedef struct {
+    VideoFilter filter;
+    bool color_correct;
+    bool changed;
+} SettingsVideoPage;
+
 typedef struct {
     bool open;
     bool close_requested;           /* the frontend closes it */
     SettingsPage page;
     SettingsCheatsPage cheats;
+    SettingsVideoPage video;
 } Settings;
 
 typedef struct {
@@ -86,5 +95,9 @@ void settings_draw(UiCanvas* c, UiInput* in, Settings* s, SettingsContext* ctx);
 
 /* The Cheats page inside content (points). */
 void settings_cheats_draw(UiCanvas* c, UiInput* in, SettingsCheatsPage* p, SettingsContext* ctx, UiRect content);
+/* The Video page: screen filter and color correction. */
+void settings_video_draw(UiCanvas* c, UiInput* in, SettingsVideoPage* p, UiRect content);
+static inline uint32_t settings_id_filter(uint32_t i) { return ui_id("video-filter", i); }
+#define SETTINGS_ID_COLOR ui_id("video-color", 0)
 
 #endif // SETTINGS_H

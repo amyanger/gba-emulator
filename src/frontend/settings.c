@@ -15,7 +15,7 @@ static const char* const k_coming[SETTINGS_PAGE_COUNT] = {
     "",
     "Rebind keyboard keys and controller buttons.",
     "BIOS file, fast-forward speed, pause when the window loses focus.",
-    "Window scale, fullscreen, pixel look, Emerald Companion at launch.",
+    "",
     "Volume and start muted.",
 };
 
@@ -100,6 +100,8 @@ void settings_draw(UiCanvas* c, UiInput* in, Settings* s, SettingsContext* ctx) 
     UiRect content = {side.x + side.w + PAD, win.y + 16.0f, win.w - side.w - 2 * PAD, win.h - 32.0f};
     if (s->page == SETTINGS_PAGE_CHEATS) {
         settings_cheats_draw(c, in, &s->cheats, ctx, content);
+    } else if (s->page == SETTINGS_PAGE_VIDEO) {
+        settings_video_draw(c, in, &s->video, content);
     } else {
         ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, content.x, content.y, content.w - 40.0f, UI_ALIGN_LEFT, UI_TEXT,
                 k_pages[s->page]);

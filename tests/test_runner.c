@@ -55,6 +55,7 @@ void run_xray_tests(void);
 #endif
 void run_toast_tests(void);
 void run_prefs_tests(void);
+void run_video_filter_tests(void);
 void run_hud_tests(void);
 void run_overworld_draw_tests(void);
 void run_nuzlocke_read_tests(void);
@@ -123,6 +124,7 @@ int main(void) {
 #endif
     RUN_SUITE(run_toast_tests);
     RUN_SUITE(run_prefs_tests);
+    RUN_SUITE(run_video_filter_tests);
     RUN_SUITE(run_hud_tests);
     RUN_SUITE(run_overworld_draw_tests);
     RUN_SUITE(run_nuzlocke_read_tests);

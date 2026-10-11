@@ -184,6 +184,9 @@ src/
     panel_layout.c/h       Window, game and panel rectangles from display density
     overworld_draw.c/h     Overworld X-Ray painter (cones, labels, sparkles), drawn with src/ui
     prefs.c/h              prefs.ini for settings remembered between launches
+    video_filter.c/h       Screen filters and LCD color correction for the game image
+    xbr.c/h                xBR 2x/3x/4x scaler (ported from xBRjs, MIT)
+    super_xbr.c/h          Super xBR 2x scaler (Hyllian, MIT)
     debug.c                Register dumps, instruction tracing (debug builds)
     xray/
       xray.h               X-Ray state struct, public API, notification hooks
@@ -337,3 +340,6 @@ Run it before and after changes to the CPU, PPU, DMA, or timers.
 - [Tonc](https://www.coranac.com/tonc/text/hardware.htm) — GBA hardware programming tutorial
 - [Inter](https://rsms.me/inter/) 4.1: Font for Emerald Companion, under the SIL Open Font License 1.1 (`fonts/Inter-LICENSE.txt`). `tools/embed_font.sh` regenerates `src/ui/font_inter.h` from it.
 - [stb_truetype](https://github.com/nothings/stb): Glyph rasterizer for the panel font, public domain
+- [xBRjs](https://github.com/joseprio/xBRjs) by Josep del Rio: the xBR scaler (algorithm by Hyllian) ported to `src/frontend/xbr.c`, MIT License (notice in the file)
+- Super xBR by Hyllian, via [pixelscalers](https://github.com/janert/pixelscalers): ported to `src/frontend/super_xbr.c`, MIT License (notice in the file)
+- [gba-color](https://github.com/libretro/glsl-shaders/blob/master/handheld/shaders/color/gba-color.glsl) by Pokefan531 and hunterk: the LCD color correction math in `src/frontend/video_filter.c`, public domain

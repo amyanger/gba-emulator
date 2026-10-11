@@ -205,6 +205,36 @@ TEST(settings_full_list_disables_add) {
     ASSERT_EQ(eng.cheat_count, CHEAT_MAX_CHEATS);
 }
 
+TEST(settings_video_filter_and_color) {
+    setup();
+    st.page = SETTINGS_PAGE_VIDEO;
+    draw();
+    ASSERT_TRUE(!st.video.changed);
+    press_key_on(settings_id_filter(VIDEO_FILTER_SMOOTH), UI_KEY_ENTER);
+    ASSERT_EQ(st.video.filter, VIDEO_FILTER_SMOOTH);
+    ASSERT_TRUE(st.video.changed);
+    st.video.changed = false;
+    press_key_on(settings_id_filter(VIDEO_FILTER_SMOOTH), UI_KEY_ENTER);   /* already chosen */
+    ASSERT_TRUE(!st.video.changed);
+    press_key_on(SETTINGS_ID_COLOR, UI_KEY_SPACE);
+    ASSERT_TRUE(st.video.color_correct);
+    ASSERT_TRUE(st.video.changed);
+}
+
+static bool save_preview(const char* path) {
+    uint32_t* out = (uint32_t*)malloc((size_t)SW * SH * 4);
+    if (!out) return false;
+    for (int i = 0; i < SW * SH; i++) {   /* over a mid gray stand-in for the game */
+        uint32_t s = s_px[i], a = s >> 24, bg = 0xFF5F7F6Fu, o = 0xFF000000u;
+        for (int sh = 0; sh < 24; sh += 8)
+            o |= ((((s >> sh) & 0xFF) * a + ((bg >> sh) & 0xFF) * (255 - a) + 127) / 255) << sh;
+        out[i] = o;
+    }
+    bool ok = screenshot_save_argb(out, SW, SH, path);
+    free(out);
+    return ok;
+}
+
 /* SETTINGS_PREVIEW=1 writes settings_preview.png for a visual check. */
 TEST(settings_preview_png) {
     if (!getenv("SETTINGS_PREVIEW")) return;
@@ -219,18 +249,16 @@ TEST(settings_preview_png) {
     cheat_add_raw(&eng, "Walk through walls", &raw, CHEAT_DEV_CODEBREAKER, true, false);
     draw();
     type_into(SETTINGS_ID_PASTE, "Infinite Rare Candy\n82025838 03E7\n");
-    uint32_t* out = (uint32_t*)malloc((size_t)SW * SH * 4);
-    ASSERT_TRUE(out != NULL);
-    for (int i = 0; i < SW * SH; i++) {   /* over a mid gray stand-in for the game */
-        uint32_t s = s_px[i], a = s >> 24, bg = 0xFF5F7F6Fu, o = 0xFF000000u;
-        for (int sh = 0; sh < 24; sh += 8)
-            o |= ((((s >> sh) & 0xFF) * a + ((bg >> sh) & 0xFF) * (255 - a) + 127) / 255) << sh;
-        out[i] = o;
-    }
-    bool ok = screenshot_save_argb(out, SW, SH, "settings_preview.png");
-    free(out);
+    bool ok = save_preview("settings_preview.png");
     remove(ctx.cht_path);
     ASSERT_TRUE(ok);
+
+    setup();
+    st.page = SETTINGS_PAGE_VIDEO;
+    st.video.filter = VIDEO_FILTER_SMOOTH;
+    draw();
+    ASSERT_TRUE(save_preview("settings_video_preview.png"));
+    remove(ctx.cht_path);
 }
 
 void run_settings_tests(void) {
@@ -247,5 +275,6 @@ void run_settings_tests(void) {
     RUN_TEST(settings_cheats_toggle_and_broken_row);
     RUN_TEST(settings_escape_and_outside_click_close);
     RUN_TEST(settings_full_list_disables_add);
+    RUN_TEST(settings_video_filter_and_color);
     RUN_TEST(settings_preview_png);
 }

@@ -443,6 +443,7 @@ void frontend_destroy(Frontend* fe) {
     if (fe->hud_texture) SDL_DestroyTexture(fe->hud_texture);
     free(fe->hud_buffer);
     fe->hud_buffer = NULL;
+    if (fe->video_texture) SDL_DestroyTexture(fe->video_texture);
     if (fe->texture) SDL_DestroyTexture(fe->texture);
     if (fe->renderer) SDL_DestroyRenderer(fe->renderer);
     if (fe->window) SDL_DestroyWindow(fe->window);
@@ -451,15 +452,51 @@ void frontend_destroy(Frontend* fe) {
     SDL_Quit();
 }
 
+void frontend_set_video(Frontend* fe, VideoFilter filter, bool color_correct) {
+    fe->video_filter = filter < VIDEO_FILTER_COUNT ? filter : VIDEO_FILTER_SHARP;
+    fe->color_correct = color_correct;
+    if (fe->prefs) {
+        prefs_set(fe->prefs, "video_filter", video_filter_name(fe->video_filter));
+        prefs_set_bool(fe->prefs, "color_correct", fe->color_correct);
+        if (!prefs_save(fe->prefs)) LOG_WARN("Couldn't save preferences to %s", fe->prefs->path);
+    }
+}
+
+/* Draws the filtered game into dst. False when the filter is off or its texture failed,
+ * so the caller draws the plain texture instead. */
+static bool frontend_draw_video(Frontend* fe, const uint16_t* framebuffer, const SDL_Rect* dst) {
+    if (!video_filter_active(fe->video_filter, fe->color_correct)) return false;
+    VideoFrame fr;
+    bool changed = video_filter_run(framebuffer, fe->video_filter, fe->color_correct, dst->w / SCREEN_WIDTH, &fr);
+    if (!fe->video_texture || fe->video_tex_w != fr.w || fe->video_tex_h != fr.h) {
+        if (fe->video_texture) SDL_DestroyTexture(fe->video_texture);
+        fe->video_tex_w = fe->video_tex_h = 0;
+        fe->video_texture = SDL_CreateTexture(fe->renderer, SDL_PIXELFORMAT_ARGB8888,
+                                              SDL_TEXTUREACCESS_STREAMING, fr.w, fr.h);
+        if (!fe->video_texture) {
+            LOG_ERROR("Failed to create the filter texture: %s", SDL_GetError());
+            return false;
+        }
+        fe->video_tex_w = fr.w;
+        fe->video_tex_h = fr.h;
+        changed = true;
+    }
+    if (changed) SDL_UpdateTexture(fe->video_texture, NULL, fr.px, fr.w * (int)sizeof(uint32_t));
+    SDL_SetTextureScaleMode(fe->video_texture, fr.linear ? SDL_ScaleModeLinear : SDL_ScaleModeNearest);
+    SDL_RenderCopy(fe->renderer, fe->video_texture, NULL, dst);
+    return true;
+}
+
 void frontend_present_frame(Frontend* fe, uint16_t* framebuffer) {
-    SDL_UpdateTexture(fe->texture, NULL, framebuffer,
-                      SCREEN_WIDTH * sizeof(uint16_t));
     /* Letterbox areas use the panel background so the window reads as one surface. */
     SDL_SetRenderDrawColor(fe->renderer, (UI_BG >> 16) & 0xFF, (UI_BG >> 8) & 0xFF,
                            UI_BG & 0xFF, 0xFF);
     SDL_RenderClear(fe->renderer);
     SDL_Rect game_rect = {fe->game_rect.x, fe->game_rect.y, fe->game_rect.w, fe->game_rect.h};
-    SDL_RenderCopy(fe->renderer, fe->texture, NULL, &game_rect);
+    if (!frontend_draw_video(fe, framebuffer, &game_rect)) {
+        SDL_UpdateTexture(fe->texture, NULL, framebuffer, SCREEN_WIDTH * sizeof(uint16_t));
+        SDL_RenderCopy(fe->renderer, fe->texture, NULL, &game_rect);
+    }
     if (fe->ow_shown && fe->ow_texture) SDL_RenderCopy(fe->renderer, fe->ow_texture, NULL, &game_rect);
 
     if (fe->overlay_dirty) {
@@ -659,8 +696,15 @@ void frontend_update_settings(Frontend* fe, GBA* gba) {
         UiCanvas canvas;
         ui_canvas_init(&canvas, fe->settings_buffer, fe->settings_px_w, fe->settings_px_h, fe->settings_density);
         ui_input_frame_begin(in);
+        fe->settings.video.filter = fe->video_filter;
+        fe->settings.video.color_correct = fe->color_correct;
         settings_draw(&canvas, in, &fe->settings, &fe->settings_ctx);
         ui_input_frame_end(in);
+        if (fe->settings.video.changed) {
+            fe->settings.video.changed = false;
+            frontend_set_video(fe, fe->settings.video.filter, fe->settings.video.color_correct);
+            settle = true;   /* redraw so the buttons show the new choice */
+        }
         SDL_UpdateTexture(fe->settings_texture, NULL, fe->settings_buffer, fe->settings_px_w * (int)sizeof(uint32_t));
         fe->settings_dirty = settle;
         fe->settings_blink = text_focus ? (in->now_ms - in->caret_ms) / UI_CARET_MS : 0;

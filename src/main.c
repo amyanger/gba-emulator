@@ -14,6 +14,7 @@
 #include "frontend/library_run.h"
 #include "frontend/overworld_draw.h"
 #include "frontend/prefs.h"
+#include "frontend/video_filter.h"
 #include "game/game.h"
 #include "game/overworld.h"
 #include "headless/headless.h"
@@ -119,6 +120,9 @@ static void print_usage(const char* prog) {
     printf("  --library-out <file>   Render the library for --library-folder to a PNG and exit (no ROM)\n");
     printf("  --xray-out <file>      Headless: render the Hardware X-Ray window to a PNG after the run\n");
     printf("  --overworld-out <f>    Headless: final frame at 3x with the Overworld X-Ray drawn, as PNG\n");
+    printf("  --video-filter <name>  Screen filter, sharp|smooth|soft (overrides Settings for this run)\n");
+    printf("  --color-correct        LCD color correction (overrides Settings for this run)\n");
+    printf("  --video-out <file>     Headless: final frame through the screen filter for --scale, as PNG\n");
     printf("  --gift-audit <file>    Headless: list every NPC gift tag in the ROM (Emerald only)\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
@@ -161,6 +165,9 @@ int main(int argc, char* argv[]) {
     const char* panel_select_arg = NULL;
     const char* xray_out_path = NULL;
     const char* overworld_out_path = NULL;
+    const char* video_filter_arg = NULL;
+    const char* video_out_path = NULL;
+    bool color_correct_arg = false;
     const char* nuzlocke_file = NULL;
     const char* gift_audit_path = NULL;
     const char* library_folder = NULL;
@@ -214,6 +221,12 @@ int main(int argc, char* argv[]) {
             xray_out_path = argv[++i];
         } else if (strcmp(argv[i], "--overworld-out") == 0 && i + 1 < argc) {
             overworld_out_path = argv[++i];
+        } else if (strcmp(argv[i], "--video-filter") == 0 && i + 1 < argc) {
+            video_filter_arg = argv[++i];
+        } else if (strcmp(argv[i], "--color-correct") == 0) {
+            color_correct_arg = true;
+        } else if (strcmp(argv[i], "--video-out") == 0 && i + 1 < argc) {
+            video_out_path = argv[++i];
         } else if (strcmp(argv[i], "--library-folder") == 0 && i + 1 < argc) {
             library_folder = argv[++i];
         } else if (strcmp(argv[i], "--library-out") == 0 && i + 1 < argc) {
@@ -266,6 +279,15 @@ int main(int argc, char* argv[]) {
     }
     if (overworld_out_path && !headless) {
         LOG_ERROR("--overworld-out requires --headless");
+        return 1;
+    }
+    if (video_out_path && !headless) {
+        LOG_ERROR("--video-out requires --headless");
+        return 1;
+    }
+    VideoFilter video_filter = VIDEO_FILTER_SHARP;
+    if (video_filter_arg && !video_filter_from_name(video_filter_arg, &video_filter)) {
+        LOG_ERROR("--video-filter must be sharp, smooth or soft (got %s)", video_filter_arg);
         return 1;
     }
 #ifndef ENABLE_XRAY
@@ -615,6 +637,15 @@ int main(int argc, char* argv[]) {
                 free(px);
             }
         }
+        if (rc == 0 && video_out_path) {
+            /* The filter's own output (its factor for --scale), before SDL stretches it. */
+            VideoFrame fr;
+            video_filter_run(gba.ppu.framebuffer, video_filter, color_correct_arg, scale, &fr);
+            if (!screenshot_save_argb(fr.px, fr.w, fr.h, video_out_path)) {
+                LOG_ERROR("Failed to write --video-out file: %s", video_out_path);
+                rc = 1;
+            }
+        }
 #ifdef ENABLE_XRAY
         if (rc == 0 && xray_out_path) {
             xray_capture_ppu_layers(&gba.ppu, &s_xray_state);
@@ -671,6 +702,10 @@ int main(int argc, char* argv[]) {
     fe.prefs = &s_prefs;
     fe.ow_feed = s_game.profile ? &s_ow : NULL;
     fe.nuz = &s_nuz;
+    VideoFilter pref_filter = VIDEO_FILTER_SHARP;
+    video_filter_from_name(prefs_get(&s_prefs, "video_filter"), &pref_filter);
+    fe.video_filter = video_filter_arg ? video_filter : pref_filter;
+    fe.color_correct = color_correct_arg || prefs_get_bool(&s_prefs, "color_correct", false);
     if (fe.ow_feed && prefs_get_bool(&s_prefs, "overworld_xray", false)) {
         fe.overworld_xray = true;
         gba_set_vblank_observer(&gba, overworld_capture, &s_ow);

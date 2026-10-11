@@ -33,6 +33,7 @@ The apps aren't signed with a paid certificate, so macOS and Windows ask you to 
 - **Save states and rewind**: 10 save-state slots, plus hold Backspace to rewind up to 60 seconds.
 - **[Cheats](docs/usage.md#cheats)**: paste CodeBreaker, GameShark or Action Replay codes as found online. Your save is backed up before any cheat runs.
 - **[Link cable](docs/usage.md#link-cable)**: two windows on the same machine can trade and battle.
+- **[Screen filters](docs/usage.md#screen-filters)**: smooth out jagged pixel edges and match the colors of a real GBA screen.
 - **Fast-forward**, frame advance, screenshots and fullscreen.
 
 Emerald Companion and Overworld X-Ray only work with the original, unmodified Pokemon Emerald (US/English) ROM. Every other game still runs normally.
