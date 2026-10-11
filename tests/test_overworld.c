@@ -597,7 +597,45 @@ TEST(ow_offscreen_trainer_kept_when_cone_reaches_screen) {
     ASSERT_EQ(s.trainer_count, 0);
 }
 
+/* Item ball: object slot 3, localId 8, template 1 with a finditem script. */
+static void put_ball(uint16_t item) {
+    put8(EVENTS + 0x00, 2);
+    put_obj(3, false, 0, 8, 0, 1, 18, 25, 1, 0, 6);
+    put_sprite(6, 128, 40);
+    put8(SB1 + 0xC70 + 0x18, 8);
+    put32(SB1 + 0xC70 + 0x18 + 0x10, 0x08002100);
+    const uint8_t bytes[12] = {0x1A, 0x00, 0x80, (uint8_t)item, (uint8_t)(item >> 8),
+                               0x1A, 0x01, 0x80, 0x01, 0x00, 0x09, 0x01};
+    memcpy(at(0x08002100), bytes, sizeof(bytes));
+}
+
+TEST(ow_item_ball_named) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put_ball(68);
+    put_name(ITEMS + 68 * 44, "RARE CANDY");
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.marker_count, 1);
+    ASSERT_EQ(s.markers[0].kind, OW_MARK_ITEM_BALL);
+    ASSERT_EQ(s.markers[0].x, 128);
+    ASSERT_EQ(s.markers[0].y, 40);
+    ASSERT_STR_EQ(s.markers[0].name[0], "RARE CANDY");
+}
+
+TEST(ow_ball_sprite_with_other_script_not_tagged) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put_ball(68);
+    put8(0x08002100 + 11, 0x00);          /* callstd 0 (a gift), not finditem */
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_EQ(s.marker_count, 0);
+}
+
 void run_overworld_tests(void) {
+    RUN_TEST(ow_item_ball_named);
+    RUN_TEST(ow_ball_sprite_with_other_script_not_tagged);
     RUN_TEST(ow_offscreen_trainer_kept_when_cone_reaches_screen);
     RUN_TEST(ow_sight_range_255_terminates);
     RUN_TEST(ow_hidden_item_on_screen);

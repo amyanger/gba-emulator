@@ -132,8 +132,8 @@ static uint32_t map_header_rom(const OwCtx* c, uint8_t group, uint8_t num) {
 }
 
 /* GetObjectEventTemplateByLocalIdAndMap: SaveBlock1 copies for the current map,
- * the ROM header otherwise. Returns the script pointer, 0 when not found. */
-static uint32_t template_script(const OwCtx* c, const uint8_t* o) {
+ * the ROM header otherwise. Returns the template's address, 0 when not found. */
+static uint32_t template_addr(const OwCtx* c, const uint8_t* o) {
     uint8_t lid = o[OBJ_LOCAL_ID], group = o[OBJ_MAP_GROUP], num = o[OBJ_MAP_NUM], n = 0;
     uint32_t events = 0, base = 0, count;
     if (group == c->loc_group && num == c->loc_num) {
@@ -151,12 +151,27 @@ static uint32_t template_script(const OwCtx* c, const uint8_t* o) {
         count = n;
     }
     for (uint32_t i = 0; i < count; i++) {
-        uint32_t t = base + i * TEMPLATE_SIZE, script = 0;
+        uint32_t t = base + i * TEMPLATE_SIZE;
         uint8_t t_lid = 0;
-        if (!game_mem_read8(c->m, t, &t_lid) || t_lid != lid) continue;
-        return game_mem_read32(c->m, t + TEMPLATE_SCRIPT, &script) ? script : 0;
+        if (game_mem_read8(c->m, t, &t_lid) && t_lid == lid) return t;
     }
     return 0;
+}
+
+static uint32_t template_script(const OwCtx* c, const uint8_t* o) {
+    uint32_t t = template_addr(c, o), script = 0;
+    return t && game_mem_read32(c->m, t + TEMPLATE_SCRIPT, &script) ? script : 0;
+}
+
+/* The object's tile top-left from its sprite: currentCoords is already the
+ * destination while it steps. */
+static bool object_screen_pos(const OwCtx* c, const uint8_t* o, int16_t* x, int16_t* y) {
+    uint8_t spr = o[OBJ_SPRITE], sp[SPR_SIZE];
+    if (spr >= SPR_COUNT || !game_mem_copy(c->m, c->p->sprites + (uint32_t)spr * SPR_SIZE, sp, SPR_SIZE))
+        return false;
+    *x = (int16_t)(s16_at(sp + SPR_X) + s16_at(sp + SPR_X2) + c->spr_off_x - 8);
+    *y = (int16_t)(s16_at(sp + SPR_Y) + s16_at(sp + SPR_Y2) + c->spr_off_y - (int8_t)sp[SPR_CTC_Y] - 16);
+    return true;
 }
 
 static void class_name(const OwCtx* c, uint16_t id, char* out) {
@@ -252,18 +267,14 @@ static uint8_t sight_clear(const OwCtx* c, int self, OwDir d, uint8_t range) {
 
 static void read_trainer(const OwCtx* c, int i, OverworldSnapshot* s) {
     const uint8_t* o = c->objs[i];
-    uint8_t type = o[OBJ_TRAINER_TYPE], range = o[OBJ_RANGE], spr = o[OBJ_SPRITE];
-    uint8_t sp[SPR_SIZE], head[4];
+    uint8_t type = o[OBJ_TRAINER_TYPE], range = o[OBJ_RANGE];
+    uint8_t head[4];
     OwTrainer t;
 
     if ((type != TRAINER_TYPE_NORMAL && type != TRAINER_TYPE_BURIED) || range == 0) return;
-    if (spr >= SPR_COUNT || s->trainer_count >= OW_MAX_TRAINERS) return;
-    if (!game_mem_copy(c->m, c->p->sprites + (uint32_t)spr * SPR_SIZE, sp, SPR_SIZE)) return;
-
+    if (s->trainer_count >= OW_MAX_TRAINERS) return;
     memset(&t, 0, sizeof(t));
-    /* The sprite, not currentCoords: that is already the destination mid-step. */
-    t.x = (int16_t)(s16_at(sp + SPR_X) + s16_at(sp + SPR_X2) + c->spr_off_x - 8);
-    t.y = (int16_t)(s16_at(sp + SPR_Y) + s16_at(sp + SPR_Y2) + c->spr_off_y - (int8_t)sp[SPR_CTC_Y] - 16);
+    if (!object_screen_pos(c, o, &t.x, &t.y)) return;
 
     uint8_t face = o[OBJ_DIRS] & 0x0F;
     t.facing = (face >= 1 && face <= 4) ? (uint8_t)(face - 1) : OW_DIR_DOWN;
@@ -289,18 +300,6 @@ static void read_trainer(const OwCtx* c, int i, OverworldSnapshot* s) {
     memcpy(&s->trainers[s->trainer_count++], &t, sizeof(t));
 }
 
-static bool field_visible(const OwCtx* c) {
-    uint32_t cb2 = 0;
-    uint8_t fade = 0, lock = 0;
-    if (!game_mem_read32(c->m, c->p->main_callback2, &cb2) || cb2 != c->p->cb2_overworld) return false;
-    if (!game_mem_read8(c->m, c->p->palette_fade_byte, &fade) || (fade & 0x80)) return false;
-    if (!game_mem_read8(c->m, c->p->lock_field_controls, &lock) || lock) return false;
-    if (c->loc_group == MAPGRP_FRONTIER &&
-        (c->loc_num == MAP_PYRAMID_FLOOR || (c->loc_num >= MAP_HILL_FIRST && c->loc_num <= MAP_HILL_LAST)))
-        return false;
-    return true;
-}
-
 static void item_name(const OwCtx* c, uint16_t id, char* out) {
     uint8_t raw[OW_ITEM_NAME_LEN];
     out[0] = '\0';
@@ -317,6 +316,35 @@ static OwMarker* add_marker(OverworldSnapshot* s, uint8_t kind, int16_t x, int16
     mk->x = x;
     mk->y = y;
     return mk;
+}
+
+#define FINDITEM_LEN 12
+static void read_item_ball(const OwCtx* c, const uint8_t* o, OverworldSnapshot* s) {
+    uint32_t script = template_script(c, o);
+    uint8_t b[FINDITEM_LEN];
+    int16_t x, y;
+    if (script < 0x08000000u || !game_mem_copy(c->m, script, b, sizeof(b))) return;
+    /* finditem: setorcopyvar 0x8000 item; setorcopyvar 0x8001 qty; callstd STD_FIND_ITEM */
+    if (b[0] != 0x1A || b[1] != 0x00 || b[2] != 0x80 || b[5] != 0x1A || b[6] != 0x01 || b[7] != 0x80 ||
+        b[10] != 0x09 || b[11] != 0x01)
+        return;
+    if (!object_screen_pos(c, o, &x, &y) || !on_screen(x, y)) return;
+    OwMarker* mk = add_marker(s, OW_MARK_ITEM_BALL, x, y);
+    if (!mk) return;
+    mk->name_count = 1;
+    item_name(c, (uint16_t)(b[3] | (b[4] << 8)), mk->name[0]);
+}
+
+static bool field_visible(const OwCtx* c) {
+    uint32_t cb2 = 0;
+    uint8_t fade = 0, lock = 0;
+    if (!game_mem_read32(c->m, c->p->main_callback2, &cb2) || cb2 != c->p->cb2_overworld) return false;
+    if (!game_mem_read8(c->m, c->p->palette_fade_byte, &fade) || (fade & 0x80)) return false;
+    if (!game_mem_read8(c->m, c->p->lock_field_controls, &lock) || lock) return false;
+    if (c->loc_group == MAPGRP_FRONTIER &&
+        (c->loc_num == MAP_PYRAMID_FLOOR || (c->loc_num >= MAP_HILL_FIRST && c->loc_num <= MAP_HILL_LAST)))
+        return false;
+    return true;
 }
 
 static void add_hidden(const OwCtx* c, uint32_t events, int32_t ox, int32_t oy, OverworldSnapshot* s) {
@@ -415,8 +443,10 @@ void overworld_read(const GameProfile* p, const GameMem* m, OverworldSnapshot* o
     for (int i = 0; i < OBJ_COUNT; i++)
         c.obj_ok[i] = game_mem_copy(m, p->object_events + (uint32_t)i * OBJ_SIZE, c.objs[i], OBJ_SIZE);
     for (int i = 0; i < OBJ_COUNT; i++)
-        if (c.obj_ok[i] && (c.objs[i][OBJ_FLAGS0] & 1) && !(c.objs[i][OBJ_FLAGS2] & 1))
+        if (c.obj_ok[i] && (c.objs[i][OBJ_FLAGS0] & 1) && !(c.objs[i][OBJ_FLAGS2] & 1)) {
             read_trainer(&c, i, out);
+            read_item_ball(&c, c.objs[i], out);
+        }
     read_hidden(&c, out);
 }
 
