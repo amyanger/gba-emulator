@@ -884,6 +884,87 @@ TEST(bitmap_mode_hides_sprite_tiles_below_512) {
     ASSERT_EQ_HEX(render_bitmap_priority(3, 3, 0, 1),   BITMAP_BG_COLOR);
 }
 
+static GBA s_eg;
+
+/* Mode 0, OBJ on, 1D mapping, every OAM entry disabled, black backdrop. */
+static PPU* extra_setup(void) {
+    gba_init(&s_eg);
+    PPU* ppu = &s_eg.ppu;
+    ppu->dispcnt = (uint16_t)((1u << 12) | (1u << 6));
+    memset(ppu->palette_ram, 0, 0x400);
+    for (int i = 0; i < 128; i++) {
+        memset(ppu->oam + 8 * i, 0, 8);
+        ppu->oam[8 * i + 1] = 0x02;            /* attr0 bits 9-8 = 2: disabled */
+    }
+    return ppu;
+}
+
+/* OAM entry idx: 8x8 square at (x, y), priority 2, tile 0 filled with index 1 = colour. */
+static void extra_put_square_sprite(PPU* ppu, int idx, int x, int y, uint16_t colour) {
+    memset(ppu->vram + 0x10000, 0x11, 32);
+    ppu->palette_ram[0x200 + 2] = (uint8_t)colour;
+    ppu->palette_ram[0x200 + 3] = (uint8_t)(colour >> 8);
+    uint16_t a0 = (uint16_t)(y & 0xFF), a1 = (uint16_t)(x & 0x1FF), a2 = (uint16_t)(2u << 10);
+    uint8_t* o = ppu->oam + 8 * idx;
+    o[0] = (uint8_t)a0; o[1] = (uint8_t)(a0 >> 8);
+    o[2] = (uint8_t)a1; o[3] = (uint8_t)(a1 >> 8);
+    o[4] = (uint8_t)a2; o[5] = (uint8_t)(a2 >> 8);
+}
+
+TEST(extra_obj_draws_and_masks) {
+    PPU* ppu = extra_setup();   /* OBJ enabled, no OAM sprites, backdrop black */
+    static uint8_t px[32 * 32];
+    memset(px, 0, sizeof(px));
+    px[0] = 1;
+    ppu->extra_obj[0] = (PpuExtraObj){.on = true, .x = 10, .y = 0, .w = 32, .h = 32, .priority = 2,
+                                      .slot = 128, .pixels = px, .pal = {0, 0x001F}};
+    ppu->vcount = 0;
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[10], 0x001F);
+    ASSERT_EQ_HEX(ppu->framebuffer[11], 0x0000);
+    ppu->extra_obj[0].on = false;
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[10], 0x0000);
+}
+
+TEST(extra_obj_slot_orders_against_oam) {
+    PPU* ppu = extra_setup();
+    extra_put_square_sprite(ppu, 5, 10, 0, 0x7C00);   /* OAM entry 5: 8x8 at (10,0), prio 2, colour blue */
+    static uint8_t px[8 * 8];
+    memset(px, 1, sizeof(px));
+    ppu->extra_obj[0] = (PpuExtraObj){.on = true, .x = 10, .y = 0, .w = 8, .h = 8, .priority = 2,
+                                      .slot = 5, .pixels = px, .pal = {0, 0x001F}};
+    ppu->vcount = 0;
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[10], 0x7C00);      /* entry 5 in front of slot 5 */
+    ppu->extra_obj[0].slot = 6;
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[10], 0x7C00);      /* entry 5 drawn after slot 6 */
+    ppu->extra_obj[0].slot = 4;
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[10], 0x001F);      /* slot 4 is drawn after entry 5 */
+    ppu->extra_obj[0].slot = -1;
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[10], 0x001F);
+}
+
+TEST(extra_obj_respects_priority_and_window) {
+    PPU* ppu = extra_setup();
+    static uint8_t px[8 * 8];
+    memset(px, 1, sizeof(px));
+    ppu->extra_obj[0] = (PpuExtraObj){.on = true, .x = 0, .y = 0, .w = 8, .h = 8, .priority = 1,
+                                      .slot = -1, .pixels = px, .pal = {0, 0x001F}};
+    ppu->dispcnt |= (1u << 13);          /* WIN0 on */
+    ppu->win_h[0] = (uint16_t)((0 << 8) | 4);   /* x 0..3 */
+    ppu->win_v[0] = (uint16_t)((0 << 8) | 160);
+    ppu->winin = 0x0000;                 /* inside WIN0: nothing */
+    ppu->winout = 0x0010;                /* outside: OBJ only */
+    ppu->vcount = 0;
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[2], 0x0000);   /* masked by window */
+    ASSERT_EQ_HEX(ppu->framebuffer[5], 0x001F);
+}
+
 /* Suite registration (called from test_runner.c). */
 void run_ppu_tests(void) {
     TEST_SUITE("ppu");
@@ -924,4 +1005,7 @@ void run_ppu_tests(void) {
     RUN_TEST(mode4_sprite_behind_higher_priority_bg2);
     RUN_TEST(mode4_sprite_over_equal_or_lower_priority_bg2);
     RUN_TEST(bitmap_mode_hides_sprite_tiles_below_512);
+    RUN_TEST(extra_obj_draws_and_masks);
+    RUN_TEST(extra_obj_slot_orders_against_oam);
+    RUN_TEST(extra_obj_respects_priority_and_window);
 }

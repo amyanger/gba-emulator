@@ -113,6 +113,28 @@ static bool obj_texcoord(int32_t px, int32_t local_y, bool affine,
     return true;
 }
 
+static void extra_obj_render(PPU* ppu, const PpuExtraObj* e) {
+    int32_t local_y = (int32_t)ppu->vcount - e->y;
+    if (local_y < 0 || local_y >= e->h) return;
+    const uint8_t* row = e->pixels + (uint32_t)local_y * e->w;
+    for (int32_t px = 0; px < e->w; px++) {
+        int32_t sx = e->x + px;
+        if (sx < 0 || sx >= SCREEN_WIDTH || row[px] == 0) continue;
+        if (ppu_push_pixel(ppu, (uint32_t)sx, e->pal[row[px] & 15], 4)) {
+            ppu->obj_mosaic[sx] = false;
+            ppu->obj_semitransparent[sx] = false;
+        }
+    }
+}
+
+/* Extra OBJs of this priority whose slot equals `slot`, in list order. */
+static void extra_objs_at(PPU* ppu, int priority, int32_t slot) {
+    for (int k = 0; k < PPU_EXTRA_OBJ_MAX; k++) {
+        const PpuExtraObj* e = &ppu->extra_obj[k];
+        if (e->on && e->pixels && e->priority == priority && e->slot == slot) extra_obj_render(ppu, e);
+    }
+}
+
 // Render all sprites whose OAM priority field matches the given priority level.
 // Iterates OAM entries from 127 down to 0 so that lower-numbered entries
 // overwrite higher-numbered ones (lower index = higher display priority among
@@ -126,7 +148,9 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
 
     uint16_t scanline = ppu->vcount;
 
+    extra_objs_at(ppu, priority, 128);
     for (int32_t i = OAM_ENTRY_COUNT - 1; i >= 0; i--) {
+        extra_objs_at(ppu, priority, i);
         uint32_t oam_base = (uint32_t)i * OAM_ENTRY_SIZE;
 
         // Read OAM attributes (little-endian)
@@ -260,6 +284,8 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
             }
         }
     }
+
+    extra_objs_at(ppu, priority, -1);
 }
 
 // Render all sprites for the current scanline across all priority levels.

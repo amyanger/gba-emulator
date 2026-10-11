@@ -83,6 +83,9 @@ struct PPU {
 
     // Cycle tracking
     uint32_t cycle_counter;
+
+    // Not emulated state (see PpuExtraObj); the frontend sets these each frame.
+    PpuExtraObj extra_obj[PPU_EXTRA_OBJ_MAX];
 };
 typedef struct PPU PPU;
 
