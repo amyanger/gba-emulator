@@ -23,6 +23,7 @@ void run_cheat_report_tests(void);
 void run_cheat_session_tests(void);
 void run_ui_controls_tests(void);
 void run_settings_tests(void);
+void run_frame_pacer_tests(void);
 void run_apu_tests(void);
 void run_audio_out_tests(void);
 void run_ppu_tests(void);
@@ -93,6 +94,7 @@ int main(void) {
     RUN_SUITE(run_cheat_session_tests);
     RUN_SUITE(run_ui_controls_tests);
     RUN_SUITE(run_settings_tests);
+    RUN_SUITE(run_frame_pacer_tests);
     RUN_SUITE(run_apu_tests);
     RUN_SUITE(run_audio_out_tests);
     RUN_SUITE(run_ppu_tests);

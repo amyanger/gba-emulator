@@ -14,6 +14,9 @@ bool ui_button(UiCanvas* c, UiInput* in, uint32_t id, UiRect r, const char* labe
                bool primary);
 /* Draws a switch at the left of r; the whole rect is clickable. True when flipped. */
 bool ui_toggle(UiCanvas* c, UiInput* in, uint32_t id, UiRect r, bool* on, bool enabled);
+/* Horizontal slider across r. Click or drag sets *value, snapped to step from min; Left/Right step it when focused. True when *value changed. */
+bool ui_slider(UiCanvas* c, UiInput* in, uint32_t id, UiRect r, int32_t* value, int32_t min, int32_t max,
+               int32_t step);
 bool ui_sidebar_item(UiCanvas* c, UiInput* in, uint32_t id, UiRect r, const char* label, bool selected);
 /* A small rounded label that acts like a button (opens a pop-up). */
 bool ui_chip(UiCanvas* c, UiInput* in, uint32_t id, UiRect r, const char* label, uint32_t color);

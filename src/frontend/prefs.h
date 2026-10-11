@@ -9,7 +9,7 @@
 
 #define PREFS_MAX      32
 #define PREFS_KEY_LEN  32
-#define PREFS_VAL_LEN  64
+#define PREFS_VAL_LEN  1024
 #define PREFS_PATH_LEN 1024
 
 typedef struct { char key[PREFS_KEY_LEN]; char val[PREFS_VAL_LEN]; } PrefsEntry;

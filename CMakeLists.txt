@@ -142,6 +142,7 @@ set(SOURCES
     src/ui/ui_controls.c
     src/frontend/frontend.c
     src/frontend/audio_out.c
+    src/frontend/frame_pacer.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
     src/frontend/slot_picker.c
@@ -160,6 +161,9 @@ set(SOURCES
     src/frontend/settings.c
     src/frontend/settings_cheats.c
     src/frontend/settings_video.c
+    src/frontend/settings_audio.c
+    src/frontend/settings_general.c
+    src/frontend/settings_controls.c
     src/frontend/hud_draw.c
     src/frontend/overworld_draw.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
@@ -312,6 +316,7 @@ set(LIB_SOURCES
     src/frontend/game_panel.c
     src/frontend/panel_layout.c
     src/frontend/audio_out.c
+    src/frontend/frame_pacer.c
     src/frontend/toast.c
     src/frontend/prefs.c
     src/frontend/video_filter.c
@@ -323,6 +328,9 @@ set(LIB_SOURCES
     src/frontend/settings.c
     src/frontend/settings_cheats.c
     src/frontend/settings_video.c
+    src/frontend/settings_audio.c
+    src/frontend/settings_general.c
+    src/frontend/settings_controls.c
     src/frontend/hud_draw.c
     src/frontend/overworld_draw.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
@@ -395,6 +403,7 @@ set(TEST_SOURCES
     tests/test_ui_widgets.c
     tests/test_ui_controls.c
     tests/test_settings.c
+    tests/test_frame_pacer.c
     tests/test_panel_layout.c
     tests/test_toast.c
     tests/test_prefs.c

@@ -219,6 +219,52 @@ TEST(ui_keys_blocked_while_popup_open) {
     ASSERT_TRUE(!run_button());
 }
 
+TEST(ui_slider_click_sets_and_snaps) {
+    /* r spans x 100..300; knob is 14 pt, so the value span is 107..293. */
+    UiRect r = {100, 50, 200, 20};
+    int32_t v = 0;
+    memset(&in, 0, sizeof(in));
+    mouse(200, 60, true);                 /* middle */
+    frame_begin();
+    bool changed = ui_slider(&cv, &in, ui_id("s", 0), r, &v, 0, 100, 5);
+    frame_end();
+    ASSERT_TRUE(changed);
+    ASSERT_EQ(v, 50);
+    mouse(1000, 60, true);                /* drag past the end clamps */
+    frame_begin();
+    ui_slider(&cv, &in, ui_id("s", 0), r, &v, 0, 100, 5);
+    frame_end();
+    ASSERT_EQ(v, 100);
+    mouse(1000, 60, false);
+    frame_begin();
+    ui_slider(&cv, &in, ui_id("s", 0), r, &v, 0, 100, 5);
+    frame_end();
+}
+
+TEST(ui_slider_arrows_step_and_clamp) {
+    UiRect r = {100, 50, 200, 20};
+    int32_t v = 5;
+    memset(&in, 0, sizeof(in));
+    in.focus = ui_id("s", 1);
+    ui_input_key(&in, UI_KEY_LEFT);
+    frame_begin();
+    ASSERT_TRUE(ui_slider(&cv, &in, ui_id("s", 1), r, &v, 0, 100, 5));
+    frame_end();
+    ASSERT_EQ(v, 0);
+    in.focus = ui_id("s", 1);
+    ui_input_key(&in, UI_KEY_LEFT);       /* already at min: no change */
+    frame_begin();
+    ASSERT_TRUE(!ui_slider(&cv, &in, ui_id("s", 1), r, &v, 0, 100, 5));
+    frame_end();
+    ASSERT_EQ(v, 0);
+    in.focus = ui_id("s", 1);
+    ui_input_key(&in, UI_KEY_RIGHT);
+    frame_begin();
+    ui_slider(&cv, &in, ui_id("s", 1), r, &v, 0, 100, 5);
+    frame_end();
+    ASSERT_EQ(v, 5);
+}
+
 void run_ui_controls_tests(void) {
     TEST_SUITE("ui_controls");
     RUN_TEST(ui_button_click_needs_press_and_release_inside);
@@ -236,4 +282,6 @@ void run_ui_controls_tests(void) {
     RUN_TEST(ui_popup_survives_tap_that_opened_it);
     RUN_TEST(ui_popup_stays_on_canvas);
     RUN_TEST(ui_keys_blocked_while_popup_open);
+    RUN_TEST(ui_slider_click_sets_and_snaps);
+    RUN_TEST(ui_slider_arrows_step_and_clamp);
 }

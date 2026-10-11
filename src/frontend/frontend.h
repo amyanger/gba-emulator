@@ -10,6 +10,7 @@
 #include "frontend/audio_out.h"
 #include "frontend/settings.h"
 #include "frontend/prefs.h"
+#include "frontend/frame_pacer.h"
 #include "frontend/video_filter.h"
 #include "game/overworld.h"
 
@@ -24,6 +25,8 @@ typedef struct Frontend {
      * keeps uploading the BGR555 framebuffer to texture as is. */
     VideoFilter video_filter;
     bool color_correct;
+    int32_t volume;       /* Settings > Audio, 0-100 */
+    bool start_muted;
     SDL_Texture* video_texture;   /* filter output, ARGB8888, video_tex_w x video_tex_h */
     int video_tex_w, video_tex_h;
     SDL_Texture* overlay_texture;
@@ -98,7 +101,14 @@ typedef struct Frontend {
     bool step_pending;       // true if frame advance just requested a single-step frame
     bool input_display_enabled; // F3 — mini-GBA HUD showing held buttons
     bool muted;              // M key / --mute flag — drop audio, keep emulation running
-    uint16_t controller_keys;  // bitmask of keys held by gamepad (avoids clobbering keyboard)
+    /* Held masks per source, ORed into KEYINPUT by frontend_apply_input.
+     * kb_keys/pad_keys carry turbo bits in 10-11 (KEYMAP_TURBO_A/B). */
+    uint16_t kb_keys;
+    uint16_t pad_keys;
+    uint16_t stick_keys;
+    uint32_t turbo_frame;    // advanced once per emulated frame; drives the turbo pulse
+    bool lt_down, rt_down;   // trigger state, with hysteresis
+    const char* keymap_path; // <prefdir>/keymap.ini, NULL when unavailable
 
     SlotPicker slot_picker;  // F6/F7 modal slot picker and label editor
 
@@ -114,6 +124,12 @@ typedef struct Frontend {
     bool settings_was_paused;
     uint32_t settings_blink;        /* caret blink phase last drawn */
     uint32_t settings_event;        /* SDL user event type that opens/closes Settings */
+    uint8_t ff_speed;               /* fast-forward: 2, 3, 4; 0 = Max */
+    bool pause_on_blur;
+    bool blur_paused;               /* window lost focus and pause_on_blur is on */
+    bool had_focus;                 /* a window has had keyboard focus at least once */
+    bool link_active;               /* link cable peer attached: never blur-pause */
+    FramePacer pacer;               /* deadline pacing when sync is not audio-driven */
 } Frontend;
 
 // Forward declaration
@@ -125,12 +141,18 @@ void frontend_destroy(Frontend* fe);
 void frontend_apply_layout(Frontend* fe);
 void frontend_present_frame(Frontend* fe, uint16_t* framebuffer);
 void frontend_poll_input(Frontend* fe, GBA* gba);
+/* Writes the combined held masks into KEYINPUT. */
+void frontend_apply_input(Frontend* fe, GBA* gba);
+/* Call once before each emulated frame: advances turbo, then applies input. */
+void frontend_input_frame(Frontend* fe, GBA* gba);
 void frontend_audio_init(Frontend* fe);
 void frontend_push_audio(Frontend* fe, APU* apu);
 /* Drop pending APU samples and end playback with a short fade instead of a
  * hard cut. Safe to call every frame while audio is off. */
 void frontend_audio_stop(Frontend* fe, APU* apu);
 void frontend_frame_sync(Frontend* fe);
+/* Sleeps until the next frame deadline at `speed` x real time. */
+void frontend_pace(Frontend* fe, uint32_t speed);
 void frontend_toast(Frontend* fe, ToastKind kind, const char* title, const char* detail);
 void frontend_toast_keyed(Frontend* fe, const char* key, ToastKind kind, const char* title,
                           const char* detail);
@@ -140,6 +162,11 @@ void frontend_update_hud(Frontend* fe, uint32_t now_ms);
 void frontend_toggle_overworld(Frontend* fe, GBA* gba);
 /* Sets the screen filter and color correction and saves them to prefs. */
 void frontend_set_video(Frontend* fe, VideoFilter filter, bool color_correct);
+/* Sets the volume (0-100) and start-muted default and saves them to prefs. */
+void frontend_set_audio(Frontend* fe, int32_t volume, bool start_muted);
+/* Sets the fast-forward speed (2, 3, 4, 0 = Max) and pause-on-blur, and saves them to prefs. */
+void frontend_set_general(Frontend* fe, uint8_t ff_speed, bool pause_on_blur);
+bool frontend_is_paused(const Frontend* fe);
 /* Repaints the overlay when s changed; s = NULL or !s->visible hides it. */
 void frontend_update_overworld(Frontend* fe, const OverworldSnapshot* s);
 void frontend_settings_open(Frontend* fe, GBA* gba);

@@ -28,7 +28,7 @@ void prefs_init(Prefs* p, const char* path) {
 }
 
 bool prefs_load(Prefs* p) {
-    char line[256];
+    char line[PREFS_KEY_LEN + PREFS_VAL_LEN + 8];
     if (!p->path[0]) return false;
     FILE* f = fopen(p->path, "r");
     if (!f) return false;

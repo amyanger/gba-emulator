@@ -81,6 +81,42 @@ bool ui_toggle(UiCanvas* c, UiInput* in, uint32_t id, UiRect r, bool* on, bool e
     return flipped;
 }
 
+bool ui_slider(UiCanvas* c, UiInput* in, uint32_t id, UiRect r, int32_t* value, int32_t min, int32_t max,
+               int32_t step) {
+    const float knob = 14.0f, track_h = 4.0f;
+    int32_t old = *value;
+    join_focus(in, id);
+    bool o = over(in, r);
+    if (o) in->hot = id;
+    if (o && in->pressed) {
+        in->active = id;
+        in->focus = id;
+    }
+    float x0 = r.x + knob / 2, span = r.w - knob;
+    if (in->active == id && in->down && span > 0.0f && max > min) {
+        float t = (in->mx - x0) / span;
+        if (t < 0.0f) t = 0.0f;
+        if (t > 1.0f) t = 1.0f;
+        *value = min + (int32_t)(t * (float)(max - min) + 0.5f);
+    }
+    if (in->focus == id && !in->blocked) {
+        if (ui_input_has_key(in, UI_KEY_LEFT)) *value -= step;
+        if (ui_input_has_key(in, UI_KEY_RIGHT)) *value += step;
+    }
+    if (step > 1 && *value > min) *value = min + ((*value - min + step / 2) / step) * step;
+    if (*value < min) *value = min;
+    if (*value > max) *value = max;
+
+    float t = max > min ? (float)(*value - min) / (float)(max - min) : 0.0f;
+    float kx = x0 + t * span, cy = r.y + r.h / 2;
+    ui_fill_round_rect(c, (UiRect){x0, cy - track_h / 2, span, track_h}, track_h / 2, UI_TRACK);
+    ui_fill_round_rect(c, (UiRect){x0, cy - track_h / 2, kx - x0, track_h}, track_h / 2, UI_ACCENT);
+    UiRect k = {kx - knob / 2, cy - knob / 2, knob, knob};
+    if (in->focus == id) focus_ring(c, k, knob / 2);
+    ui_fill_round_rect(c, k, knob / 2, UI_TEXT);
+    return *value != old;
+}
+
 bool ui_sidebar_item(UiCanvas* c, UiInput* in, uint32_t id, UiRect r, const char* label, bool selected) {
     join_focus(in, id);
     bool clicked = track_click(in, id, r) || key_activate(in, id);

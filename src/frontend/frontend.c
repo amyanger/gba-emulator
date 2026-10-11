@@ -9,6 +9,7 @@
 #include "apu/apu.h"
 #include "input/input.h"
 #include "input/keymap.h"
+#include "frontend/rom_picker.h"
 #include "ui/ui_theme.h"
 #include <math.h>
 #include <stdlib.h>
@@ -37,6 +38,8 @@ void frontend_set_hints(void) {
 
 bool frontend_init(Frontend* fe, int scale) {
     memset(fe, 0, sizeof(*fe));
+    frame_pacer_reset(&fe->pacer);
+    fe->volume = 100;
     toast_init(&fe->toasts);
     settings_init(&fe->settings);
 
@@ -108,6 +111,11 @@ bool frontend_init(Frontend* fe, int scale) {
     fe->ff_toggle = false;
     fe->ff_frame_skip = 4;
     fe->ff_frame_count = 0;
+    fe->ff_speed = 3;
+    fe->pause_on_blur = false;
+    fe->blur_paused = false;
+    fe->had_focus = false;
+    fe->link_active = false;
 
 #ifdef ENABLE_REWIND
     fe->rewind_hold = false;
@@ -118,7 +126,13 @@ bool frontend_init(Frontend* fe, int scale) {
     fe->audio_device = 0;
     fe->audio_target_bytes = 0;
     fe->audio_stopped = true;
-    fe->controller_keys = 0;
+    fe->kb_keys = 0;
+    fe->pad_keys = 0;
+    fe->stick_keys = 0;
+    fe->turbo_frame = 0;
+    fe->lt_down = false;
+    fe->rt_down = false;
+    fe->keymap_path = NULL;
     fe->slot_picker.mode = SLOT_PICKER_CLOSED;
     frontend_apply_layout(fe);
     fe->settings_event = SDL_RegisterEvents(1);
@@ -463,6 +477,36 @@ void frontend_set_video(Frontend* fe, VideoFilter filter, bool color_correct) {
     }
 }
 
+void frontend_set_audio(Frontend* fe, int32_t volume, bool start_muted) {
+    fe->volume = volume < 0 ? 0 : (volume > 100 ? 100 : volume);
+    fe->start_muted = start_muted;
+    if (fe->prefs) {
+        char v[8];
+        snprintf(v, sizeof(v), "%d", (int)fe->volume);
+        prefs_set(fe->prefs, "volume", v);
+        prefs_set_bool(fe->prefs, "start_muted", fe->start_muted);
+        if (!prefs_save(fe->prefs)) LOG_WARN("Couldn't save preferences to %s", fe->prefs->path);
+    }
+}
+
+void frontend_set_general(Frontend* fe, uint8_t ff_speed, bool pause_on_blur) {
+    fe->ff_speed = (ff_speed >= 2 && ff_speed <= 4) ? ff_speed : 0;
+    fe->pause_on_blur = pause_on_blur;
+    if (fe->prefs) {
+        if (fe->ff_speed == 0) {
+            prefs_set(fe->prefs, "ff_speed", "max");
+        } else {
+            char v[4];
+            snprintf(v, sizeof(v), "%d", (int)fe->ff_speed);
+            prefs_set(fe->prefs, "ff_speed", v);
+        }
+        prefs_set_bool(fe->prefs, "pause_on_blur", fe->pause_on_blur);
+        if (!prefs_save(fe->prefs)) LOG_WARN("Couldn't save preferences to %s", fe->prefs->path);
+    }
+}
+
+bool frontend_is_paused(const Frontend* fe) { return fe->paused || fe->blur_paused; }
+
 /* Draws the filtered game into dst. False when the filter is off or its texture failed,
  * so the caller draws the plain texture instead. */
 static bool frontend_draw_video(Frontend* fe, const uint16_t* framebuffer, const SDL_Rect* dst) {
@@ -520,9 +564,31 @@ void frontend_present_frame(Frontend* fe, uint16_t* framebuffer) {
     SDL_RenderPresent(fe->renderer);
 }
 
-// Map SDL scancodes to GBA buttons
-static uint16_t sdl_to_gba_key(SDL_Scancode sc) {
-    return keymap_lookup(sc);
+void frontend_apply_input(Frontend* fe, GBA* gba) {
+    input_set_pressed(&gba->input,
+                      input_combine((uint16_t)(fe->kb_keys & 0x3FF), (uint16_t)(fe->pad_keys & 0x3FF),
+                                    fe->stick_keys, (uint16_t)((fe->kb_keys | fe->pad_keys) & 0xC00),
+                                    fe->turbo_frame));
+}
+
+void frontend_input_frame(Frontend* fe, GBA* gba) {
+    fe->turbo_frame++;
+    frontend_apply_input(fe, gba);
+}
+
+/* Trigger axis with hysteresis: press above 16000, release below 8000. */
+static void frontend_trigger(Frontend* fe, GBA* gba, bool* down, int32_t pad, int16_t value) {
+    uint16_t key = keymap_pad_lookup(pad);
+    if (!*down && value > 16000) {
+        *down = true;
+        fe->pad_keys |= key;
+    } else if (*down && value < 8000) {
+        *down = false;
+        fe->pad_keys &= (uint16_t)~key;
+    } else {
+        return;
+    }
+    frontend_apply_input(fe, gba);
 }
 
 static void frontend_handle_window_event(Frontend* fe, const SDL_Event* event) {
@@ -554,8 +620,12 @@ static bool frontend_settings_shortcut(Frontend* fe, const SDL_Event* e) {
 }
 
 static void release_gba_keys(Frontend* fe, GBA* gba) {
-    input_release(&gba->input, 0x03FF);
-    fe->controller_keys = 0;
+    fe->kb_keys = 0;
+    fe->pad_keys = 0;
+    fe->stick_keys = 0;
+    fe->lt_down = false;
+    fe->rt_down = false;
+    input_set_pressed(&gba->input, 0);
     fe->ff_hold = false;
 #ifdef ENABLE_REWIND
     fe->rewind_hold = false;
@@ -633,6 +703,29 @@ static void settings_handle_event(Frontend* fe, const SDL_Event* e) {
     default: break;
     }
     if (id != main_id) return;
+    /* A listening Controls chip takes the next key or button, Escape included,
+     * so it never reaches UiInput (where Escape would close Settings). */
+    if (settings_controls_listening(&fe->settings.controls)) {
+        SettingsControlsPage* cp = &fe->settings.controls;
+        if (e->type == SDL_KEYDOWN) {
+            if (!e->key.repeat) settings_controls_capture_key(cp, (int32_t)e->key.keysym.scancode);
+            fe->settings_dirty = true;
+            return;
+        }
+        if (e->type == SDL_CONTROLLERBUTTONDOWN) {
+            settings_controls_capture_pad(cp, (int32_t)e->cbutton.button);
+            fe->settings_dirty = true;
+            return;
+        }
+        if (e->type == SDL_CONTROLLERAXISMOTION && e->caxis.value > 16000 &&
+            (e->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT || e->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT)) {
+            settings_controls_capture_pad(cp, e->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT ? KEYMAP_PAD_LT
+                                                                                                : KEYMAP_PAD_RT);
+            fe->settings_dirty = true;
+            return;
+        }
+        if (e->type == SDL_TEXTINPUT) return;
+    }
     switch (e->type) {
     case SDL_MOUSEMOTION:
         settings_mouse(fe, e->motion.x, e->motion.y);
@@ -699,12 +792,70 @@ void frontend_update_settings(Frontend* fe, GBA* gba) {
         ui_input_frame_begin(in);
         fe->settings.video.filter = fe->video_filter;
         fe->settings.video.color_correct = fe->color_correct;
+        fe->settings.audio.volume = fe->volume;
+        fe->settings.audio.start_muted = fe->start_muted;
+        fe->settings.general.ff_speed = fe->ff_speed;
+        fe->settings.general.pause_on_blur = fe->pause_on_blur;
+        fe->settings.controls.pad_connected = fe->controller != NULL;
+        {
+            const char* bp = fe->prefs ? prefs_get(fe->prefs, "bios_path") : NULL;
+            snprintf(fe->settings.general.bios_path, sizeof(fe->settings.general.bios_path), "%s", bp ? bp : "");
+        }
         settings_draw(&canvas, in, &fe->settings, &fe->settings_ctx);
         ui_input_frame_end(in);
         if (fe->settings.video.changed) {
             fe->settings.video.changed = false;
             frontend_set_video(fe, fe->settings.video.filter, fe->settings.video.color_correct);
             settle = true;   /* redraw so the buttons show the new choice */
+        }
+        if (fe->settings.audio.changed) {
+            fe->settings.audio.changed = false;
+            frontend_set_audio(fe, fe->settings.audio.volume, fe->settings.audio.start_muted);
+            settle = true;
+        }
+        if (fe->settings.general.changed) {
+            fe->settings.general.changed = false;
+            frontend_set_general(fe, fe->settings.general.ff_speed, fe->settings.general.pause_on_blur);
+            settle = true;
+        }
+        if (fe->settings.controls.changed) {
+            fe->settings.controls.changed = false;
+            if (fe->keymap_path && fe->keymap_path[0] && !keymap_save(fe->keymap_path))
+                frontend_toast(fe, TOAST_ERROR, "Couldn't save controls", NULL);
+            release_gba_keys(fe, gba);
+            settle = true;
+        }
+        SettingsGeneralPage* gp = &fe->settings.general;
+        if (gp->choose_bios) {
+            gp->choose_bios = false;
+            char path[SETTINGS_PATH_LEN];
+            RomPickResult r = rom_picker_choose_bios(path, sizeof(path));
+            if (r == ROM_PICK_OK) {
+                if (fe->prefs && prefs_set(fe->prefs, "bios_path", path)) {
+                    snprintf(gp->bios_path, sizeof(gp->bios_path), "%s", path);
+                    prefs_save(fe->prefs);
+                    gp->status[0] = '\0';
+                } else {
+                    snprintf(gp->status, sizeof(gp->status), "Couldn't save the BIOS setting.");
+                }
+            } else if (r == ROM_PICK_UNAVAILABLE) {
+                snprintf(gp->status, sizeof(gp->status), "No file picker on this system. Use --bios instead.");
+            } else {
+                gp->status[0] = '\0';
+            }
+            /* The picker is modal: drop the press that opened it. */
+            fe->ui_input.down = false;
+            fe->ui_input.active = 0;
+            settle = true;
+        }
+        if (gp->clear_bios) {
+            gp->clear_bios = false;
+            if (fe->prefs && prefs_set(fe->prefs, "bios_path", "")) {
+                prefs_save(fe->prefs);
+                gp->bios_path[0] = '\0';
+                gp->status[0] = '\0';
+            }
+            settle = true;
         }
         SDL_UpdateTexture(fe->settings_texture, NULL, fe->settings_buffer, fe->settings_px_w * (int)sizeof(uint32_t));
         fe->settings_dirty = settle;
@@ -736,13 +887,15 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             continue;
         }
         bool hotplug = event.type == SDL_CONTROLLERDEVICEADDED || event.type == SDL_CONTROLLERDEVICEREMOVED;
+        if (fe->settings.open && hotplug) fe->settings_dirty = true;   /* Controls shows whether a pad is connected */
         if (fe->settings.open && !hotplug) {
             settings_handle_event(fe, &event);
             continue;
         }
 
-        /* If a slot-picker modal is open, route events to it first. */
-        if (slot_picker_is_open(fe)) {
+        /* If a slot-picker modal is open, route events to it first. Hotplug
+         * still reaches the switch below so a removed pad is closed. */
+        if (slot_picker_is_open(fe) && !hotplug) {
             if (slot_picker_handle_event(fe, gba, &event)) {
                 continue;
             }
@@ -750,8 +903,11 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
 
         switch (event.type) {
         case SDL_KEYDOWN: {
-            uint16_t key = sdl_to_gba_key(event.key.keysym.scancode);
-            if (key) input_press(&gba->input, key);
+            uint16_t key = keymap_lookup(event.key.keysym.scancode);
+            if (key) {
+                fe->kb_keys |= key;
+                frontend_apply_input(fe, gba);
+            }
 
             // Escape to quit
             /* Not on repeat: a held Esc that just closed Settings must not quit. */
@@ -820,10 +976,13 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             if (has_rom_path && scan == SDL_SCANCODE_F5) {
                 fe->save_requested = true;
             }
+            /* The picker swallows key-ups, so release held keys on open. */
             if (has_rom_path && scan == SDL_SCANCODE_F6 && !event.key.repeat) {
+                release_gba_keys(fe, gba);
                 slot_picker_open_label_edit(fe);
             }
             if (has_rom_path && scan == SDL_SCANCODE_F7 && !event.key.repeat) {
+                release_gba_keys(fe, gba);
                 slot_picker_open_list(fe);
             }
             if (has_rom_path && scan == SDL_SCANCODE_F8) {
@@ -909,8 +1068,11 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
         }
 
         case SDL_KEYUP: {
-            uint16_t key = sdl_to_gba_key(event.key.keysym.scancode);
-            if (key) input_release(&gba->input, key);
+            uint16_t key = keymap_lookup(event.key.keysym.scancode);
+            if (key) {
+                fe->kb_keys &= (uint16_t)~key;
+                frontend_apply_input(fe, gba);
+            }
             if (event.key.keysym.scancode == SDL_SCANCODE_TAB) {
                 fe->ff_hold = false;
             }
@@ -943,83 +1105,56 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 frontend_toast(fe, TOAST_INFO, "Controller disconnected", NULL);
                 SDL_GameControllerClose(fe->controller);
                 fe->controller = NULL;
+                fe->pad_keys = 0;
+                fe->stick_keys = 0;
+                fe->lt_down = false;
+                fe->rt_down = false;
+                frontend_apply_input(fe, gba);
             }
             break;
 
         case SDL_CONTROLLERBUTTONDOWN:
         case SDL_CONTROLLERBUTTONUP: {
-            uint16_t key = 0;
-            switch (event.cbutton.button) {
-            case SDL_CONTROLLER_BUTTON_A:             key = KEY_A;      break;
-            case SDL_CONTROLLER_BUTTON_B:             key = KEY_B;      break;
-            case SDL_CONTROLLER_BUTTON_X:             key = KEY_A;      break;
-            case SDL_CONTROLLER_BUTTON_Y:             key = KEY_B;      break;
-            case SDL_CONTROLLER_BUTTON_START:         key = KEY_START;  break;
-            case SDL_CONTROLLER_BUTTON_BACK:          key = KEY_SELECT; break;
-            case SDL_CONTROLLER_BUTTON_DPAD_UP:       key = KEY_UP;     break;
-            case SDL_CONTROLLER_BUTTON_DPAD_DOWN:     key = KEY_DOWN;   break;
-            case SDL_CONTROLLER_BUTTON_DPAD_LEFT:     key = KEY_LEFT;   break;
-            case SDL_CONTROLLER_BUTTON_DPAD_RIGHT:    key = KEY_RIGHT;  break;
-            case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:  key = KEY_L;      break;
-            case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: key = KEY_R;      break;
-            default: break;
-            }
+            uint16_t key = keymap_pad_lookup(event.cbutton.button);
             if (key) {
-                uint16_t prev = fe->controller_keys;
                 if (event.type == SDL_CONTROLLERBUTTONDOWN)
-                    fe->controller_keys |= key;
+                    fe->pad_keys |= key;
                 else
-                    fe->controller_keys &= ~key;
-                uint16_t changed = prev ^ fe->controller_keys;
-                if (changed & key) {
-                    if (fe->controller_keys & key)
-                        input_press(&gba->input, key);
-                    else
-                        input_release(&gba->input, key);
-                }
+                    fe->pad_keys &= (uint16_t)~key;
+                frontend_apply_input(fe, gba);
             }
             break;
         }
 
         case SDL_CONTROLLERAXISMOTION: {
             #define AXIS_THRESHOLD 8000
-            uint16_t prev = fe->controller_keys;
+            int16_t v = event.caxis.value;
             if (event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTX) {
-                if (event.caxis.value < -AXIS_THRESHOLD)
-                    fe->controller_keys |= KEY_LEFT;
-                else
-                    fe->controller_keys &= ~KEY_LEFT;
-                if (event.caxis.value > AXIS_THRESHOLD)
-                    fe->controller_keys |= KEY_RIGHT;
-                else
-                    fe->controller_keys &= ~KEY_RIGHT;
+                fe->stick_keys &= (uint16_t)~(KEY_LEFT | KEY_RIGHT);
+                if (v < -AXIS_THRESHOLD) fe->stick_keys |= KEY_LEFT;
+                if (v > AXIS_THRESHOLD) fe->stick_keys |= KEY_RIGHT;
+                frontend_apply_input(fe, gba);
             } else if (event.caxis.axis == SDL_CONTROLLER_AXIS_LEFTY) {
-                if (event.caxis.value < -AXIS_THRESHOLD)
-                    fe->controller_keys |= KEY_UP;
-                else
-                    fe->controller_keys &= ~KEY_UP;
-                if (event.caxis.value > AXIS_THRESHOLD)
-                    fe->controller_keys |= KEY_DOWN;
-                else
-                    fe->controller_keys &= ~KEY_DOWN;
-            }
-            uint16_t changed = prev ^ fe->controller_keys;
-            if (changed) {
-                uint16_t dirs[] = {KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN};
-                for (int i = 0; i < 4; i++) {
-                    if (changed & dirs[i]) {
-                        if (fe->controller_keys & dirs[i])
-                            input_press(&gba->input, dirs[i]);
-                        else
-                            input_release(&gba->input, dirs[i]);
-                    }
-                }
+                fe->stick_keys &= (uint16_t)~(KEY_UP | KEY_DOWN);
+                if (v < -AXIS_THRESHOLD) fe->stick_keys |= KEY_UP;
+                if (v > AXIS_THRESHOLD) fe->stick_keys |= KEY_DOWN;
+                frontend_apply_input(fe, gba);
+            } else if (event.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
+                frontend_trigger(fe, gba, &fe->lt_down, KEYMAP_PAD_LT, v);
+            } else if (event.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
+                frontend_trigger(fe, gba, &fe->rt_down, KEYMAP_PAD_RT, v);
             }
             #undef AXIS_THRESHOLD
             break;
         }
         }
     }
+    /* Never blur-pause before the window first had focus (a launch from a
+     * terminal can leave it unfocused) or while linked (one of two linked
+     * windows is always unfocused). */
+    bool focused = SDL_GetKeyboardFocus() != NULL;
+    if (focused) fe->had_focus = true;
+    fe->blur_paused = fe->pause_on_blur && fe->had_focus && !focused && !fe->link_active && !fe->settings.open;
 }
 
 void frontend_audio_init(Frontend* fe) {
@@ -1064,6 +1199,7 @@ void frontend_audio_init(Frontend* fe) {
 /* Output frames per chunk; input chunks are sized so any device rate fits. */
 #define AUDIO_CHUNK_FRAMES 2048
 static int16_t s_audio_chunk[AUDIO_CHUNK_FRAMES * 2];
+static int16_t s_scaled[SAMPLE_BUFFER_SIZE * 2];   /* input samples scaled by the volume */
 
 void frontend_audio_stop(Frontend* fe, APU* apu) {
     apu->read_pos = apu->write_pos;
@@ -1092,15 +1228,27 @@ void frontend_push_audio(Frontend* fe, APU* apu) {
         uint32_t end = apu->write_pos > apu->read_pos ? apu->write_pos : SAMPLE_BUFFER_SIZE;
         uint32_t count = end - apu->read_pos;
         if (count > max_in) count = max_in;
-        uint32_t n = audio_out_process(&fe->audio_out, &apu->sample_buffer[apu->read_pos * 2],
-                                       count, s_audio_chunk);
+        const int16_t* in = &apu->sample_buffer[apu->read_pos * 2];
+        if (fe->volume < 100) {
+            settings_audio_scale(s_scaled, in, count * 2, fe->volume);
+            in = s_scaled;
+        }
+        uint32_t n = audio_out_process(&fe->audio_out, in, count, s_audio_chunk);
         SDL_QueueAudio(fe->audio_device, s_audio_chunk, n * 2 * (uint32_t)sizeof(int16_t));
         apu->read_pos = (apu->read_pos + count) % SAMPLE_BUFFER_SIZE;
     }
 }
 
+void frontend_pace(Frontend* fe, uint32_t speed) {
+    uint64_t freq = SDL_GetPerformanceFrequency();
+    uint64_t wait = frame_pacer_wait(&fe->pacer, SDL_GetPerformanceCounter(), frame_pacer_period(freq, speed));
+    uint64_t ms = wait * 1000 / freq;
+    if (ms > 1) SDL_Delay((uint32_t)(ms - 1));
+    while (SDL_GetPerformanceCounter() < fe->pacer.next) {}
+}
+
 void frontend_frame_sync(Frontend* fe) {
-    if (fe->audio_device != 0 && !fe->muted) {
+    if (fe->audio_device != 0 && !fe->muted && !fe->audio_stopped) {
         /* Audio-driven sync: block until SDL's audio queue drains.
          * This ties emulation speed to the audio playback rate (~60fps).
          * Target is sized from the device pull size (see frontend_audio_init);
@@ -1112,8 +1260,10 @@ void frontend_frame_sync(Frontend* fe) {
             SDL_Delay(1);
             max_wait--;
         }
+        frame_pacer_reset(&fe->pacer);
     } else {
-        /* No audio device: timer-based fallback (~60fps). */
-        SDL_Delay(16);
+        /* Muted, no audio device, or not feeding audio (paused, Settings,
+         * rewind): the queue is empty, so pace by deadline at the GBA frame rate. */
+        frontend_pace(fe, 1);
     }
 }

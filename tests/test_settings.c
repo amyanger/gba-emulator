@@ -2,6 +2,8 @@
 #include "frontend/settings.h"
 #include "cartridge/cartridge.h"
 #include "screenshot/screenshot.h"
+#include "input/input.h"
+#include "input/keymap.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -221,6 +223,133 @@ TEST(settings_video_filter_and_color) {
     ASSERT_TRUE(st.video.changed);
 }
 
+TEST(settings_general_ff_and_blur) {
+    setup();
+    st.page = SETTINGS_PAGE_GENERAL;
+    st.general.ff_speed = 3;
+    draw();
+    press_key_on(settings_id_ff(3), UI_KEY_ENTER);   /* Max */
+    ASSERT_EQ(st.general.ff_speed, 0);
+    ASSERT_TRUE(st.general.changed);
+    st.general.changed = false;
+    press_key_on(settings_id_ff(0), UI_KEY_ENTER);   /* 2x */
+    ASSERT_EQ(st.general.ff_speed, 2);
+    st.general.changed = false;
+    press_key_on(SETTINGS_ID_BLUR, UI_KEY_SPACE);
+    ASSERT_TRUE(st.general.pause_on_blur && st.general.changed);
+}
+
+TEST(audio_scale_full_half_zero) {
+    int16_t src[4] = {1000, -1000, 32767, -32768}, dst[4];
+    settings_audio_scale(dst, src, 4, 100);
+    ASSERT_EQ(dst[2], 32767);
+    ASSERT_EQ(dst[3], -32768);
+    settings_audio_scale(dst, src, 4, 50);
+    ASSERT_EQ(dst[0], 500);
+    ASSERT_EQ(dst[1], -500);
+}
+
+TEST(audio_scale_zero_is_silence) {
+    int16_t src[2] = {1234, -4321}, dst[2] = {7, 7};
+    settings_audio_scale(dst, src, 2, 0);
+    ASSERT_EQ(dst[0], 0);
+    ASSERT_EQ(dst[1], 0);
+}
+
+TEST(settings_audio_volume_and_start_muted) {
+    setup();
+    st.page = SETTINGS_PAGE_AUDIO;
+    st.audio.volume = 100;
+    draw();
+    ASSERT_TRUE(!st.audio.changed);
+    press_key_on(SETTINGS_ID_VOLUME, UI_KEY_LEFT);
+    ASSERT_EQ(st.audio.volume, 95);
+    ASSERT_TRUE(st.audio.changed);
+    st.audio.changed = false;
+    press_key_on(SETTINGS_ID_START_MUTED, UI_KEY_SPACE);
+    ASSERT_TRUE(st.audio.start_muted);
+    ASSERT_TRUE(st.audio.changed);
+}
+
+TEST(controls_click_chip_then_key_rebinds) {
+    setup(); keymap_reset_defaults();
+    st.page = SETTINGS_PAGE_CONTROLS;
+    draw();
+    press_key_on(settings_id_bind(0, CONTROLS_DEV_KEY), UI_KEY_ENTER);   /* row 0 = A */
+    ASSERT_TRUE(settings_controls_listening(&st.controls));
+    settings_controls_capture_key(&st.controls, SDL_SCANCODE_K);
+    ASSERT_TRUE(!settings_controls_listening(&st.controls));
+    ASSERT_TRUE(st.controls.changed);
+    ASSERT_EQ(keymap_lookup(SDL_SCANCODE_K), KEY_A);
+    ASSERT_EQ(keymap_lookup(SDL_SCANCODE_Z), 0);
+    keymap_reset_defaults();
+}
+
+TEST(controls_reserved_key_refused_keeps_listening) {
+    setup(); keymap_reset_defaults();
+    st.page = SETTINGS_PAGE_CONTROLS;
+    draw();
+    press_key_on(settings_id_bind(1, CONTROLS_DEV_KEY), UI_KEY_ENTER);
+    settings_controls_capture_key(&st.controls, SDL_SCANCODE_TAB);
+    ASSERT_TRUE(settings_controls_listening(&st.controls));
+    ASSERT_TRUE(!st.controls.changed);
+    ASSERT_TRUE(strstr(st.controls.status, "Tab") != NULL);
+    ASSERT_EQ(keymap_lookup(SDL_SCANCODE_X), KEY_B);
+    settings_controls_capture_key(&st.controls, SDL_SCANCODE_ESCAPE);   /* cancel */
+    ASSERT_TRUE(!settings_controls_listening(&st.controls));
+    ASSERT_EQ(keymap_lookup(SDL_SCANCODE_X), KEY_B);
+}
+
+TEST(controls_unbindable_key_refused_keeps_listening) {
+    setup(); keymap_reset_defaults();
+    st.page = SETTINGS_PAGE_CONTROLS;
+    draw();
+    press_key_on(settings_id_bind(0, CONTROLS_DEV_KEY), UI_KEY_ENTER);
+    settings_controls_capture_key(&st.controls, SDL_SCANCODE_KP_HASH);
+    ASSERT_TRUE(settings_controls_listening(&st.controls));
+    ASSERT_TRUE(!st.controls.changed);
+    ASSERT_TRUE(strstr(st.controls.status, "can't be used") != NULL);
+    ASSERT_EQ(keymap_lookup(SDL_SCANCODE_KP_HASH), 0);
+    ASSERT_EQ(keymap_lookup(SDL_SCANCODE_Z), KEY_A);
+}
+
+TEST(controls_backspace_unbinds_and_pad_capture) {
+    setup(); keymap_reset_defaults();
+    st.page = SETTINGS_PAGE_CONTROLS;
+    draw();
+    press_key_on(settings_id_bind(10, CONTROLS_DEV_PAD), UI_KEY_ENTER);  /* Turbo A on pad */
+    settings_controls_capture_pad(&st.controls, SDL_CONTROLLER_BUTTON_X);
+    ASSERT_EQ(keymap_pad_lookup(SDL_CONTROLLER_BUTTON_X), KEYMAP_TURBO_A);
+    st.controls.changed = false;
+    draw();
+    press_key_on(settings_id_bind(10, CONTROLS_DEV_PAD), UI_KEY_ENTER);
+    settings_controls_capture_key(&st.controls, SDL_SCANCODE_BACKSPACE);
+    ASSERT_EQ(keymap_pad_for(KEYMAP_TURBO_A), KEYMAP_PAD_NONE);
+    ASSERT_TRUE(st.controls.changed);
+    keymap_reset_defaults();
+}
+
+TEST(controls_leaving_page_cancels_listening) {
+    setup(); keymap_reset_defaults();
+    st.page = SETTINGS_PAGE_CONTROLS;
+    draw();
+    press_key_on(settings_id_bind(0, CONTROLS_DEV_KEY), UI_KEY_ENTER);
+    ASSERT_TRUE(settings_controls_listening(&st.controls));
+    press_key_on(ui_id("settings-page", SETTINGS_PAGE_VIDEO), UI_KEY_ENTER);
+    ASSERT_EQ(st.page, SETTINGS_PAGE_VIDEO);
+    ASSERT_TRUE(!settings_controls_listening(&st.controls));
+}
+
+TEST(controls_reset_defaults) {
+    setup(); keymap_reset_defaults();
+    keymap_bind_key(KEY_A, SDL_SCANCODE_K);
+    st.page = SETTINGS_PAGE_CONTROLS;
+    draw();
+    press_key_on(SETTINGS_ID_CONTROLS_RESET, UI_KEY_ENTER);
+    ASSERT_EQ(keymap_lookup(SDL_SCANCODE_Z), KEY_A);
+    ASSERT_TRUE(st.controls.changed);
+}
+
 static bool save_preview(const char* path) {
     uint32_t* out = (uint32_t*)malloc((size_t)SW * SH * 4);
     if (!out) return false;
@@ -259,6 +388,46 @@ TEST(settings_preview_png) {
     draw();
     ASSERT_TRUE(save_preview("settings_video_preview.png"));
     remove(ctx.cht_path);
+
+    setup();
+    st.page = SETTINGS_PAGE_AUDIO;
+    st.audio.volume = 70;
+    draw();
+    ASSERT_TRUE(save_preview("settings_audio_preview.png"));
+    remove(ctx.cht_path);
+
+    setup();
+    st.page = SETTINGS_PAGE_GENERAL;
+    st.general.ff_speed = 3;
+    draw();
+    ASSERT_TRUE(save_preview("settings_general_preview.png"));
+    remove(ctx.cht_path);
+
+    setup();
+    keymap_reset_defaults();
+    st.page = SETTINGS_PAGE_CONTROLS;
+    draw();
+    press_key_on(settings_id_bind(2, CONTROLS_DEV_KEY), UI_KEY_ENTER);
+    settings_controls_capture_key(&st.controls, SDL_SCANCODE_TAB);   /* refusal shows in the status */
+    draw();
+    ASSERT_TRUE(save_preview("settings_controls_preview.png"));
+    settings_controls_capture_key(&st.controls, SDL_SCANCODE_ESCAPE);
+    remove(ctx.cht_path);
+}
+
+TEST(settings_general_bios_buttons) {
+    setup();
+    st.page = SETTINGS_PAGE_GENERAL;
+    draw();
+    press_key_on(SETTINGS_ID_BIOS_CHOOSE, UI_KEY_ENTER);
+    ASSERT_TRUE(st.general.choose_bios);
+    st.general.choose_bios = false;
+    press_key_on(SETTINGS_ID_BIOS_CLEAR, UI_KEY_ENTER);   /* disabled with no BIOS set */
+    ASSERT_TRUE(!st.general.clear_bios);
+    snprintf(st.general.bios_path, sizeof(st.general.bios_path), "/x/gba_bios.bin");
+    draw();
+    press_key_on(SETTINGS_ID_BIOS_CLEAR, UI_KEY_ENTER);
+    ASSERT_TRUE(st.general.clear_bios);
 }
 
 void run_settings_tests(void) {
@@ -276,5 +445,16 @@ void run_settings_tests(void) {
     RUN_TEST(settings_escape_and_outside_click_close);
     RUN_TEST(settings_full_list_disables_add);
     RUN_TEST(settings_video_filter_and_color);
+    RUN_TEST(settings_general_bios_buttons);
+    RUN_TEST(settings_general_ff_and_blur);
+    RUN_TEST(audio_scale_full_half_zero);
+    RUN_TEST(audio_scale_zero_is_silence);
+    RUN_TEST(settings_audio_volume_and_start_muted);
+    RUN_TEST(controls_click_chip_then_key_rebinds);
+    RUN_TEST(controls_reserved_key_refused_keeps_listening);
+    RUN_TEST(controls_unbindable_key_refused_keeps_listening);
+    RUN_TEST(controls_backspace_unbinds_and_pad_capture);
+    RUN_TEST(controls_leaving_page_cancels_listening);
+    RUN_TEST(controls_reset_defaults);
     RUN_TEST(settings_preview_png);
 }

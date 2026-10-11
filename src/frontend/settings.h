@@ -52,11 +52,41 @@ typedef struct {
 } SettingsVideoPage;
 
 typedef struct {
+    int32_t volume;   /* 0-100 */
+    bool start_muted;
+    bool changed;
+} SettingsAudioPage;
+
+#define SETTINGS_PATH_LEN 1024
+typedef struct {
+    char bios_path[SETTINGS_PATH_LEN];   /* "" = built-in BIOS */
+    uint8_t ff_speed;                    /* 2, 3, 4; 0 = Max (uncapped) */
+    bool pause_on_blur;
+    bool choose_bios, clear_bios;        /* buttons ask the frontend */
+    char status[96];
+    bool changed;
+} SettingsGeneralPage;
+
+typedef enum { CONTROLS_DEV_KEY, CONTROLS_DEV_PAD } ControlsDevice;
+#define CONTROLS_ROWS 12
+typedef struct {
+    int32_t listen_row;          /* -1 = not listening */
+    ControlsDevice listen_dev;
+    bool pad_connected;          /* copied in by the frontend */
+    char status[96];
+    bool status_warn;            /* status is a refusal */
+    bool changed;                /* bindings changed: frontend saves keymap.ini and releases keys */
+} SettingsControlsPage;
+
+typedef struct {
     bool open;
     bool close_requested;           /* the frontend closes it */
     SettingsPage page;
     SettingsCheatsPage cheats;
     SettingsVideoPage video;
+    SettingsAudioPage audio;
+    SettingsGeneralPage general;
+    SettingsControlsPage controls;
 } Settings;
 
 typedef struct {
@@ -99,5 +129,32 @@ void settings_cheats_draw(UiCanvas* c, UiInput* in, SettingsCheatsPage* p, Setti
 void settings_video_draw(UiCanvas* c, UiInput* in, SettingsVideoPage* p, UiRect content);
 static inline uint32_t settings_id_filter(uint32_t i) { return ui_id("video-filter", i); }
 #define SETTINGS_ID_COLOR ui_id("video-color", 0)
+
+/* The General page: BIOS file, fast-forward speed, pause on focus loss. */
+void settings_general_draw(UiCanvas* c, UiInput* in, SettingsGeneralPage* p, UiRect content);
+static inline uint32_t settings_id_ff(uint32_t i) { return ui_id("general-ff", i); }   /* 0=2x 1=3x 2=4x 3=Max */
+#define SETTINGS_ID_BLUR ui_id("general-blur", 0)
+#define SETTINGS_ID_BIOS_CHOOSE ui_id("general-bios", 0)
+#define SETTINGS_ID_BIOS_CLEAR  ui_id("general-bios", 1)
+
+/* The Audio page: volume and start muted. */
+void settings_audio_draw(UiCanvas* c, UiInput* in, SettingsAudioPage* p, UiRect content);
+#define SETTINGS_ID_VOLUME      ui_id("audio-volume", 0)
+#define SETTINGS_ID_START_MUTED ui_id("audio-start-muted", 0)
+/* dst[i] = src[i] * volume / 100 for count int16 samples. */
+void settings_audio_scale(int16_t* dst, const int16_t* src, uint32_t count, int32_t volume);
+
+/* The Controls page: keyboard and controller bindings for the GBA buttons and turbo. */
+static inline uint32_t settings_id_bind(uint32_t row, ControlsDevice dev) {
+    return ui_id("controls-bind", row * 2 + (uint32_t)dev);
+}
+#define SETTINGS_ID_CONTROLS_RESET ui_id("controls-reset", 0)
+void settings_controls_draw(UiCanvas* c, UiInput* in, SettingsControlsPage* p, UiRect content);
+bool settings_controls_listening(const SettingsControlsPage* p);
+/* Next key while listening. Escape cancels, Backspace unbinds, reserved keys are refused. */
+void settings_controls_capture_key(SettingsControlsPage* p, int32_t scancode);
+void settings_controls_capture_pad(SettingsControlsPage* p, int32_t pad);
+/* Why a key can't be bound ("Tab is fast-forward"), or NULL. */
+const char* settings_controls_reserved(int32_t scancode);
 
 #endif // SETTINGS_H

@@ -20,6 +20,20 @@ RomPickResult rom_picker_choose(char* out, size_t out_size) {
     return n > 0 ? ROM_PICK_OK : ROM_PICK_CANCELLED;
 }
 
+RomPickResult rom_picker_choose_bios(char* out, size_t out_size) {
+    wchar_t path[1024] = L"";
+    OPENFILENAMEW ofn = {0};
+    ofn.lStructSize = sizeof(ofn);
+    ofn.lpstrFilter = L"GBA BIOS (*.bin)\0*.bin\0All files (*.*)\0*.*\0";
+    ofn.lpstrFile = path;
+    ofn.nMaxFile = (DWORD)(sizeof(path) / sizeof(path[0]));
+    ofn.lpstrTitle = L"Choose a GBA BIOS file";
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    if (!GetOpenFileNameW(&ofn)) return ROM_PICK_CANCELLED;
+    int n = WideCharToMultiByte(CP_UTF8, 0, path, -1, out, (int)out_size, NULL, NULL);
+    return n > 0 ? ROM_PICK_OK : ROM_PICK_CANCELLED;
+}
+
 RomPickResult rom_picker_choose_folder(char* out, size_t out_size) {
     wchar_t path[MAX_PATH] = L"";
     BROWSEINFOW bi = {0};

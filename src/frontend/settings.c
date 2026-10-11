@@ -11,13 +11,6 @@
 #define SIDEBAR_BG 0xFF0D0F15u
 
 static const char* const k_pages[SETTINGS_PAGE_COUNT] = {"Cheats", "Controls", "General", "Video", "Audio"};
-static const char* const k_coming[SETTINGS_PAGE_COUNT] = {
-    "",
-    "Rebind keyboard keys and controller buttons.",
-    "BIOS file, fast-forward speed, pause when the window loses focus.",
-    "",
-    "Volume and start muted.",
-};
 
 void settings_init(Settings* s) {
     memset(s, 0, sizeof(*s));
@@ -26,6 +19,7 @@ void settings_init(Settings* s) {
     s->cheats.forced = CHEAT_DEV_AUTO;
     s->cheats.popup = SETTINGS_POPUP_NONE;
     s->cheats.confirm_delete = -1;
+    s->controls.listen_row = -1;
 }
 
 void settings_open(Settings* s) {
@@ -33,12 +27,15 @@ void settings_open(Settings* s) {
     s->close_requested = false;
     s->cheats.popup = SETTINGS_POPUP_NONE;
     s->cheats.confirm_delete = -1;
+    s->controls.listen_row = -1;
+    s->controls.status[0] = '\0';
 }
 
 void settings_close(Settings* s) {
     s->open = false;
     s->close_requested = false;
     s->cheats.popup = SETTINGS_POPUP_NONE;
+    s->controls.listen_row = -1;
 }
 
 UiRect settings_window_rect(float area_w, float area_h) {
@@ -93,6 +90,11 @@ void settings_draw(UiCanvas* c, UiInput* in, Settings* s, SettingsContext* ctx) 
         if (ui_sidebar_item(c, in, ui_id("settings-page", (uint32_t)i), r, k_pages[i], s->page == (SettingsPage)i))
             s->page = (SettingsPage)i;
     }
+    /* Leaving Controls drops a listening chip, or the frontend would keep capturing keys. */
+    if (s->page != SETTINGS_PAGE_CONTROLS && s->controls.listen_row >= 0) {
+        s->controls.listen_row = -1;
+        s->controls.status[0] = '\0';
+    }
 
     UiRect close = {win.x + win.w - 34.0f, win.y + 10.0f, 24.0f, 24.0f};
     if (ui_button(c, in, ui_id("settings-close", 0), close, "\xC3\x97", true, false)) s->close_requested = true;
@@ -102,13 +104,12 @@ void settings_draw(UiCanvas* c, UiInput* in, Settings* s, SettingsContext* ctx) 
         settings_cheats_draw(c, in, &s->cheats, ctx, content);
     } else if (s->page == SETTINGS_PAGE_VIDEO) {
         settings_video_draw(c, in, &s->video, content);
+    } else if (s->page == SETTINGS_PAGE_GENERAL) {
+        settings_general_draw(c, in, &s->general, content);
+    } else if (s->page == SETTINGS_PAGE_AUDIO) {
+        settings_audio_draw(c, in, &s->audio, content);
     } else {
-        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, content.x, content.y, content.w - 40.0f, UI_ALIGN_LEFT, UI_TEXT,
-                k_pages[s->page]);
-        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, content.x, content.y + 34.0f, content.w, UI_ALIGN_LEFT, UI_MUTED,
-                "Coming soon.");
-        ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, content.x, content.y + 56.0f, content.w, UI_ALIGN_LEFT, UI_DIM,
-                k_coming[s->page]);
+        settings_controls_draw(c, in, &s->controls, content);
     }
     ui_canvas_unclip(c);
 }

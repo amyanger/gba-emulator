@@ -41,6 +41,7 @@ static NuzSession s_nuz;
 static bool s_nuz_on;        /* tracking runs in the window, and headless only with --nuzlocke-file */
 static OverworldFeed s_ow;
 static Prefs s_prefs;
+static char s_keymap_path[PREFS_PATH_LEN]; /* <prefdir>/keymap.ini, empty when unavailable */
 
 /* One emulated frame for the Nuzlocke tracker (also the headless per-frame hook). */
 static void nuz_tick(GBA* gba, void* ctx) {
@@ -415,6 +416,27 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    /* Prefs load before the BIOS so a saved BIOS file can apply. Headless never touches the user's prefs. */
+    if (!headless) {
+        char prefs_path[PREFS_PATH_LEN] = "";
+        char* pref_dir = SDL_GetPrefPath("", "GBA Emulator");
+        if (pref_dir) {
+            int n = snprintf(prefs_path, sizeof(prefs_path), "%sprefs.ini", pref_dir);
+            if (n < 0 || (size_t)n >= sizeof(prefs_path)) prefs_path[0] = '\0';
+            n = snprintf(s_keymap_path, sizeof(s_keymap_path), "%skeymap.ini", pref_dir);
+            if (n < 0 || (size_t)n >= sizeof(s_keymap_path)) s_keymap_path[0] = '\0';
+            SDL_free(pref_dir);
+        }
+        prefs_init(&s_prefs, prefs_path);
+        prefs_load(&s_prefs);
+        LOG_INFO("Preferences: %s", prefs_path[0] ? prefs_path : "(none)");
+    } else {
+        prefs_init(&s_prefs, "");
+    }
+    const char* pref_bios = (!headless && !bios_path) ? prefs_get(&s_prefs, "bios_path") : NULL;
+    bool bios_from_prefs = pref_bios && pref_bios[0];
+    if (bios_from_prefs) bios_path = pref_bios;
+
     bool bios_loaded = false;
     if (bios_path) {
         if (!gba_load_bios(&gba, bios_path)) {
@@ -681,37 +703,51 @@ int main(int argc, char* argv[]) {
         LOG_WARN("ROM path too long; savestates and screenshots are disabled for this run");
         fe.rom_path[0] = '\0';
     }
-    fe.muted = start_muted;
 
     // Keyboard bindings (must come after frontend_init so SDL is up)
+    // Load order: defaults, then the saved keymap.ini, then --keymap on top.
     keymap_reset_defaults();
+    fe.keymap_path = s_keymap_path[0] ? s_keymap_path : NULL;
+    if (fe.keymap_path) {
+        FILE* kf = fopen(fe.keymap_path, "r"); /* keymap_load logs an error on a missing file */
+        if (kf) {
+            fclose(kf);
+            keymap_load(fe.keymap_path);
+        }
+    }
     if (keymap_path) {
         keymap_load(keymap_path);
     }
 
-    char prefs_path[PREFS_PATH_LEN] = "";
-    char* pref_dir = SDL_GetPrefPath("", "GBA Emulator");
-    if (pref_dir) {
-        int n = snprintf(prefs_path, sizeof(prefs_path), "%sprefs.ini", pref_dir);
-        if (n < 0 || (size_t)n >= sizeof(prefs_path)) prefs_path[0] = '\0';
-        SDL_free(pref_dir);
-    }
-    prefs_init(&s_prefs, prefs_path);
-    prefs_load(&s_prefs);
-    LOG_INFO("Preferences: %s", prefs_path[0] ? prefs_path : "(none)");
     fe.prefs = &s_prefs;
     fe.ow_feed = s_game.profile ? &s_ow : NULL;
     fe.nuz = &s_nuz;
     VideoFilter pref_filter = VIDEO_FILTER_SHARP;
     video_filter_from_name(prefs_get(&s_prefs, "video_filter"), &pref_filter);
     fe.video_filter = video_filter_arg ? video_filter : pref_filter;
+    {
+        const char* vol = prefs_get(&s_prefs, "volume");
+        char* end = NULL;
+        long v = vol ? strtol(vol, &end, 10) : 100;
+        bool ok = !vol || (end != vol && *end == '\0');
+        fe.volume = (ok && v >= 0 && v <= 100) ? (int32_t)v : 100;
+    }
+    fe.start_muted = prefs_get_bool(&s_prefs, "start_muted", false);
+    fe.muted = start_muted || fe.start_muted;
+    {
+        const char* ff = prefs_get(&s_prefs, "ff_speed");
+        fe.ff_speed = !ff ? 3 : strcmp(ff, "max") == 0 ? 0 : (ff[0] >= '2' && ff[0] <= '4' && !ff[1]) ? (uint8_t)(ff[0] - '0') : 3;
+        fe.pause_on_blur = prefs_get_bool(&s_prefs, "pause_on_blur", false);
+    }
     fe.color_correct = color_correct_arg || prefs_get_bool(&s_prefs, "color_correct", false);
     if (fe.ow_feed && prefs_get_bool(&s_prefs, "overworld_xray", false)) {
         fe.overworld_xray = true;
         gba_set_vblank_observer(&gba, overworld_capture, &s_ow);
     }
 
-    if (!bios_loaded)
+    if (!bios_loaded && bios_from_prefs)
+        frontend_toast(&fe, TOAST_WARN, "BIOS file not found", path_base(pref_bios));
+    else if (!bios_loaded)
         frontend_toast(&fe, TOAST_WARN, "Running without BIOS", "Using built-in BIOS");
     if (s_game.support == GAME_SUPPORT_MODIFIED)
         frontend_toast(&fe, TOAST_WARN, "Emerald Companion is off", "ROM hack not supported");
@@ -735,6 +771,7 @@ int main(int argc, char* argv[]) {
         frontend_toast(&fe, TOAST_OK, "Save backed up", "before using cheats");
     else if (cheat_backup_ran && cheat_backup == CHEAT_BACKUP_FAILED)
         frontend_toast(&fe, TOAST_ERROR, "Couldn't back up save", "Cheats stay off");
+    fe.link_active = link_peer != NULL;
     if (link_peer) frontend_toast(&fe, TOAST_INFO, "Link cable connected", NULL);
     fe.settings_ctx = (SettingsContext){&gba.cheats, &gba.cart, cheat_save_path, settings_toast, &fe};
 
@@ -756,17 +793,19 @@ int main(int argc, char* argv[]) {
         frontend_poll_input(&fe, &gba);
 
         // Pause: skip emulation, keep window responsive, mute audio.
-        if (fe.paused != prev_paused) {
-            if (fe.paused) {
+        bool now_paused = frontend_is_paused(&fe);
+        if (now_paused != prev_paused) {
+            if (now_paused) {
                 frontend_audio_stop(&fe, &gba.apu);
             }
-            prev_paused = fe.paused;
+            prev_paused = now_paused;
         }
-        if (fe.paused) {
+        if (now_paused) {
             toast_set_badge(&fe.toasts, BADGE_REWIND, false);
             if (fe.step_pending) {
                 // Single-step: run exactly one frame then re-pause.
                 fe.step_pending = false;
+                frontend_input_frame(&fe, &gba);
                 gba_run_frame(&gba);
                 if (gba.frame_complete) {
                     nuz_tick(&gba, &s_nuz);
@@ -865,6 +904,7 @@ int main(int argc, char* argv[]) {
         }
 #endif /* ENABLE_REWIND */
 
+        frontend_input_frame(&fe, &gba);
         gba_run_frame(&gba);
 
         if (gba.frame_complete) {
@@ -884,6 +924,7 @@ int main(int argc, char* argv[]) {
                         // Returning to normal speed: clean audio state
                         frontend_audio_stop(&fe, &gba.apu);
                         fe.ff_frame_count = 0;
+                        frame_pacer_reset(&fe.pacer);
                     }
                     prev_ff = ff_active;
                 }
@@ -891,7 +932,8 @@ int main(int argc, char* argv[]) {
 
             if (ff_active) {
                 // Fast-forward: render every Nth frame, skip audio and sync
-                if (fe.ff_frame_count++ % fe.ff_frame_skip == 0) {
+                uint32_t render_every = fe.ff_speed ? fe.ff_speed : fe.ff_frame_skip;
+                if (fe.ff_frame_count++ % render_every == 0) {
                     render_with_overlay(&fe, &gba);
 #ifdef ENABLE_XRAY
                     xray_render(&s_xray_state, &gba);
@@ -899,6 +941,7 @@ int main(int argc, char* argv[]) {
                 }
                 // Drain APU ring buffer to prevent stall
                 frontend_audio_stop(&fe, &gba.apu);
+                if (fe.ff_speed) frontend_pace(&fe, fe.ff_speed);
             } else {
                 render_with_overlay(&fe, &gba);
                 frontend_push_audio(&fe, &gba.apu);

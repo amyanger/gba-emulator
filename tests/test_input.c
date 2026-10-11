@@ -116,6 +116,31 @@ TEST(keypad_irq_no_selected_keys_never_fires) {
     ASSERT_TRUE(!input_irq_condition(&in));
 }
 
+TEST(input_set_pressed_active_low) {
+    InputState s; input_init(&s);
+    input_set_pressed(&s, KEY_A | KEY_UP);
+    ASSERT_EQ_HEX(s.keyinput, 0x03FF & ~(KEY_A | KEY_UP));
+    input_set_pressed(&s, 0);
+    ASSERT_EQ_HEX(s.keyinput, 0x03FF);
+}
+
+TEST(input_mask_or_of_sources) {
+    /* Keyboard released A but the pad still holds it: A stays pressed. */
+    ASSERT_EQ_HEX(input_combine(0, KEY_A, 0, 0, 0), KEY_A);
+    ASSERT_EQ_HEX(input_combine(KEY_B, KEY_A, KEY_LEFT, 0, 0), KEY_A | KEY_B | KEY_LEFT);
+}
+
+TEST(input_turbo_two_on_two_off) {
+    uint16_t ta = 1u << 10;
+    ASSERT_EQ_HEX(input_combine(0, 0, 0, ta, 0), KEY_A);
+    ASSERT_EQ_HEX(input_combine(0, 0, 0, ta, 1), KEY_A);
+    ASSERT_EQ_HEX(input_combine(0, 0, 0, ta, 2), 0);
+    ASSERT_EQ_HEX(input_combine(0, 0, 0, ta, 3), 0);
+    ASSERT_EQ_HEX(input_combine(0, 0, 0, ta, 4), KEY_A);
+    /* A held normally stays held through turbo's off frames. */
+    ASSERT_EQ_HEX(input_combine(KEY_A, 0, 0, ta, 2), KEY_A);
+}
+
 void run_input_tests(void) {
     TEST_SUITE("input");
     RUN_TEST(input_init_releases_all_keys);
@@ -127,4 +152,7 @@ void run_input_tests(void) {
     RUN_TEST(keypad_irq_and_needs_all_selected_keys);
     RUN_TEST(keypad_irq_disabled_without_bit14);
     RUN_TEST(keypad_irq_no_selected_keys_never_fires);
+    RUN_TEST(input_set_pressed_active_low);
+    RUN_TEST(input_mask_or_of_sources);
+    RUN_TEST(input_turbo_two_on_two_off);
 }

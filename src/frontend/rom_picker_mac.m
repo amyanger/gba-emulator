@@ -30,6 +30,32 @@ RomPickResult rom_picker_choose(char* out, size_t out_size) {
     }
 }
 
+RomPickResult rom_picker_choose_bios(char* out, size_t out_size) {
+    @autoreleasepool {
+        NSOpenPanel* panel = [NSOpenPanel openPanel];
+        panel.title = @"Choose a GBA BIOS file";
+        panel.canChooseDirectories = NO;
+        panel.allowsMultipleSelection = NO;
+        UTType* bin = [UTType typeWithFilenameExtension:@"bin"];
+        if (bin) panel.allowedContentTypes = @[ bin ];
+
+        if (@available(macOS 14.0, *)) {
+            [NSApp activate];
+        } else {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+            [NSApp activateIgnoringOtherApps:YES];
+#pragma clang diagnostic pop
+        }
+
+        if ([panel runModal] != NSModalResponseOK) return ROM_PICK_CANCELLED;
+        const char* path = panel.URL.fileSystemRepresentation;
+        if (!path || strlen(path) >= out_size) return ROM_PICK_CANCELLED;
+        memcpy(out, path, strlen(path) + 1);
+        return ROM_PICK_OK;
+    }
+}
+
 RomPickResult rom_picker_choose_folder(char* out, size_t out_size) {
     @autoreleasepool {
         NSOpenPanel* panel = [NSOpenPanel openPanel];

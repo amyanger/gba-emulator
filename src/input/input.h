@@ -26,6 +26,11 @@ typedef struct InputState InputState;
 void input_init(InputState* input);
 void input_press(InputState* input, uint16_t key);
 void input_release(InputState* input, uint16_t key);
+// Replaces KEYINPUT with the given pressed mask (active-high bits 0-9).
+void input_set_pressed(InputState* input, uint16_t pressed);
+// ORs the held masks from every source. turbo_held uses bits 10 (A) and 11 (B)
+// and pulses the button 2 frames on, 2 frames off. Result is masked to 0x03FF.
+uint16_t input_combine(uint16_t kb, uint16_t pad, uint16_t stick, uint16_t turbo_held, uint32_t frame);
 // True when KEYCNT has IRQ enabled and its OR/AND key condition holds.
 bool input_irq_condition(const InputState* input);
 

@@ -81,6 +81,20 @@ TEST(prefs_set_rejects_bad_input_and_full_table) {
     ASSERT_STR_EQ(prefs_get(&p, "k3"), "2");
 }
 
+TEST(prefs_long_value_round_trip) {
+    static Prefs p, q;
+    prefs_init(&p, "gba_prefs_long.ini");
+    char path[900];
+    memset(path, 'a', sizeof(path) - 1);
+    path[sizeof(path) - 1] = '\0';
+    ASSERT_TRUE(prefs_set(&p, "bios_path", path));
+    ASSERT_TRUE(prefs_save(&p));
+    prefs_init(&q, "gba_prefs_long.ini");
+    ASSERT_TRUE(prefs_load(&q));
+    ASSERT_STR_EQ(prefs_get(&q, "bios_path"), path);
+    remove("gba_prefs_long.ini");
+}
+
 TEST(prefs_save_fails_on_bad_path) {
     static Prefs p;
     prefs_init(&p, "no_such_dir_for_prefs/prefs.ini");
@@ -97,5 +111,6 @@ void run_prefs_tests(void) {
     RUN_TEST(prefs_garbage_lines_ignored);
     RUN_TEST(prefs_long_line_does_not_split);
     RUN_TEST(prefs_set_rejects_bad_input_and_full_table);
+    RUN_TEST(prefs_long_value_round_trip);
     RUN_TEST(prefs_save_fails_on_bad_path);
 }
