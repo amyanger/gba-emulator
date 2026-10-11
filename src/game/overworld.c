@@ -56,7 +56,9 @@
 #define EVENTS_BGS         0x10
 #define BG_SIZE            12
 #define BG_KIND            0x05
+#define BG_ITEM            0x08
 #define BG_HIDDEN_ID       0x0A
+#define ITEM_SIZE          44     /* struct Item: name[14] first */
 #define BG_KIND_HIDDEN_ITEM 7
 #define CONN_SIZE          12
 #define CONN_CAP           8
@@ -299,20 +301,39 @@ static bool field_visible(const OwCtx* c) {
     return true;
 }
 
+static void item_name(const OwCtx* c, uint16_t id, char* out) {
+    uint8_t raw[OW_ITEM_NAME_LEN];
+    out[0] = '\0';
+    if (id == 0 || id >= c->p->item_count ||
+        !game_mem_copy(c->m, c->p->items + (uint32_t)id * ITEM_SIZE, raw, sizeof(raw)))
+        return;
+    gen3_decode(raw, sizeof(raw), out, OW_ITEM_NAME_LEN);
+}
+
+static OwMarker* add_marker(OverworldSnapshot* s, uint8_t kind, int16_t x, int16_t y) {
+    if (s->marker_count >= OW_MAX_MARKERS) return NULL;
+    OwMarker* mk = &s->markers[s->marker_count++];
+    mk->kind = kind;
+    mk->x = x;
+    mk->y = y;
+    return mk;
+}
+
 static void add_hidden(const OwCtx* c, uint32_t events, int32_t ox, int32_t oy, OverworldSnapshot* s) {
     uint8_t n = 0, ev[BG_SIZE];
     uint32_t bgs = 0;
     if (!game_mem_read8(c->m, events + EVENTS_BG_COUNT, &n) || !game_mem_read32(c->m, events + EVENTS_BGS, &bgs))
         return;
-    for (uint32_t i = 0; i < n && s->hidden_count < OW_MAX_HIDDEN; i++) {
+    for (uint32_t i = 0; i < n && s->marker_count < OW_MAX_MARKERS; i++) {
         int16_t x, y;
         if (!game_mem_copy(c->m, bgs + i * BG_SIZE, ev, BG_SIZE) || ev[BG_KIND] != BG_KIND_HIDDEN_ITEM) continue;
         if (flag_set(c, FLAG_HIDDEN_BASE + (uint32_t)(ev[BG_HIDDEN_ID] | (ev[BG_HIDDEN_ID + 1] << 8)))) continue;
         tile_to_screen(c, s16_at(ev) + ox, s16_at(ev + 2) + oy, &x, &y);
         if (!on_screen(x, y)) continue;
-        s->hidden[s->hidden_count].x = x;
-        s->hidden[s->hidden_count].y = y;
-        s->hidden_count++;
+        OwMarker* mk = add_marker(s, OW_MARK_HIDDEN, x, y);
+        if (!mk) return;
+        mk->name_count = 1;
+        item_name(c, (uint16_t)(ev[BG_ITEM] | (ev[BG_ITEM + 1] << 8)), mk->name[0]);
     }
 }
 
@@ -434,7 +455,12 @@ bool overworld_dump(const OverworldSnapshot* s, FILE* out) {
                     (unsigned)t->clear[3], t->x, t->y) < 0)
             return false;
     }
-    for (uint8_t i = 0; i < s->hidden_count; i++)
-        if (fprintf(out, "hidden x=%d y=%d\n", s->hidden[i].x, s->hidden[i].y) < 0) return false;
+    static const char* const k_mark[] = {"hidden", "ball", "gift"};
+    for (uint8_t i = 0; i < s->marker_count; i++) {
+        const OwMarker* mk = &s->markers[i];
+        if (fprintf(out, "marker kind=%s x=%d y=%d name=%s%s%s\n", k_mark[mk->kind < 3 ? mk->kind : 0], mk->x,
+                    mk->y, mk->name[0], mk->name_count > 1 ? "/" : "", mk->name_count > 1 ? mk->name[1] : "") < 0)
+            return false;
+    }
     return true;
 }

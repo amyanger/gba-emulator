@@ -95,8 +95,8 @@ static void draw_pill(UiCanvas* c, const OwTrainer* t, float g) {
     ui_text(c, UI_FONT_SEMIBOLD, PILL_PT, tx, ty, 0, UI_ALIGN_LEFT, t->beaten ? UI_MUTED : UI_TEXT, text);
 }
 
-static void draw_hidden(UiCanvas* c, OwPoint p, float g) {
-    float cx = ((float)p.x + TILE / 2) * g, cy = ((float)p.y + TILE / 2) * g, r = GLOW_R * g;
+static void draw_hidden(UiCanvas* c, const OwMarker* p, float g) {
+    float cx = ((float)p->x + TILE / 2) * g, cy = ((float)p->y + TILE / 2) * g, r = GLOW_R * g;
     ui_fill_round_rect(c, (UiRect){cx - r, cy - r, 2 * r, 2 * r}, r, with_alpha(UI_MID, 0.35f));
     ui_capsule(c, cx - STAR_ARM * g, cy, cx + STAR_ARM * g, cy, STAR_LINE * g, STAR_COLOR);
     ui_capsule(c, cx, cy - STAR_ARM * g, cx, cy + STAR_ARM * g, STAR_LINE * g, STAR_COLOR);
@@ -104,7 +104,8 @@ static void draw_hidden(UiCanvas* c, OwPoint p, float g) {
 
 void overworld_draw(UiCanvas* c, const OverworldSnapshot* s, float g) {
     if (!s->visible) return;
-    for (uint8_t i = 0; i < s->hidden_count; i++) draw_hidden(c, s->hidden[i], g);
+    for (uint8_t i = 0; i < s->marker_count; i++)
+        if (s->markers[i].kind == OW_MARK_HIDDEN) draw_hidden(c, &s->markers[i], g);
     for (uint8_t i = 0; i < s->trainer_count; i++)
         for (int d = 0; d < OW_DIR_COUNT; d++)
             if (s->trainers[i].clear[d]) draw_cone(c, &s->trainers[i], d, g);

@@ -30,6 +30,7 @@ static uint8_t s_rom[0x8000];
 #define EVENTS     0x08001A00u
 #define BG_EVENTS  0x08001B00u
 #define SCRIPT     0x08002000u
+#define ITEMS      0x08004800u   /* gItems, 44-byte stride */
 
 static const GameProfile k_profile = {
     .name = "test",
@@ -43,6 +44,7 @@ static const GameProfile k_profile = {
     .trainers = TRAINERS, .trainer_count = 16,
     .trainer_class_names = CLASSES, .trainer_class_count = 4,
     .map_groups = GROUPS, .map_group_count = 2,
+    .items = ITEMS, .item_count = 80,
 };
 
 static uint8_t* at(uint32_t a) {
@@ -53,10 +55,11 @@ static uint8_t* at(uint32_t a) {
 static void put8(uint32_t a, uint8_t v) { *at(a) = v; }
 static void put16(uint32_t a, uint16_t v) { fixture_put16(at(a), v); }
 static void put32(uint32_t a, uint32_t v) { fixture_put32(at(a), v); }
-/* ASCII uppercase -> Gen 3 text, 0xFF-terminated. */
+/* ASCII uppercase, digits and spaces -> Gen 3 text, 0xFF-terminated. */
 static void put_name(uint32_t a, const char* s) {
     uint8_t* p = at(a);
-    for (; *s; s++, p++) *p = (uint8_t)(0xBB + (*s - 'A'));
+    for (; *s; s++, p++)
+        *p = *s == ' ' ? 0x00 : (*s >= '0' && *s <= '9') ? (uint8_t)(0xA1 + (*s - '0')) : (uint8_t)(0xBB + (*s - 'A'));
     *p = 0xFF;
 }
 static GameMem mem(void) {
@@ -144,7 +147,7 @@ TEST(ow_null_profile_gives_empty_snapshot) {
     overworld_read(NULL, &m, &s);
     ASSERT_TRUE(!s.visible);
     ASSERT_EQ(s.trainer_count, 0);
-    ASSERT_EQ(s.hidden_count, 0);
+    ASSERT_EQ(s.marker_count, 0);
 }
 
 TEST(ow_feed_capture_shifts_next_to_shown) {
@@ -471,10 +474,10 @@ TEST(ow_bad_grid_omits_cones_keeps_trainer) {
     ASSERT_EQ(first_trainer(&s)->clear[OW_DIR_DOWN], 0);
 }
 
-/* Hidden item bg event i at map coords (x, y) with hiddenItemId id. */
+/* Hidden item bg event i at map coords (x, y) with hiddenItemId id; the item id is id too. */
 static void put_hidden(uint32_t table, int i, uint16_t x, uint16_t y, uint8_t kind, uint16_t id) {
     uint32_t e = table + 12u * (uint32_t)i;
-    put16(e + 0, x); put16(e + 2, y); put8(e + 5, kind); put16(e + 0x0A, id);
+    put16(e + 0, x); put16(e + 2, y); put8(e + 5, kind); put16(e + 0x08, id); put16(e + 0x0A, id);
 }
 
 TEST(ow_hidden_item_on_screen) {
@@ -485,10 +488,14 @@ TEST(ow_hidden_item_on_screen) {
     put_hidden(BG_EVENTS, 0, 5, 17, 7, 3);     /* VMap (12, 24) -> screen (32, 24) */
     put_hidden(BG_EVENTS, 1, 6, 17, 0, 4);     /* a sign, not an item */
     put_hidden(BG_EVENTS, 2, 60, 17, 7, 5);    /* off screen */
+    put_name(ITEMS + 3 * 44, "HEART SCALE");
     overworld_read(&k_profile, &m, &s);
-    ASSERT_EQ(s.hidden_count, 1);
-    ASSERT_EQ(s.hidden[0].x, 32);
-    ASSERT_EQ(s.hidden[0].y, 24);
+    ASSERT_EQ(s.marker_count, 1);
+    ASSERT_EQ(s.markers[0].x, 32);
+    ASSERT_EQ(s.markers[0].y, 24);
+    ASSERT_EQ(s.markers[0].kind, OW_MARK_HIDDEN);
+    ASSERT_EQ(s.markers[0].name_count, 1);
+    ASSERT_STR_EQ(s.markers[0].name[0], "HEART SCALE");
 }
 
 TEST(ow_hidden_item_collected_is_skipped) {
@@ -499,7 +506,7 @@ TEST(ow_hidden_item_collected_is_skipped) {
     put_hidden(BG_EVENTS, 0, 5, 17, 7, 3);
     put8(SB1 + 0x1270 + ((0x1F4 + 3) >> 3), (uint8_t)(1u << ((0x1F4 + 3) & 7)));
     overworld_read(&k_profile, &m, &s);
-    ASSERT_EQ(s.hidden_count, 0);
+    ASSERT_EQ(s.marker_count, 0);
 }
 
 TEST(ow_hidden_item_follows_camera_scroll) {
@@ -511,9 +518,9 @@ TEST(ow_hidden_item_follows_camera_scroll) {
     put32(CAMERA + 0x10, 5);                    /* dx = -5 + 16 = 11 */
     put32(CAMERA + 0x14, (uint32_t)-3);         /* dy = 3 - 16 = -13 */
     overworld_read(&k_profile, &m, &s);
-    ASSERT_EQ(s.hidden_count, 1);
-    ASSERT_EQ(s.hidden[0].x, 32 + 11);
-    ASSERT_EQ(s.hidden[0].y, 24 - 13);
+    ASSERT_EQ(s.marker_count, 1);
+    ASSERT_EQ(s.markers[0].x, 32 + 11);
+    ASSERT_EQ(s.markers[0].y, 24 - 13);
 }
 
 TEST(ow_hidden_item_in_south_connection) {
@@ -534,9 +541,9 @@ TEST(ow_hidden_item_in_south_connection) {
     put8(0x08003200 + 0x03, 1); put32(0x08003200 + 0x10, 0x08003500);
     put_hidden(0x08003500, 0, 2, 0, 7, 9);          /* VMap (9, 26 + 7) */
     overworld_read(&k_profile, &m, &s);
-    ASSERT_EQ(s.hidden_count, 1);
-    ASSERT_EQ(s.hidden[0].x, (9 - 5) * 16);
-    ASSERT_EQ(s.hidden[0].y, (33 - 28) * 16 - 40);
+    ASSERT_EQ(s.marker_count, 1);
+    ASSERT_EQ(s.markers[0].x, (9 - 5) * 16);
+    ASSERT_EQ(s.markers[0].y, (33 - 28) * 16 - 40);
 }
 
 TEST(ow_dump_lists_trainers_and_items) {
@@ -546,6 +553,7 @@ TEST(ow_dump_lists_trainers_and_items) {
     scene();
     put8(EVENTS + 0x03, 1);
     put_hidden(BG_EVENTS, 0, 5, 17, 7, 3);
+    put_name(ITEMS + 3 * 44, "HEART SCALE");
     overworld_read(&k_profile, &m, &s);
     FILE* f = tmpfile();
     ASSERT_TRUE(f != NULL);
@@ -557,7 +565,7 @@ TEST(ow_dump_lists_trainers_and_items) {
     ASSERT_TRUE(strstr(buf, "[overworld]\nvisible 1\n") != NULL);
     ASSERT_TRUE(strstr(buf, "trainer id=10 class=YOUNGSTER known=1 beaten=0 buried=0 facing=down "
                             "range=4 clear=4,0,0,0 x=64 y=24\n") != NULL);
-    ASSERT_TRUE(strstr(buf, "hidden x=32 y=24\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "marker kind=hidden x=32 y=24 name=HEART SCALE\n") != NULL);
 }
 
 TEST(ow_sight_range_255_terminates) {

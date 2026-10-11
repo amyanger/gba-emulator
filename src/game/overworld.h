@@ -10,7 +10,6 @@
 typedef struct GBA GBA;
 
 #define OW_MAX_TRAINERS 16
-#define OW_MAX_HIDDEN   32
 #define OW_CLASS_LEN    14
 
 /* Game directions are 1 south, 2 north, 3 west, 4 east; OwDir is that minus one. */
@@ -26,14 +25,24 @@ typedef struct {
     char class_name[OW_CLASS_LEN];  /* ROM class name, "" when unknown */
 } OwTrainer;
 
-typedef struct { int16_t x, y; } OwPoint;   /* tile top-left, GBA screen px */
+#define OW_MAX_MARKERS   32
+#define OW_ITEM_NAME_LEN 14
+
+typedef enum { OW_MARK_HIDDEN, OW_MARK_ITEM_BALL, OW_MARK_GIFT } OwMarkKind;
+
+typedef struct {
+    uint8_t kind;                      /* OwMarkKind */
+    uint8_t name_count;                /* 1, or 2 for a choice gift */
+    int16_t x, y;                      /* tile top-left, GBA px */
+    char name[2][OW_ITEM_NAME_LEN];    /* raw ROM item names, decoded */
+} OwMarker;
 
 /* No pointers and zeroed before filling, so memcmp detects change. */
 typedef struct {
     bool visible;
-    uint8_t trainer_count, hidden_count;
+    uint8_t trainer_count, marker_count;
     OwTrainer trainers[OW_MAX_TRAINERS];
-    OwPoint hidden[OW_MAX_HIDDEN];
+    OwMarker markers[OW_MAX_MARKERS];
 } OverworldSnapshot;
 
 /* next = captured at the last line 160; shown = the capture before it, which is

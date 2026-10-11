@@ -124,8 +124,9 @@ TEST(owd_hidden_item_marked) {
     canvas(&c);
     memset(&s, 0, sizeof(s));
     s.visible = true;
-    s.hidden_count = 1;
-    s.hidden[0].x = 32; s.hidden[0].y = 48;
+    s.marker_count = 1;
+    s.markers[0].kind = OW_MARK_HIDDEN;
+    s.markers[0].x = 32; s.markers[0].y = 48;
     overworld_draw(&c, &s, 2.0f);
     ASSERT_TRUE((px_at_gba(40, 56) >> 24) > 0);
     ASSERT_EQ(px_at_gba(20, 56) >> 24, 0);
