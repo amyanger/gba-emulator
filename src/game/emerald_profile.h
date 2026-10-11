@@ -79,6 +79,7 @@ typedef struct {
     uint32_t elevation_to_priority;/* 0x0850E634 u8[16] */
     uint32_t tall_grass_pic;       /* 0x084F8738 5 frames of 16x16 4bpp */
     uint32_t cry_table;            /* 0x0869DCF4 ToneData[388] */
+    uint32_t hoenn_cry_ids;        /* 0x0831F61C u16 sHoennSpeciesIdToCryId[135], index species-277 */
     uint32_t sprite_palette_tags;  /* 0x03000CF0 u16 sSpritePaletteTags[16], tag per OBJ palette slot, 0xFFFF free */
 } GameProfile;
 

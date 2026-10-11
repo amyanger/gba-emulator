@@ -149,6 +149,7 @@ set(SOURCES
     src/ui/ui_input.c
     src/ui/ui_controls.c
     src/frontend/frontend.c
+    src/frontend/follower_glue.c
     src/frontend/audio_out.c
     src/frontend/frame_pacer.c
     src/frontend/frame_advance.c

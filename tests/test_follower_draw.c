@@ -127,7 +127,8 @@ static void visible_setup(FollowerView* v, FollowerFeed* fd) {
     fd->sim.facing = 1;                             /* south: frame 2 */
     fd->sim.tx = 5; fd->sim.ty = 4;
     fd->in.overworld = true;
-    fd->in.fol_elevation = 3;
+    fd->sim.elevation = 3;
+    fd->in.fol_elevation = 15;                     /* priority uses the kept elevation */
 }
 
 TEST(visible_follower_obj) {

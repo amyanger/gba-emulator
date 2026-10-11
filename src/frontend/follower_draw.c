@@ -46,7 +46,6 @@ static void rom_load(FollowerView* v, const GameMem* m, const GameProfile* p) {
         if (game_mem_copy(m, p->tall_grass_pic + f * 128, raw, sizeof(raw)))
             grass_decode(raw, v->grass_px[f]);
     }
-    /* grass_ok stays false: the tall grass palette slot cannot be found from OAM alone (see report). */
     v->rom_loaded = true;
 }
 
@@ -167,7 +166,7 @@ void follower_view_objs(FollowerView* v, const FollowerFeed* fd, const uint8_t* 
     uint8_t frame = follower_frame(&posed);
     int16_t x = (int16_t)(fx - size / 2 + ox);
     int16_t y = (int16_t)(fy - size + FOLLOW_FOOT_PAD + oy);
-    uint8_t prio = v->elev_prio[in->fol_elevation & 15] & 3;
+    uint8_t prio = v->elev_prio[s->elevation & 15] & 3;
     int16_t slot = follower_oam_slot(oam, prio, fy);
 
     uint16_t pal[16];

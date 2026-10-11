@@ -177,11 +177,6 @@ void frontend_sync_observer(Frontend* fe, GBA* gba);
 void frontend_toggle_follower(Frontend* fe, GBA* gba);
 /* Drops follower state that no longer matches the game: savestate load, rewind, toggle. */
 void frontend_follower_reset(Frontend* fe, GBA* gba);
-/* Before a frame: loads the lead's sprite, starts a talk on A, builds the extra OBJs.
- * The caller holds game input (KEYINPUT 0x03FF) while talk_active. */
-void follower_frame_begin(Frontend* fe, GBA* gba);
-/* After a frame: runs the talk with the host keys (KEYINPUT, active low), cries and mood. */
-void follower_frame_end(Frontend* fe, const GBA* gba, uint16_t real_keys);
 /* Sets the screen filter and color correction and saves them to prefs. */
 void frontend_set_video(Frontend* fe, VideoFilter filter, bool color_correct);
 /* Sets the volume (0-100) and start-muted default and saves them to prefs. */

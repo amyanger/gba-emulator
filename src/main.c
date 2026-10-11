@@ -5,6 +5,7 @@
 #include "cheat/cheat_report.h"
 #include "cheat/cheat_session.h"
 #include "frontend/frontend.h"
+#include "frontend/follower_glue.h"
 #include "frontend/overlay_draw.h"
 #include "frontend/input_display.h"
 #include "frontend/slot_picker.h"
@@ -60,7 +61,7 @@ static void follower_pre_frame(GBA* gba, void* ctx) {
     Frontend* fe = (Frontend*)ctx;
     s_real_keys = gba->input.keyinput;
     if (!fe->follower.enabled) return;
-    follower_frame_begin(fe, gba);
+    follower_glue_frame_begin(fe, gba);
     uint16_t held = (uint16_t)(~s_real_keys & 0x03FF);
     if (talk_active(&fe->follower.talk)) {
         s_talk_keys = held;
@@ -75,7 +76,7 @@ static void follower_pre_frame(GBA* gba, void* ctx) {
 static void follower_post_frame(GBA* gba, void* ctx) {
     Frontend* fe = (Frontend*)ctx;
     gba->input.keyinput = s_real_keys;
-    if (fe->follower.enabled) follower_frame_end(fe, gba, s_real_keys);
+    if (fe->follower.enabled) follower_glue_frame_end(fe, gba, s_real_keys);
 }
 
 /* Headless per-frame hooks (ctx = Frontend). */

@@ -1,5 +1,8 @@
 #include "test_harness.h"
 #include "frontend/cry_player.h"
+#include "game/emerald_profile.h"
+#include "game/game_mem.h"
+#include <string.h>
 
 TEST(cry_decode_blocks) {
     uint8_t w[16 + 33 * 2];
@@ -42,7 +45,46 @@ TEST(cry_mix_adds_and_stops) {
     ASSERT_TRUE(!c.playing);
 }
 
+/* SpeciesToCryId: Kanto/Johto direct, the Unown-slot placeholders share 200, Hoenn via the table. */
+TEST(cry_index_ranges) {
+    static uint8_t rom[0x400];
+    memset(rom, 0, sizeof(rom));
+    for (uint32_t i = 0; i < 135; i++) {
+        uint16_t v = (uint16_t)(250 + i);
+        rom[0x100 + 2 * i] = (uint8_t)v;
+        rom[0x100 + 2 * i + 1] = (uint8_t)(v >> 8);
+    }
+    rom[0x100 + 2 * 130] = 0x50;               /* species 407 -> cry 0x0150 (336) */
+    rom[0x100 + 2 * 130 + 1] = 0x01;
+    GameProfile p;
+    memset(&p, 0, sizeof(p));
+    p.hoenn_cry_ids = 0x08000100;
+    GameMem m = {NULL, NULL, rom, sizeof(rom)};
+    uint32_t idx = 0;
+    ASSERT_TRUE(!cry_species_index(&p, &m, 0, &idx));
+    ASSERT_TRUE(cry_species_index(&p, &m, 1, &idx));
+    ASSERT_EQ(idx, 0);
+    ASSERT_TRUE(cry_species_index(&p, &m, 251, &idx));
+    ASSERT_EQ(idx, 250);
+    ASSERT_TRUE(cry_species_index(&p, &m, 252, &idx));
+    ASSERT_EQ(idx, 200);
+    ASSERT_TRUE(cry_species_index(&p, &m, 276, &idx));
+    ASSERT_EQ(idx, 200);
+    ASSERT_TRUE(cry_species_index(&p, &m, 277, &idx));
+    ASSERT_EQ(idx, 250);
+    ASSERT_TRUE(cry_species_index(&p, &m, 407, &idx));
+    ASSERT_EQ(idx, 336);
+    ASSERT_TRUE(cry_species_index(&p, &m, 411, &idx));
+    ASSERT_EQ(idx, 250 + 134);
+    ASSERT_TRUE(!cry_species_index(&p, &m, 412, &idx));    /* past the table */
+    rom[0x100] = 0xFF; rom[0x101] = 0xFF;                  /* out-of-range cry id */
+    ASSERT_TRUE(!cry_species_index(&p, &m, 277, &idx));
+    p.hoenn_cry_ids = 0x08000400;                          /* unreadable table */
+    ASSERT_TRUE(!cry_species_index(&p, &m, 300, &idx));
+}
+
 void run_cry_player_tests(void) {
+    RUN_TEST(cry_index_ranges);
     RUN_TEST(cry_decode_blocks);
     RUN_TEST(cry_mix_adds_and_stops);
 }

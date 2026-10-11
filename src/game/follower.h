@@ -26,6 +26,8 @@ typedef struct {
     uint16_t new_keys;
     uint8_t lock, script_status;
     uint8_t fol_behavior, fol_elevation;    /* at the follower tile passed to follower_read */
+    int16_t fol_x, fol_y;      /* that tile */
+    uint8_t player_elevation;  /* player object's currentElevation */
     bool lead_ok;
     uint8_t lead_slot;
     MonData lead;
@@ -49,6 +51,7 @@ typedef struct {
     int16_t from_x, from_y;    /* tile the current step started on */
     uint8_t step_len, step_t;  /* frames per tile, frames done; idle when step_t >= step_len */
     uint8_t facing;            /* game value 1..4 */
+    uint8_t elevation;         /* kept like ObjectEventUpdateElevation: tiles at 0 or 15 leave it */
     uint16_t anim_tick;
     int8_t hop_y;              /* extra upward offset during a ledge hop */
     bool jump_pending;

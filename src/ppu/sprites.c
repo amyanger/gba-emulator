@@ -148,9 +148,13 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
 
     uint16_t scanline = ppu->vcount;
 
-    extra_objs_at(ppu, priority, 128);
+    bool extra = false;
+    for (int k = 0; k < PPU_EXTRA_OBJ_MAX; k++)
+        if (ppu->extra_obj[k].on && ppu->extra_obj[k].priority == priority) extra = true;
+
+    if (extra) extra_objs_at(ppu, priority, 128);
     for (int32_t i = OAM_ENTRY_COUNT - 1; i >= 0; i--) {
-        extra_objs_at(ppu, priority, i);
+        if (extra) extra_objs_at(ppu, priority, i);
         uint32_t oam_base = (uint32_t)i * OAM_ENTRY_SIZE;
 
         // Read OAM attributes (little-endian)
@@ -285,7 +289,7 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
         }
     }
 
-    extra_objs_at(ppu, priority, -1);
+    if (extra) extra_objs_at(ppu, priority, -1);
 }
 
 // Render all sprites for the current scanline across all priority levels.

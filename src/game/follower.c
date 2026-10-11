@@ -8,6 +8,7 @@
 #define AVATAR_OBJ_ID      0x05
 #define OBJ_COUNT          16
 #define OBJ_SIZE           0x24
+#define OBJ_ELEVATION      0x0B   /* currentElevation:4, previousElevation:4 */
 #define OBJ_CUR            0x10
 #define OBJ_PREV           0x14
 #define OBJ_DIRS           0x18
@@ -81,6 +82,7 @@ bool follower_read(const GameProfile* p, const GameMem* m, int16_t fol_x, int16_
     out->prev_y = s16_at(obj + OBJ_PREV + 2);
     out->facing = obj[OBJ_DIRS] & 0x0F;
     out->move_action = obj[OBJ_ACTION];
+    out->player_elevation = obj[OBJ_ELEVATION] & 0x0F;
 
     game_mem_read8(m, p->map_header + MAP_HEADER_MAPSEC, &out->mapsec);
     game_mem_read8(m, p->map_header + MAP_HEADER_TYPE, &out->map_type);
@@ -105,6 +107,8 @@ bool follower_read(const GameProfile* p, const GameMem* m, int16_t fol_x, int16_
     game_mem_read8(m, p->weather + WEATHER_COUNTER, &out->weather_counter);
     game_mem_read8(m, p->weather + WEATHER_CURRENT, &out->weather);
 
+    out->fol_x = fol_x;
+    out->fol_y = fol_y;
     overworld_tile_info(p, m, fol_x, fol_y, &out->fol_behavior, &out->fol_elevation);
     read_party(p, m, out);
 
@@ -156,7 +160,8 @@ static void dir_delta(uint8_t dir, int16_t* dx, int16_t* dy) {
     *dy = dir == 1 ? 1 : dir == 2 ? -1 : 0;
 }
 
-static void place(Follower* f, int16_t x, int16_t y) {
+static void place(Follower* f, const FollowerInput* in, int16_t x, int16_t y) {
+    f->elevation = in->player_elevation;
     f->tx = f->from_x = x;
     f->ty = f->from_y = y;
     f->step_t = f->step_len = 0;
@@ -179,7 +184,7 @@ static void start_step(Follower* f, int16_t nx, int16_t ny, uint8_t len) {
 static void on_player_step(Follower* f, const FollowerInput* in) {
     f->steps++;
     if (f->reveal_pending && !f->in_ball) {
-        place(f, in->prev_x, in->prev_y);
+        place(f, in, in->prev_x, in->prev_y);
         f->vis = FOL_VISIBLE;
         f->flash = 4;
         f->reveal_pending = false;
@@ -241,9 +246,11 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
      * overworld frame so a warp or a faint is seen when the field returns. */
     if (!in->ok || !in->overworld) {
         if (f->vis == FOL_VISIBLE) f->vis = FOL_HIDDEN;
-        if (in->ok) f->p_in_battle = true;
+        if (in->ok) {
+            f->p_in_battle = true;
+            f->p_cam_active = in->cam_active;
+        }
         f->p_free = false;
-        f->p_cam_active = in->cam_active;
         return;
     }
 
@@ -259,7 +266,7 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
         f->lead_level = in->lead.level;
         f->reveal_pending = true;
         f->vis = FOL_HIDDEN;
-        place(f, in->cur_x, in->cur_y);
+        place(f, in, in->cur_x, in->cur_y);
     } else if (in->lead.level > f->lead_level) {
         f->mood_delta += 40;
         f->lead_level = in->lead.level;
@@ -270,17 +277,22 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
 
     /* Walking across a map connection rewrites the location while the field stays up
      * with no fade; the coords are rebased below when gCamera.active rises. Warps
-     * always pass through a fade or leave CB2_Overworld first. */
+     * always pass through a fade or leave CB2_Overworld first. A warp to the same map
+     * (Fly to the current town, some doors) keeps the location but jumps the player
+     * more than one tile without a camera rebase. */
+    bool rebase = in->cam_active && !f->p_cam_active;
     bool loc_changed = in->loc_group != f->p_loc_group || in->loc_num != f->p_loc_num;
-    bool new_map = !f->p_valid || (loc_changed && (f->p_in_battle || in->fade_active));
+    int32_t jx = in->cur_x - f->p_cur_x, jy = in->cur_y - f->p_cur_y;
+    bool jumped = !rebase && (jx < 0 ? -jx : jx) + (jy < 0 ? -jy : jy) > 1;
+    bool new_map = !f->p_valid || (loc_changed && (f->p_in_battle || in->fade_active)) || jumped;
     if (new_map) {
         f->vis = FOL_HIDDEN;
         f->reveal_pending = true;
-        place(f, in->cur_x, in->cur_y);
+        place(f, in, in->cur_x, in->cur_y);
     }
 
     /* Crossing into a connected map shifts every coordinate by the camera delta. */
-    if (in->cam_active && !f->p_cam_active) {
+    if (rebase) {
         int16_t cx = (int16_t)in->cam_x, cy = (int16_t)in->cam_y;
         f->tx = (int16_t)(f->tx - cx);
         f->ty = (int16_t)(f->ty - cy);
@@ -296,7 +308,7 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
         f->in_ball = true;
         f->vis = FOL_HIDDEN;
         f->jump_pending = false;
-        place(f, in->cur_x, in->cur_y);
+        place(f, in, in->cur_x, in->cur_y);
     } else if (f->in_ball) {
         f->in_ball = false;
         f->reveal_pending = true;
@@ -310,6 +322,10 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
     }
 
     if (!new_map && (in->cur_x != f->p_cur_x || in->cur_y != f->p_cur_y)) on_player_step(f, in);
+
+    /* fol_* was read at the tile the follower stood on before this frame's move. */
+    if (in->fol_x == f->tx && in->fol_y == f->ty && in->fol_elevation != 0 && in->fol_elevation != 15)
+        f->elevation = in->fol_elevation;
 
     if (f->step_t < f->step_len) f->step_t++;
     f->hop_y = 0;

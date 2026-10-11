@@ -68,6 +68,7 @@ const GameProfile g_emerald_profile = {
     .elevation_to_priority = 0x0850E634,
     .tall_grass_pic = 0x084F8738,
     .cry_table = 0x0869DCF4,
+    .hoenn_cry_ids = 0x0831F61C,
     .sprite_palette_tags = 0x03000CF0,
 };
 

@@ -963,6 +963,17 @@ TEST(extra_obj_respects_priority_and_window) {
     ppu_render_scanline(ppu);
     ASSERT_EQ_HEX(ppu->framebuffer[2], 0x0000);   /* masked by window */
     ASSERT_EQ_HEX(ppu->framebuffer[5], 0x001F);
+
+    /* OAM entry 0 at priority 2 over x 4..11: the priority 1 extra OBJ stays in front,
+     * a priority 3 one goes behind it even though slot -1 is drawn last. */
+    extra_put_square_sprite(ppu, 0, 4, 0, 0x7C00);
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[5], 0x001F);
+    ASSERT_EQ_HEX(ppu->framebuffer[9], 0x7C00);
+    ppu->extra_obj[0].priority = 3;
+    ppu_render_scanline(ppu);
+    ASSERT_EQ_HEX(ppu->framebuffer[5], 0x7C00);
+    ASSERT_EQ_HEX(ppu->framebuffer[2], 0x0000);   /* still masked by window */
 }
 
 /* Suite registration (called from test_runner.c). */

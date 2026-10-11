@@ -4,6 +4,31 @@
 
 static const int8_t k_delta[16] = {0, 1, 4, 9, 16, 25, 36, 49, -64, -49, -36, -25, -16, -9, -4, -1};
 
+/* pokeemerald species ids: Celebi 251, Treecko 277; gCryTable has 388 entries. */
+#define CRY_LAST_DIRECT   251
+#define CRY_FIRST_HOENN   277
+#define CRY_HOENN_COUNT   135
+#define CRY_UNOWN_SLOT    200
+#define CRY_TABLE_COUNT   388
+
+bool cry_species_index(const GameProfile* p, const GameMem* m, uint16_t species, uint32_t* index) {
+    uint16_t id = 0;
+    if (species == 0) return false;
+    if (species <= CRY_LAST_DIRECT) {
+        *index = species - 1u;
+        return true;
+    }
+    if (species < CRY_FIRST_HOENN) {
+        *index = CRY_UNOWN_SLOT;
+        return true;
+    }
+    if (species - CRY_FIRST_HOENN >= CRY_HOENN_COUNT ||
+        !game_mem_read16(m, p->hoenn_cry_ids + 2u * (species - CRY_FIRST_HOENN), &id) || id >= CRY_TABLE_COUNT)
+        return false;
+    *index = id;
+    return true;
+}
+
 bool cry_decode(const uint8_t* w, uint32_t avail, int8_t* out, uint32_t cap, uint32_t* len, uint32_t* rate) {
     if (avail < 16) return false;
     uint32_t freq = (uint32_t)w[4] | ((uint32_t)w[5] << 8) | ((uint32_t)w[6] << 16) | ((uint32_t)w[7] << 24);

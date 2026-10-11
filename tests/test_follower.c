@@ -327,6 +327,69 @@ static uint8_t s_rom[0x1000];
 #define LOCK      0x03000500u
 #define SCRIPT_ST 0x03000600u
 #define KEYS      0x03000700u
+/* ObjectEventUpdateElevation: tiles with elevation 0 or 15 keep the previous one. */
+TEST(elevation_keeps_previous_on_0_and_15) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    in.player_elevation = 3;
+    follower_step(&f, &in, false);
+    walk(&f, &in, 1, 0, 0x0B, 16);      /* reveal at (10,10) with the player's elevation */
+    ASSERT_EQ(f.elevation, 3);
+    in.fol_x = 10; in.fol_y = 10;
+    in.fol_elevation = 15;              /* bridge edge / multi-level tile */
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.elevation, 3);
+    in.fol_elevation = 0;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.elevation, 3);
+    in.fol_elevation = 4;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.elevation, 4);
+    in.fol_x = 9;                       /* read at some other tile: ignored */
+    in.fol_elevation = 6;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.elevation, 4);
+}
+
+/* Fly to the current town or a door on the same map: no location change, a coordinate jump. */
+TEST(same_map_warp_hides) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    follower_step(&f, &in, false);
+    walk(&f, &in, 1, 0, 0x0B, 16);      /* follower (10,10), player (11,10) */
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    in.overworld = false;               /* fly map screen */
+    follower_step(&f, &in, false);
+    in.overworld = true;
+    in.cur_x = in.prev_x = 30; in.cur_y = in.prev_y = 5;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.vis, FOL_HIDDEN);
+    ASSERT_TRUE(f.reveal_pending);
+    ASSERT_EQ(f.tx, 30);
+    ASSERT_EQ(f.ty, 5);
+    walk(&f, &in, 1, 0, 0x0B, 1);       /* reappears behind the player */
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    ASSERT_EQ(f.tx, 30);
+}
+
+/* A failed read reports cam_active false; it must not arm a camera rebase. */
+TEST(failed_read_keeps_camera_edge) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    in.cam_active = true;
+    follower_step(&f, &in, false);
+    walk(&f, &in, 1, 0, 0x0B, 16);      /* follower (10,10) */
+    FollowerInput bad;
+    memset(&bad, 0, sizeof(bad));
+    follower_step(&f, &bad, false);
+    in.cam_x = 40;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.tx, 10);
+}
+
 #define CB2_FIELD 0x08000101u
 
 static const GameProfile k_profile = {
@@ -372,6 +435,7 @@ static void read_scene(void) {
     put32(CB2, CB2_FIELD);
     put8(AVATAR + 0, 0x01); put8(AVATAR + 3, 2); put8(AVATAR + 5, 0);
     put8(OBJS + 0x00, 0x01);
+    put8(OBJS + 0x0B, 0x34);              /* current elevation 4, previous 3 */
     put16(OBJS + 0x10, 17); put16(OBJS + 0x12, 27);
     put16(OBJS + 0x14, 16); put16(OBJS + 0x16, 27);
     put8(OBJS + 0x18, 0x44);
@@ -407,6 +471,8 @@ TEST(read_lead_skips_egg_and_fainted) {
     ASSERT_EQ(in.new_keys, 1);
     ASSERT_EQ(in.weather, 2); ASSERT_EQ_HEX(in.weather_color, 0x7FFF);
     ASSERT_EQ(in.origin.pos_x, 10); ASSERT_EQ(in.origin.pos_y, 20);
+    ASSERT_EQ(in.player_elevation, 4);
+    ASSERT_EQ(in.fol_x, 16); ASSERT_EQ(in.fol_y, 27);
 }
 
 TEST(read_free_needs_no_fade) {
@@ -450,6 +516,9 @@ void run_follower_tests(void) {
     RUN_TEST(lead_faint_in_battle_sets_faint_pid);
     RUN_TEST(transition_hides_but_locked_controls_do_not);
     RUN_TEST(feet_interpolate_and_frame);
+    RUN_TEST(elevation_keeps_previous_on_0_and_15);
+    RUN_TEST(same_map_warp_hides);
+    RUN_TEST(failed_read_keeps_camera_edge);
     RUN_TEST(read_lead_skips_egg_and_fainted);
     RUN_TEST(read_free_needs_no_fade);
 }
