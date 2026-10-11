@@ -136,6 +136,12 @@ void follower_reset(Follower* f) {
     f->reveal_pending = true;
 }
 
+static void clear_ball_fx(Follower* f) {
+    f->ball_fx = FOL_BALL_NONE;
+    f->ball_t = 0;
+    f->reveal_from_ball = false;
+}
+
 /* Frames per tile for the player's movement action (event_object_movement.c). */
 static uint8_t action_frames(uint8_t a) {
     if (a >= 0x04 && a <= 0x07) return 32;   /* WALK_SLOW */
@@ -186,11 +192,15 @@ static void on_player_step(Follower* f, const FollowerInput* in) {
     if (f->reveal_pending && !f->in_ball) {
         place(f, in, in->prev_x, in->prev_y);
         f->vis = FOL_VISIBLE;
-        f->flash = 4;
         f->reveal_pending = false;
+        if (f->reveal_from_ball) {
+            f->ball_fx = FOL_BALL_OUT;
+            f->ball_t = 0;
+        }
+        f->reveal_from_ball = false;
         return;
     }
-    if (f->vis != FOL_VISIBLE) return;
+    if (f->vis != FOL_VISIBLE || f->ball_fx == FOL_BALL_IN) return;
     if (f->jump_pending && is_jump(in->move_action)) return;   /* second half of the same jump */
     if (f->jump_pending) {
         int16_t dx, dy;
@@ -265,6 +275,7 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
         f->lead_pid = in->lead.personality;
         f->lead_level = in->lead.level;
         f->reveal_pending = true;
+        clear_ball_fx(f);
         f->vis = FOL_HIDDEN;
         place(f, in, in->cur_x, in->cur_y);
     } else if (in->lead.level > f->lead_level) {
@@ -288,6 +299,7 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
     if (new_map) {
         f->vis = FOL_HIDDEN;
         f->reveal_pending = true;
+        clear_ball_fx(f);
         place(f, in, in->cur_x, in->cur_y);
     }
 
@@ -304,14 +316,38 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
 
     bool ball = (in->avatar_flags & AVATAR_ON_BIKE_OR_WATER) ||
                 (too_tall && (in->map_type == MAP_TYPE_INDOOR || in->map_type == MAP_TYPE_SECRET_BASE));
-    if (ball) {
-        f->in_ball = true;
-        f->vis = FOL_HIDDEN;
-        f->jump_pending = false;
-        place(f, in, in->cur_x, in->cur_y);
-    } else if (f->in_ball) {
+    if (f->ball_fx != FOL_BALL_NONE) {
+        if (f->ball_fx == FOL_BALL_IN && !ball) {
+            clear_ball_fx(f);                 /* dismounted before the ball closed */
+        } else if (++f->ball_t >= (f->ball_fx == FOL_BALL_IN ? FOL_BALL_IN_TOTAL : FOL_BALL_OUT_TOTAL)) {
+            bool was_in = f->ball_fx == FOL_BALL_IN;
+            clear_ball_fx(f);
+            if (was_in) {
+                f->in_ball = true;
+                f->vis = FOL_HIDDEN;
+                f->jump_pending = false;
+                place(f, in, in->cur_x, in->cur_y);
+            }
+        }
+    }
+    if (ball && !f->in_ball) {
+        if (f->vis == FOL_VISIBLE && !in->in_transition) {
+            if (f->ball_fx != FOL_BALL_IN) {
+                f->ball_fx = FOL_BALL_IN;
+                f->ball_t = 0;
+                f->jump_pending = false;
+            }
+        } else {
+            clear_ball_fx(f);
+            f->in_ball = true;
+            f->vis = FOL_HIDDEN;
+            f->jump_pending = false;
+            place(f, in, in->cur_x, in->cur_y);
+        }
+    } else if (!ball && f->in_ball) {
         f->in_ball = false;
         f->reveal_pending = true;
+        f->reveal_from_ball = !new_map;
     }
     /* Hidden only by a battle transition or a trip off the overworld (battle, menu):
      * show it where it was once that ends. */
@@ -334,10 +370,10 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
         f->hop_y = (int8_t)(HOP_PEAK * 4 * t * (l - t) / (l * l));
     }
     f->anim_tick++;
-    if (f->flash) f->flash--;
 
     if (f->p_free && in->free && (in->new_keys & 1) && (in->tile_state == 0 || in->tile_state == 2) &&
-        !(in->avatar_flags & AVATAR_SURFING) && f->vis == FOL_VISIBLE && f->step_t >= f->step_len) {
+        !(in->avatar_flags & AVATAR_SURFING) && f->vis == FOL_VISIBLE && f->ball_fx == FOL_BALL_NONE &&
+        f->step_t >= f->step_len) {
         int16_t dx, dy;
         dir_delta(in->facing, &dx, &dy);
         if ((dx || dy) && in->cur_x + dx == f->tx && in->cur_y + dy == f->ty) f->talk_request = true;

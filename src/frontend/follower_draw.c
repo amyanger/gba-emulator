@@ -171,8 +171,6 @@ void follower_view_objs(FollowerView* v, const FollowerFeed* fd, const uint8_t* 
 
     uint16_t pal[16];
     follower_fade_palette(v->gfx.pal[v->shiny ? 1 : 0], in, pal);
-    if (s->flash > 0)
-        for (uint32_t i = 1; i < 16; i++) pal[i] = 0x7FFF;
 
     const uint8_t* px = v->gfx.px[frame];
     if (in->fol_behavior == MB_LONG_GRASS) {

@@ -43,6 +43,15 @@ typedef struct {
 
 typedef enum { FOL_OFF, FOL_HIDDEN, FOL_VISIBLE } FollowerVis;
 
+#define FOL_BALL_NONE 0
+#define FOL_BALL_IN 1
+#define FOL_BALL_OUT 2
+/* 60 Hz frames (HGSS ticks x2). */
+#define FOL_BALL_IN_SHRINK 8       /* shrink into the ball, then the ball closes */
+#define FOL_BALL_IN_TOTAL 16
+#define FOL_BALL_OUT_BALL 4        /* ball frames, then the burst */
+#define FOL_BALL_OUT_TOTAL 20
+
 typedef struct {
     FollowerVis vis;
     bool reveal_pending;       /* appear on the player's next step */
@@ -56,7 +65,9 @@ typedef struct {
     int8_t hop_y;              /* extra upward offset during a ledge hop */
     bool jump_pending;
     uint8_t jump_dir;          /* game value, 0 none */
-    uint8_t flash;             /* pop-in frames left */
+    uint8_t ball_fx;           /* FOL_BALL_*: Poke Ball effect in progress */
+    uint8_t ball_t;            /* frames since the effect started */
+    bool reveal_from_ball;     /* the pending reveal follows leaving the ball */
     bool talk_request;         /* set for one frame when A is pressed on the follower */
     uint32_t lead_pid;
     uint8_t lead_level;

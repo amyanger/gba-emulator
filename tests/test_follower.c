@@ -37,7 +37,7 @@ TEST(reveal_on_first_step) {
     ASSERT_EQ(f.vis, FOL_VISIBLE);
     ASSERT_EQ(f.tx, 10);
     ASSERT_EQ(f.ty, 10);
-    ASSERT_EQ(f.flash, 3);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
 }
 
 TEST(follows_previous_tile_x_first) {
@@ -180,7 +180,7 @@ TEST(bike_and_too_tall_indoors_use_ball) {
     follower_step(&f, &in, false);
     walk(&f, &in, 1, 0, 0x0B, 16);
     in.avatar_flags = 0x02;
-    follower_step(&f, &in, false);
+    for (int i = 0; i <= FOL_BALL_IN_TOTAL; i++) follower_step(&f, &in, false);
     ASSERT_TRUE(f.in_ball);
     ASSERT_EQ(f.vis, FOL_HIDDEN);
     in.avatar_flags = 0x01;
@@ -497,6 +497,164 @@ TEST(read_free_needs_no_fade) {
     ASSERT_TRUE(!in.free);
 }
 
+static void settle(Follower* f, FollowerInput* in) {
+    follower_step(f, in, false);
+    walk(f, in, 1, 0, 0x0B, 16);        /* follower (10,10), player (11,10) */
+}
+
+TEST(mount_from_visible_plays_ball_in) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    in.avatar_flags = 0x02;
+    for (int i = 0; i <= FOL_BALL_IN_TOTAL; i++) {
+        follower_step(&f, &in, false);
+        if (i < FOL_BALL_IN_TOTAL) {
+            ASSERT_EQ(f.ball_fx, FOL_BALL_IN);
+            ASSERT_EQ(f.ball_t, i);
+            ASSERT_EQ(f.vis, FOL_VISIBLE);
+            ASSERT_TRUE(!f.in_ball);
+            ASSERT_EQ(f.tx, 10);
+            ASSERT_EQ(f.ty, 10);
+        }
+    }
+    ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
+    ASSERT_EQ(f.vis, FOL_HIDDEN);
+    ASSERT_TRUE(f.in_ball);
+    ASSERT_EQ(f.tx, 11);
+}
+
+TEST(follower_does_not_step_during_ball_in) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    in.avatar_flags = 0x02;
+    follower_step(&f, &in, false);
+    walk(&f, &in, 1, 0, 0x0B, 2);       /* player keeps moving on the bike */
+    ASSERT_EQ(f.ball_fx, FOL_BALL_IN);
+    ASSERT_EQ(f.tx, 10);
+    ASSERT_EQ(f.ty, 10);
+}
+
+TEST(mount_while_hidden_has_no_effect) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    follower_step(&f, &in, false);      /* hidden, reveal pending */
+    in.avatar_flags = 0x02;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
+    ASSERT_TRUE(f.in_ball);
+    ASSERT_EQ(f.vis, FOL_HIDDEN);
+}
+
+TEST(dismount_plays_ball_out) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    in.avatar_flags = 0x02;
+    for (int i = 0; i <= FOL_BALL_IN_TOTAL; i++) follower_step(&f, &in, false);
+    in.avatar_flags = 0x01;
+    follower_step(&f, &in, false);
+    ASSERT_TRUE(f.reveal_pending);
+    ASSERT_TRUE(f.reveal_from_ball);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
+    walk(&f, &in, 1, 0, 0x0B, 1);       /* first step reveals */
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    ASSERT_TRUE(!f.reveal_from_ball);
+    for (int i = 0; i < FOL_BALL_OUT_TOTAL; i++) {
+        ASSERT_EQ(f.ball_fx, FOL_BALL_OUT);
+        ASSERT_EQ(f.ball_t, i);
+        follower_step(&f, &in, false);
+    }
+    ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+}
+
+TEST(warp_and_lead_change_reveal_have_no_effect) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    in.overworld = false;
+    follower_step(&f, &in, false);
+    in.overworld = true;
+    in.cur_x = in.prev_x = 30; in.cur_y = in.prev_y = 5;
+    follower_step(&f, &in, false);
+    walk(&f, &in, 1, 0, 0x0B, 1);
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
+
+    in.lead.personality = 0x9999;
+    follower_step(&f, &in, false);
+    walk(&f, &in, 1, 0, 0x0B, 1);
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
+}
+
+TEST(warp_during_bike_ride_drops_ball_reveal) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    follower_step(&f, &in, false);
+    in.avatar_flags = 0x02;
+    follower_step(&f, &in, false);
+    in.avatar_flags = 0x01;
+    in.fade_active = true; in.loc_num = 34; in.cur_x = 3; in.cur_y = 4;
+    follower_step(&f, &in, false);      /* dismounts and warps in one frame */
+    ASSERT_TRUE(!f.reveal_from_ball);
+    in.fade_active = false;
+    walk(&f, &in, 1, 0, 0x0B, 1);
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
+}
+
+TEST(reset_mid_effect_clears_it) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    in.avatar_flags = 0x02;
+    for (int i = 0; i < 5; i++) follower_step(&f, &in, false);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_IN);
+    follower_reset(&f);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
+    ASSERT_EQ(f.ball_t, 0);
+    ASSERT_TRUE(!f.reveal_from_ball);
+}
+
+TEST(new_map_mid_effect_clears_it) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    in.avatar_flags = 0x02;
+    for (int i = 0; i < 5; i++) follower_step(&f, &in, false);
+    in.fade_active = true; in.loc_num = 34; in.cur_x = 3; in.cur_y = 4;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
+}
+
+TEST(talk_ignored_during_ball_effect) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    in.facing = 3;
+    in.new_keys = 0;
+    follower_step(&f, &in, false);
+    in.avatar_flags = 0x02;
+    follower_step(&f, &in, false);      /* ball in starts */
+    in.new_keys = 1;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_IN);
+    ASSERT_TRUE(!f.talk_request);
+}
+
 void run_follower_tests(void) {
     RUN_TEST(reveal_on_first_step);
     RUN_TEST(follows_previous_tile_x_first);
@@ -521,4 +679,13 @@ void run_follower_tests(void) {
     RUN_TEST(failed_read_keeps_camera_edge);
     RUN_TEST(read_lead_skips_egg_and_fainted);
     RUN_TEST(read_free_needs_no_fade);
+    RUN_TEST(mount_from_visible_plays_ball_in);
+    RUN_TEST(follower_does_not_step_during_ball_in);
+    RUN_TEST(mount_while_hidden_has_no_effect);
+    RUN_TEST(dismount_plays_ball_out);
+    RUN_TEST(warp_and_lead_change_reveal_have_no_effect);
+    RUN_TEST(warp_during_bike_ride_drops_ball_reveal);
+    RUN_TEST(reset_mid_effect_clears_it);
+    RUN_TEST(new_map_mid_effect_clears_it);
+    RUN_TEST(talk_ignored_during_ball_effect);
 }

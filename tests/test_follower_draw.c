@@ -151,12 +151,6 @@ TEST(visible_follower_obj) {
     ASSERT_EQ_HEX(objs[0].pal[4], 0x0104);
     ASSERT_TRUE(!objs[1].on);
 
-    fd.sim.flash = 3;                               /* pop-in flash: all but index 0 white */
-    follower_view_objs(&v, &fd, oam, objs);
-    ASSERT_EQ_HEX(objs[0].pal[0], 0x0100);
-    ASSERT_EQ_HEX(objs[0].pal[4], 0x7FFF);
-
-    fd.sim.flash = 0;
     fd.in.in_transition = true;
     follower_view_objs(&v, &fd, oam, objs);
     ASSERT_TRUE(!objs[0].on);
