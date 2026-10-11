@@ -45,6 +45,8 @@ The name of the route, town or city you're in, read from the game's region map, 
 
 Tracks a Nuzlocke run for the save you're playing. Open the Nuzlocke page and press **N** to start. Pokemon you already have join the run, and the routes they were caught on count as used.
 
+![Nuzlocke page on Route 118: every area used so far with what was met there, a missed Poochyena on Route 116, and the current route marked](screenshots/panel-nuzlocke-routes.png)
+
 From then on the tracker watches the game and keeps score:
 
 - **Routes.** The first wild encounter in each area counts: grass, water, fishing and Rock Smash in one area share it. The page lists every area you've used, what you met there and whether you caught it, missed it or it has since died. Your current location stays in view.
@@ -54,6 +56,8 @@ From then on the tracker watches the game and keeps score:
 - **Reloads.** Loading a savestate, rewinding, or loading an older in-game save is counted. If you go back to before a death, the death still counts and the run is marked "reloaded after death". Battling again on an area you'd already used after a reload is flagged as a re-roll.
 
 Use `[` and `]` to switch between **Routes**, **Team** (everyone in the run: green in your party, grey in the PC, red if dead) and **Graveyard** (each death with where it happened and what did it, plus the rule checks).
+
+![Team view next to the in-game party screen: the six party Pokemon in green and Castform in the PC](screenshots/panel-nuzlocke-team.png)
 
 The run is saved as `<rom>.<trainer id>.nuzlocke` next to the ROM, one event per line. It is only ever added to, never rewritten. A new game or a different save file has a different trainer ID, so it gets its own run. To start over, delete that file.
 
