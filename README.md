@@ -39,6 +39,8 @@ The apps aren't signed with a paid certificate, so macOS and Windows ask you to 
 
 Emerald Companion, Overworld X-Ray and Following Pokemon only work with the original, unmodified Pokemon Emerald (US/English) ROM. Every other game still runs normally.
 
+![Latios following the player in Lilycove City, saying LATIOS looks very happy! in the HeartGold text box](docs/screenshots/following-talk.png)
+
 ![Emerald Companion beside a wild battle against a Poochyena, showing your Swampert's moves and the Poochyena's moves](docs/screenshots/panel-battle.png)
 
 ## Quick start

@@ -227,6 +227,10 @@ Filters only change what you see. Screenshots (F12) still save the original pixe
 
 Your lead Pokemon walks one tile behind you in Pokemon Emerald, the way it does in HeartGold and SoulSilver. Face it and press A to talk: it hops, shows a bubble, sometimes cries, and says a line in the HeartGold text box. What it says depends on the place, the weather, the time of day, its health and how it feels about you.
 
+| Walking | Talking | Its reply |
+|---|---|---|
+| ![Latios walking one tile behind the player outside the Lilycove City Pokemon Center](screenshots/following-walk.png) | ![The player faces Latios and a smiling face bubble pops up above it](screenshots/following-emote.png) | ![The HeartGold text box at the bottom of the screen reads: LATIOS looks very happy!](screenshots/following-talk.png) |
+
 To set it up, open [Settings](#settings) > General, click **Choose** next to HeartGold/SoulSilver ROM and pick your own `.nds` file (US HeartGold or SoulSilver). Then turn on **Following Pokemon** there or press F1. Both choices are remembered between launches.
 
 - It needs the original Pokemon Emerald (US/English) ROM. Other games and ROM hacks run normally without it.
