@@ -1,12 +1,5 @@
 #include "game/follower_places.h"
 
-/* Emerald map types (gMapHeader.mapType). */
-#define MAP_TYPE_TOWN 1
-#define MAP_TYPE_CITY 2
-#define MAP_TYPE_ROUTE 3
-#define MAP_TYPE_UNDERGROUND 4
-#define MAP_TYPE_OCEAN_ROUTE 6
-
 /* Emerald region map sections. */
 #define MAPSEC_FIERY_PATH_A 74
 #define MAPSEC_FIERY_PATH_B 75
@@ -25,18 +18,16 @@
 #define MB_PUDDLE 0x16
 #define MB_SHALLOW_WATER 0x17
 
-/* HGSS map sections whose local rule tables (a/2/2/0 member sec+1) were chosen from
- * the lines each table selects; see the research appendix in the design spec. */
-#define HGSS_SEC_SEA_ROUTE 167  /* shore and sea lines: wet and sandy tiles */
-#define HGSS_SEC_CAVE 200       /* rocks and digging */
-#define HGSS_SEC_ICE_CAVE 217   /* ice sliding and cold */
-#define HGSS_SEC_FOREST 224     /* leaves, branches, sunlight through trees */
-#define HGSS_SEC_MOUNTAIN 137   /* tense, alert, unusual presence */
-#define HGSS_SEC_TOWN 126
-#define HGSS_SEC_CITY 127
+/* HGSS map sections whose local rule tables (a/2/2/0 member sec+1) fit the place. */
+#define HGSS_SEC_FOREST 224
+#define HGSS_SEC_MOUNTAIN 137
 
+/* Local entries are scanned before most global ones, as in HGSS. Forest (224) and
+ * mountain (137) keep their tables: local wins 84-92% of talks there, but with 17-25
+ * lines and no line above 32%. Towns (126), cities (127), sea routes (167), caves (200)
+ * and ice (217) use only global rules: there local wins 57-100% of talks and one line
+ * takes 33-90%. */
 uint16_t follower_place_mapsec(uint8_t map_type, uint8_t mapsec, uint8_t behavior) {
-    if (behavior == MB_ICE) return HGSS_SEC_ICE_CAVE;
     switch (mapsec) {
     case MAPSEC_PETALBURG_WOODS:
         return HGSS_SEC_FOREST;
@@ -47,23 +38,6 @@ uint16_t follower_place_mapsec(uint8_t map_type, uint8_t mapsec, uint8_t behavio
     case MAPSEC_FIERY_PATH_A:
     case MAPSEC_FIERY_PATH_B:
         return HGSS_SEC_MOUNTAIN;
-    default:
-        break;
-    }
-    switch (map_type) {
-    case MAP_TYPE_TOWN:
-        return HGSS_SEC_TOWN;
-    case MAP_TYPE_CITY:
-        return HGSS_SEC_CITY;
-    case MAP_TYPE_UNDERGROUND:
-        return HGSS_SEC_CAVE;
-    case MAP_TYPE_OCEAN_ROUTE:
-        return HGSS_SEC_SEA_ROUTE;
-    case MAP_TYPE_ROUTE:
-        /* A route counts as a beach when the follower stands on sand or in the shallows. */
-        if (behavior == MB_SAND || behavior == MB_DEEP_SAND || behavior == MB_SHALLOW_WATER)
-            return HGSS_SEC_SEA_ROUTE;
-        return 0;
     default:
         return 0;
     }

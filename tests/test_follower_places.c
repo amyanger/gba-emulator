@@ -25,16 +25,25 @@ TEST(deny_list) {
     ASSERT_TRUE(!follower_place_msg_denied(0));
 }
 
+/* Only forest and mountain places use an HGSS local table; the rest use global rules
+ * (see the dialogue debug report). */
 TEST(place_mapsec) {
-    ASSERT_EQ(follower_place_mapsec(4, 55, 0), 200);   /* cave */
-    ASSERT_EQ(follower_place_mapsec(6, 40, 0), 167);   /* ocean route */
-    ASSERT_EQ(follower_place_mapsec(3, 17, 0x21), 167);/* beach on a route */
+    ASSERT_EQ(follower_place_mapsec(1, 0, 0), 0);      /* town */
+    ASSERT_EQ(follower_place_mapsec(2, 12, 0), 0);     /* city (Lilycove) */
+    ASSERT_EQ(follower_place_mapsec(2, 8, 0x21), 0);   /* city sand */
+    ASSERT_EQ(follower_place_mapsec(4, 55, 0), 0);     /* cave */
+    ASSERT_EQ(follower_place_mapsec(6, 40, 0), 0);     /* ocean route */
+    ASSERT_EQ(follower_place_mapsec(3, 17, 0x21), 0);  /* beach on a route */
+    ASSERT_EQ(follower_place_mapsec(3, 17, 0x17), 0);  /* shallows on a route */
     ASSERT_EQ(follower_place_mapsec(3, 17, 0x00), 0);  /* plain route */
     ASSERT_EQ(follower_place_mapsec(3, 59, 0), 224);   /* Petalburg Woods */
-    ASSERT_EQ(follower_place_mapsec(3, 56, 0), 137);   /* mountain */
-    ASSERT_EQ(follower_place_mapsec(1, 0, 0), 126);    /* town */
-    ASSERT_EQ(follower_place_mapsec(2, 7, 0), 127);    /* city */
-    ASSERT_EQ(follower_place_mapsec(4, 67, 0x20), 217);/* ice */
+    ASSERT_EQ(follower_place_mapsec(3, 56, 0), 137);   /* Mt. Chimney */
+    ASSERT_EQ(follower_place_mapsec(3, 65, 0), 137);   /* Mt. Pyre */
+    ASSERT_EQ(follower_place_mapsec(3, 74, 0), 137);   /* Fiery Path */
+    ASSERT_EQ(follower_place_mapsec(3, 75, 0), 137);
+    ASSERT_EQ(follower_place_mapsec(3, 76, 0), 137);   /* Jagged Pass */
+    ASSERT_EQ(follower_place_mapsec(3, 77, 0), 137);
+    ASSERT_EQ(follower_place_mapsec(4, 67, 0x20), 0);  /* ice */
     ASSERT_EQ(follower_place_mapsec(8, 0, 0), 0);      /* indoor */
 }
 
