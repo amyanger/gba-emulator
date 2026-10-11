@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "common.h"
 #include "hgss/hgss_model_lut.h"
 
 #define MMODEL_BASE      297
@@ -12,6 +13,8 @@
 #define FRAME_NCGR       2
 #define FRAME_NCLR       26
 #define EMOTE_BASE       2
+#define FX_BALL_MEMBER   129
+#define FX_BURST_MEMBER  104
 #define LOCAL_RULES      30
 #define GLOBAL_RULES     70
 #define GLYPH_FALLBACK   427
@@ -73,6 +76,13 @@ bool hgss_assets_open(HgssAssets* a, const char* path) {
     for (uint32_t e = 0; ok && e < HGSS_EMOTES; e++)
         ok = narc_read(&a->rom, a->emotes, EMOTE_BASE + e, s_buf, sizeof(s_buf), &len) &&
              hgss_gfx_emote(s_buf, len, &a->emote[e]);
+    if (ok) {
+        a->fx_ok = narc_read(&a->rom, a->emotes, FX_BALL_MEMBER, s_buf, sizeof(s_buf), &len) &&
+                   hgss_gfx_ball(s_buf, len, &a->ball) &&
+                   narc_read(&a->rom, a->emotes, FX_BURST_MEMBER, s_buf, sizeof(s_buf), &len) &&
+                   hgss_gfx_burst(s_buf, len, &a->burst);
+        if (!a->fx_ok) LOG_WARN("HGSS ball effect graphics unreadable, effect disabled");
+    }
     ok = ok && narc_read(&a->rom, a->msg, MSG_MEMBER, a->msg_bank, sizeof(a->msg_bank), &a->msg_len);
     if (!ok) {
         set_error(a, "ROM data unreadable");

@@ -26,14 +26,11 @@ static bool btx_dict(const uint8_t* t, uint32_t tlen, uint32_t o, uint32_t unit,
     return true;
 }
 
-/* Parses TEX0 texture and palette dictionaries. Textures are sorted by data offset. */
-static bool btx_parse(const uint8_t* b, uint32_t len, BtxTex* tex, uint8_t max, uint8_t* ntex,
-                      uint32_t* pal_off, uint8_t pal_max, uint8_t* npal, const uint8_t** t_out, uint32_t* tlen_out) {
-    if (len < 0x18 || memcmp(b, "BTX0", 4) != 0) return false;
-    uint32_t start = rd32(b + 0x10);
-    if (!in_range(start, 0x3C, len)) return false;
-    const uint8_t* t = b + start;
-    uint32_t tlen = len - start;
+/* Parses the TEX0 block at `t` (tlen bytes to the end of the file). Textures are sorted by data offset.
+ * Every texture must use format `fmt` (3 = 4bpp, 6 = A5I3); each palette needs `pal_bytes` bytes. */
+static bool tex0_parse(const uint8_t* t, uint32_t tlen, uint8_t fmt, uint32_t pal_bytes, BtxTex* tex, uint8_t max,
+                       uint8_t* ntex, uint32_t* pal_off, uint8_t pal_max, uint8_t* npal) {
+    if (!in_range(0, 0x3C, tlen)) return false;
     uint32_t tex_data = rd32(t + 0x14), pal_data = rd32(t + 0x38);
     const uint8_t* e;
     uint8_t n;
@@ -45,8 +42,8 @@ static bool btx_parse(const uint8_t* b, uint32_t len, BtxTex* tex, uint8_t max, 
         tex[i].w = (uint16_t)(8u << ((p >> 4) & 7));
         tex[i].h = (uint16_t)(8u << ((p >> 7) & 7));
         tex[i].fmt = (uint8_t)((p >> 10) & 7);
-        if (tex[i].fmt != 3 || tex[i].off > tlen || !in_range(tex[i].off, (uint32_t)tex[i].w * tex[i].h / 2, tlen))
-            return false;
+        uint32_t bytes = (uint32_t)tex[i].w * tex[i].h / (fmt == 3 ? 2 : 1);
+        if (tex[i].fmt != fmt || tex[i].off > tlen || !in_range(tex[i].off, bytes, tlen)) return false;
     }
     for (uint8_t i = 1; i < n; i++)          /* insertion sort by offset */
         for (uint8_t j = i; j > 0 && tex[j - 1].off > tex[j].off; j--) {
@@ -59,12 +56,41 @@ static bool btx_parse(const uint8_t* b, uint32_t len, BtxTex* tex, uint8_t max, 
     if (pal_data > tlen) return false;
     for (uint8_t i = 0; i < n; i++) {
         pal_off[i] = pal_data + ((uint32_t)rd16(e + 4 * i) << 3);
-        if (!in_range(pal_off[i], 32, tlen)) return false;
+        if (!in_range(pal_off[i], pal_bytes, tlen)) return false;
     }
     *npal = n;
-    *t_out = t;
-    *tlen_out = tlen;
     return true;
+}
+
+/* BTX0: the TEX0 block offset sits at 0x10. */
+static bool btx_parse(const uint8_t* b, uint32_t len, BtxTex* tex, uint8_t max, uint8_t* ntex,
+                      uint32_t* pal_off, uint8_t pal_max, uint8_t* npal, const uint8_t** t_out, uint32_t* tlen_out) {
+    if (len < 0x18 || memcmp(b, "BTX0", 4) != 0) return false;
+    uint32_t start = rd32(b + 0x10);
+    if (!in_range(start, 0x3C, len)) return false;
+    if (!tex0_parse(b + start, len - start, 3, 32, tex, max, ntex, pal_off, pal_max, npal)) return false;
+    *t_out = b + start;
+    *tlen_out = len - start;
+    return true;
+}
+
+/* BMD0: header has a block count at 0x0E and block offsets from 0x10; find the one tagged TEX0. */
+static bool bmd_parse(const uint8_t* b, uint32_t len, uint8_t fmt, uint32_t pal_bytes, BtxTex* tex, uint8_t max,
+                      uint8_t* ntex, uint32_t* pal_off, uint8_t pal_max, uint8_t* npal, const uint8_t** t_out,
+                      uint32_t* tlen_out) {
+    if (len < 0x10 || memcmp(b, "BMD0", 4) != 0) return false;
+    uint16_t blocks = rd16(b + 0x0E);
+    if (blocks > 16 || !in_range(0x10, (uint32_t)blocks * 4, len)) return false;
+    for (uint16_t i = 0; i < blocks; i++) {
+        uint32_t start = rd32(b + 0x10 + 4 * i);
+        if (!in_range(start, 0x3C, len) || memcmp(b + start, "TEX0", 4) != 0) continue;
+        if (!tex0_parse(b + start, len - start, fmt, pal_bytes, tex, max, ntex, pal_off, pal_max, npal))
+            return false;
+        *t_out = b + start;
+        *tlen_out = len - start;
+        return true;
+    }
+    return false;
 }
 
 /* 4bpp to one palette index per byte. Low nibble is the first pixel. */
@@ -145,4 +171,36 @@ uint8_t hgss_font_pixel(const HgssFont* f, uint16_t glyph, uint32_t x, uint32_t 
     uint32_t row = y % 8, col = x % 8;
     uint8_t byte = g[2 * row + (col < 4 ? 1 : 0)];
     return (uint8_t)((byte >> (6 - 2 * (col % 4))) & 3);
+}
+
+bool hgss_gfx_ball(const uint8_t* bmd, uint32_t len, HgssBallGfx* out) {
+    BtxTex tex[1];
+    uint32_t pal[1];
+    uint8_t nt, np;
+    const uint8_t* t;
+    uint32_t tlen;
+    if (!bmd_parse(bmd, len, 3, 16, tex, 1, &nt, pal, 1, &np, &t, &tlen) || nt != 1 || np != 1) return false;
+    if (tex[0].w != 16 || tex[0].h != 16) return false;
+    memset(out, 0, sizeof(*out));
+    unpack4(t + tex[0].off, 16 * 16, out->px);
+    /* The retail ball palette holds 8 colours (16 bytes) at the end of TEX0. */
+    uint32_t colors = (tlen - pal[0]) / 2 < 16 ? (tlen - pal[0]) / 2 : 16;
+    for (uint32_t c = 0; c < colors; c++) out->pal[c] = (uint16_t)(rd16(t + pal[0] + 2 * c) & 0x7FFF);
+    return true;
+}
+
+bool hgss_gfx_burst(const uint8_t* bmd, uint32_t len, HgssBurstGfx* out) {
+    BtxTex tex[1];
+    uint32_t pal[1];
+    uint8_t nt, np;
+    const uint8_t* t;
+    uint32_t tlen;
+    if (!bmd_parse(bmd, len, 6, 16, tex, 1, &nt, pal, 1, &np, &t, &tlen) || nt != 1 || np != 1) return false;
+    if (tex[0].w != 32 || tex[0].h != 32) return false;
+    memset(out, 0, sizeof(*out));
+    const uint8_t* src = t + tex[0].off;
+    for (uint32_t i = 0; i < 32 * 32; i++)
+        out->px[i] = (src[i] >> 3) >= 16 ? (uint8_t)((src[i] & 7) + 1) : 0;
+    for (uint32_t c = 0; c < 8; c++) out->pal[1 + c] = (uint16_t)(rd16(t + pal[0] + 2 * c) & 0x7FFF);
+    return true;
 }
