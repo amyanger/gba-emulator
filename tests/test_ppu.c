@@ -612,6 +612,51 @@ TEST(semi_transparent_sprite_forces_alpha_blend) {
     free(gba);
 }
 
+TEST(semi_transparent_sprite_ignores_window_effect_bit) {
+    /* Emerald's overworld enables a full-screen WIN0 whose WININ mask
+     * has the colour-effect bit clear, yet its fog, shadow and
+     * reflection sprites still blend on hardware (and in mGBA): the
+     * window bit gates BLDCNT effects, not forced OBJ alpha. */
+    GBA* gba = make_gba();
+    PPU* ppu = &gba->ppu;
+
+    ppu->dispcnt = 3 | (1u << 10) | (1u << 12) | (1u << 13);
+    ppu->vcount = 0;
+
+    for (int x = 0; x < SCREEN_WIDTH; x++) {
+        ppu->vram[x * 2] = 0x1F;
+        ppu->vram[x * 2 + 1] = 0x00;
+    }
+    for (int i = 0; i < 32; i++) {
+        ppu->vram[0x14000 + i] = 0x11;
+    }
+    ppu->palette_ram[0x200 + 2] = 0xFF;
+    ppu->palette_ram[0x200 + 3] = 0x7F;
+
+    uint16_t attr0 = 0 | (1u << 10);
+    uint16_t attr1 = 10;
+    uint16_t attr2 = 512;
+    ppu->oam[0] = (uint8_t)attr0; ppu->oam[1] = (uint8_t)(attr0 >> 8);
+    ppu->oam[2] = (uint8_t)attr1; ppu->oam[3] = (uint8_t)(attr1 >> 8);
+    ppu->oam[4] = (uint8_t)attr2; ppu->oam[5] = (uint8_t)(attr2 >> 8);
+
+    /* Emerald's values: WIN0H/V = 0x00FF (full screen), WININ = 0x1F1F. */
+    ppu->win_h[0] = 0x00FF;
+    ppu->win_v[0] = 0x00FF;
+    ppu->winin = 0x1F1F;
+    ppu->bldcnt = (uint16_t)((1u << 10) | (1u << 6));
+    ppu->bldalpha = 8 | (8u << 8);
+
+    ppu_render_scanline(ppu);
+
+    const uint16_t blended = (uint16_t)(31 | (15u << 5) | (15u << 10));
+    ASSERT_EQ_HEX(ppu->framebuffer[10], blended);
+    ASSERT_EQ_HEX(ppu->framebuffer[17], blended);
+    ASSERT_EQ_HEX(ppu->framebuffer[9], 0x001F);
+
+    free(gba);
+}
+
 /* ---- Bitmap modes 3-5: BG2 affine sampling and transparency ------- */
 
 static void put16(uint8_t* mem, uint32_t addr, uint16_t v) {
@@ -867,6 +912,7 @@ void run_ppu_tests(void) {
     RUN_TEST(affine_sprite_identity_renders);
     RUN_TEST(affine_sprite_double_size_centers_texture);
     RUN_TEST(semi_transparent_sprite_forces_alpha_blend);
+    RUN_TEST(semi_transparent_sprite_ignores_window_effect_bit);
     RUN_TEST(bitmap_reset_matrix_is_identity);
     RUN_TEST(mode3_identity_matches_direct_read);
     RUN_TEST(mode3_ref_x_offset_shifts_image_and_clips);

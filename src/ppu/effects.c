@@ -61,20 +61,21 @@ void ppu_apply_blend_scanline(PPU* ppu) {
     if (evy > 16) evy = 16;
 
     for (uint32_t x = 0; x < SCREEN_WIDTH; x++) {
-        // Bit 5 of the window mask gates color effects for this pixel's region.
-        // It is set for every pixel when no window is enabled.
-        if (!BIT(ppu->win_mask[x], 5)) continue;
-
         uint8_t top_id = ppu->top_layer[x];
 
         // Semi-transparent OBJ pixels (GFX mode 1) force alpha blending
-        // against a valid 2nd target, regardless of the BLDCNT mode bits
-        // and of the OBJ 1st-target bit.
+        // against a valid 2nd target, regardless of the BLDCNT mode bits,
+        // the OBJ 1st-target bit and the window color-effect bit (mGBA
+        // matches; Emerald's overworld fog relies on it).
         if (top_id == 4 && ppu->obj_semitransparent[x]
             && is_second_target(bldcnt, ppu->second_layer[x])) {
             alpha_blend_pixel(ppu, x, eva, evb);
             continue;
         }
+
+        // Bit 5 of the window mask gates color effects for this pixel's region.
+        // It is set for every pixel when no window is enabled.
+        if (!BIT(ppu->win_mask[x], 5)) continue;
 
         // Mode 0: no (further) blending
         if (mode == 0) continue;
