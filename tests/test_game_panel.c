@@ -85,6 +85,12 @@ TEST(panel_title_case) {
     ASSERT_STR_EQ(out, "Ho-Oh");
     game_panel_title_case("", out, sizeof(out));
     ASSERT_STR_EQ(out, "");
+    game_panel_title_case("TM36", out, sizeof(out));
+    ASSERT_STR_EQ(out, "TM36");
+    game_panel_title_case("HM05 FLASH", out, sizeof(out));
+    ASSERT_STR_EQ(out, "HM05 Flash");
+    game_panel_title_case("HMM", out, sizeof(out));
+    ASSERT_STR_EQ(out, "Hmm");
     /* Truncation never splits a UTF-8 sequence. */
     char small[5];
     game_panel_title_case("POK\xC3\xA9", small, sizeof(small));

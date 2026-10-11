@@ -60,14 +60,20 @@ uint8_t game_panel_select(uint8_t sel, int delta, uint8_t party_count) {
 static bool title_sep(char ch) { return ch == ' ' || ch == '-' || ch == '.'; }
 
 /* Restores Gen 3 spellings that plain title case loses: the whole words "Poke"
- * (the ROM's "POKe", decoded as "POKE") -> "Poké", and "Hp"/"Pp" -> "HP"/"PP".
- * Words that only contain them, like "Pokemon", are left alone. */
+ * (the ROM's "POKe", decoded as "POKE") -> "Poké", "Hp"/"Pp" -> "HP"/"PP", and
+ * "Tm36"/"Hm05" -> "TM36"/"HM05". Words that only contain them, like "Pokemon",
+ * are left alone. */
 static void title_fix_tokens(char* out, size_t out_size) {
     size_t len = strlen(out);
     size_t i = 0;
     while (i < len) {
         size_t j = i;
         while (j < len && !title_sep(out[j])) j++;
+        if (j - i >= 3 && (out[i] == 'T' || out[i] == 'H') && out[i + 1] == 'm') {
+            bool digits = true;
+            for (size_t k = i + 2; k < j; k++) digits = digits && out[k] >= '0' && out[k] <= '9';
+            if (digits) out[i + 1] = 'M';
+        }
         if (j - i == 2 && (memcmp(out + i, "Hp", 2) == 0 || memcmp(out + i, "Pp", 2) == 0)) {
             out[i + 1] = 'P';
         } else if (j - i == 4 && memcmp(out + i, "Poke", 4) == 0 && len + 2 <= out_size) {
