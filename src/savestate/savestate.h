@@ -47,6 +47,12 @@ void savestate_slot_path(const char* rom_path, int32_t slot, char* out, size_t o
 SaveStateResult savestate_save_to_buffer(GBA* gba, uint8_t** out, size_t* out_size);
 SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t size);
 
+/* Same as the buffer variants but without the data CRC, which costs more
+ * than the rest of a save for states that never leave RAM (rewind).
+ * Snapshots store a CRC of 0, so never write one to disk. */
+SaveStateResult savestate_snapshot(GBA* gba, uint8_t** out, size_t* out_size);
+SaveStateResult savestate_restore_snapshot(GBA* gba, const uint8_t* buf, size_t size);
+
 /* Read just the label out of an in-memory savestate buffer (or v5 buffer,
  * which always reports empty). Returns false if the buffer header is
  * malformed. The output is always NUL-terminated. If

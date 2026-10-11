@@ -993,7 +993,7 @@ uint32_t test_savestate_crc32(const uint8_t* data, size_t len) {
 /* -------------------------------------------------------------------------- */
 /*  Public API                                                                 */
 /* -------------------------------------------------------------------------- */
-SaveStateResult savestate_save_to_buffer(GBA* gba, uint8_t** out, size_t* out_size) {
+static SaveStateResult save_to_buffer(GBA* gba, uint8_t** out, size_t* out_size, bool with_crc) {
     if (!gba || !out || !out_size) return SS_ERR_FILE_OPEN;
     *out = NULL;
     *out_size = 0;
@@ -1028,8 +1028,8 @@ SaveStateResult savestate_save_to_buffer(GBA* gba, uint8_t** out, size_t* out_si
         return SS_ERR_FILE_WRITE;
     }
 
-    /* Compute CRC32 of all data after the header */
-    uint32_t data_crc = crc32(wb.data + HEADER_SIZE, wb.size - HEADER_SIZE);
+    /* Compute CRC32 of all data after the header (0 for snapshots) */
+    uint32_t data_crc = with_crc ? crc32(wb.data + HEADER_SIZE, wb.size - HEADER_SIZE) : 0;
 
     uint32_t rom_crc = get_rom_crc(&gba->cart);
 
@@ -1082,7 +1082,15 @@ SaveStateResult savestate_save_to_buffer(GBA* gba, uint8_t** out, size_t* out_si
     return SS_OK;
 }
 
-SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t size) {
+SaveStateResult savestate_save_to_buffer(GBA* gba, uint8_t** out, size_t* out_size) {
+    return save_to_buffer(gba, out, out_size, true);
+}
+
+SaveStateResult savestate_snapshot(GBA* gba, uint8_t** out, size_t* out_size) {
+    return save_to_buffer(gba, out, out_size, false);
+}
+
+static SaveStateResult load_from_buffer(GBA* gba, const uint8_t* buf, size_t size, bool check_crc) {
     if (!gba || !buf) return SS_ERR_FILE_READ;
 
     if (size < HEADER_SIZE_V5) {
@@ -1148,7 +1156,7 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
     }
 
     /* Validate data CRC */
-    uint32_t computed_crc = crc32(buf + header_size, size - header_size);
+    uint32_t computed_crc = check_crc ? crc32(buf + header_size, size - header_size) : stored_crc;
     if (computed_crc != stored_crc) {
         LOG_ERROR("Save state: CRC mismatch (stored=0x%08X, computed=0x%08X)",
                   stored_crc, computed_crc);
@@ -1241,6 +1249,14 @@ SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t 
     gba->sio.peer = NULL;
 
     return SS_OK;
+}
+
+SaveStateResult savestate_load_from_buffer(GBA* gba, const uint8_t* buf, size_t size) {
+    return load_from_buffer(gba, buf, size, true);
+}
+
+SaveStateResult savestate_restore_snapshot(GBA* gba, const uint8_t* buf, size_t size) {
+    return load_from_buffer(gba, buf, size, false);
 }
 
 /* Write a buffer to 'path' via temp file + rename().  POSIX rename() is

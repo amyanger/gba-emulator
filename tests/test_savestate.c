@@ -97,6 +97,26 @@ TEST(savestate_buffer_roundtrip) {
     gba_destroy(&gba);
 }
 
+TEST(savestate_snapshot_roundtrip_skips_crc) {
+    /* Rewind snapshots carry no data CRC: they restore through the
+     * snapshot path but are rejected by the CRC-checked loader. */
+    GBA gba;
+    gba_init(&gba);
+    gba.bus.ewram[7] = 0x5A;
+
+    uint8_t* buf = NULL;
+    size_t   buf_size = 0;
+    ASSERT_EQ(SS_OK, savestate_snapshot(&gba, &buf, &buf_size));
+
+    gba.bus.ewram[7] = 0;
+    ASSERT_EQ(SS_OK, savestate_restore_snapshot(&gba, buf, buf_size));
+    ASSERT_EQ(gba.bus.ewram[7], 0x5A);
+    ASSERT_EQ(SS_ERR_CORRUPT, savestate_load_from_buffer(&gba, buf, buf_size));
+
+    free(buf);
+    gba_destroy(&gba);
+}
+
 TEST(savestate_sio_roundtrip) {
     GBA src;
     gba_init(&src);
@@ -656,6 +676,7 @@ void run_savestate_tests(void) {
     RUN_TEST(slot_path_slot_9);
     RUN_TEST(slot_path_small_buffer);
     RUN_TEST(savestate_buffer_roundtrip);
+    RUN_TEST(savestate_snapshot_roundtrip_skips_crc);
     RUN_TEST(savestate_sio_roundtrip);
     RUN_TEST(savestate_v5_loads_with_empty_label);
     RUN_TEST(savestate_save_writes_v6_with_label);

@@ -88,9 +88,9 @@ void rewind_record_frame(RewindBuffer* rb, GBA* gba) {
     /* Serialize current GBA state into a malloc'd buffer. */
     uint8_t* raw = NULL;
     size_t   raw_size = 0;
-    SaveStateResult r = savestate_save_to_buffer(gba, &raw, &raw_size);
+    SaveStateResult r = savestate_snapshot(gba, &raw, &raw_size);
     if (r != SS_OK) {
-        LOG_WARN("Rewind: savestate_save_to_buffer failed (%d)", (int)r);
+        LOG_WARN("Rewind: savestate_snapshot failed (%d)", (int)r);
         return;
     }
     if (raw_size > rb->scratch_cap) {
@@ -191,9 +191,9 @@ bool rewind_step(RewindBuffer* rb, GBA* gba) {
         }
     }
 
-    SaveStateResult r = savestate_load_from_buffer(gba, rb->scratch, slot->raw_size);
+    SaveStateResult r = savestate_restore_snapshot(gba, rb->scratch, slot->raw_size);
     if (r != SS_OK) {
-        LOG_ERROR("Rewind: savestate_load_from_buffer failed (%d)", (int)r);
+        LOG_ERROR("Rewind: savestate_restore_snapshot failed (%d)", (int)r);
         rewind_clear(rb);
         rb->active = false;
         return false;
