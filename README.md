@@ -28,7 +28,7 @@ The apps aren't signed with a paid certificate, so macOS and Windows ask you to 
 
 - **[Hardware X-Ray Mode](docs/hardware-xray.md)** (F2): a second window showing background layers, sprites, tiles, palettes, audio channels, CPU registers, timers, DMA and interrupts as the game runs.
 - **[Emerald Companion](docs/emerald-companion.md)** (F9): a side panel for Pokemon Emerald with wild battle IVs, natures and catch odds, move matchups both ways, your party's hidden stats and the current route's encounter table.
-- **[Overworld X-Ray](docs/emerald-companion.md#overworld-x-ray)** (F4): trainer sight lines and uncollected hidden items drawn right on the map in Pokemon Emerald.
+- **[Overworld X-Ray](docs/emerald-companion.md#overworld-x-ray)** (F4): trainer sight lines, item names and NPC gifts drawn right on the map in Pokemon Emerald.
 - **Save states and rewind**: 10 save-state slots, plus hold Backspace to rewind up to 60 seconds.
 - **[Cheats](docs/usage.md#cheats)**: paste CodeBreaker, GameShark or Action Replay codes as found online. Your save is backed up before any cheat runs.
 - **[Link cable](docs/usage.md#link-cable)**: two windows on the same machine can trade and battle.
