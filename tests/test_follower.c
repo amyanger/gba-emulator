@@ -107,6 +107,59 @@ TEST(connection_rebase) {
     ASSERT_EQ(f.ty, 10 + 140);
 }
 
+TEST(connection_crossing_keeps_follower) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    follower_step(&f, &in, false);
+    walk(&f, &in, 1, 0, 0x0B, 16);      /* follower (10,10), player (11,10) */
+    walk(&f, &in, 1, 0, 0x0B, 1);       /* player steps to (12,10), follower to (11,10) */
+    in.loc_num = 34;                    /* location rewritten first */
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    ASSERT_EQ(f.tx, 11);
+    in.cam_active = true; in.cam_x = 40; in.cam_y = 0;   /* next frame: coords rebased */
+    in.prev_x = (int16_t)(in.prev_x - 40); in.cur_x = (int16_t)(in.cur_x - 40);
+    for (int i = 0; i < 14; i++) follower_step(&f, &in, false);
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    ASSERT_EQ(f.tx, 11 - 40);
+    ASSERT_EQ(f.ty, 10);
+    walk(&f, &in, 1, 0, 0x0B, 16);      /* player (13-40,10) */
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    ASSERT_EQ(f.tx, 12 - 40);
+}
+
+TEST(warp_after_fade_hides) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    follower_step(&f, &in, false);
+    walk(&f, &in, 1, 0, 0x0B, 16);
+    in.fade_active = true; in.loc_num = 34; in.cur_x = 3; in.cur_y = 4;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.vis, FOL_HIDDEN);
+    ASSERT_TRUE(f.reveal_pending);
+    ASSERT_EQ(f.tx, 3);
+}
+
+TEST(lead_change_clears_stale_jump) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    follower_step(&f, &in, false);
+    walk(&f, &in, 0, 1, 0x08, 16);      /* follower (10,10), player (10,11) */
+    walk(&f, &in, 0, 1, 0x0C, 16);      /* ledge jump arms the catch-up hop */
+    walk(&f, &in, 0, 1, 0x0C, 16);      /* player (10,13) */
+    ASSERT_TRUE(f.jump_pending);
+    in.lead.personality = 0x9999;       /* lead swapped */
+    follower_step(&f, &in, false);
+    ASSERT_TRUE(!f.jump_pending);
+    walk(&f, &in, 1, 0, 0x0B, 16);      /* reveal at (10,13), player (11,13) */
+    walk(&f, &in, 1, 0, 0x0B, 16);      /* player (12,13) */
+    ASSERT_EQ(f.tx, 11);
+    ASSERT_EQ(f.ty, 13);
+}
+
 TEST(reset_hides_and_arms_reveal) {
     Follower f;
     follower_init(&f);
@@ -385,6 +438,9 @@ void run_follower_tests(void) {
     RUN_TEST(turn_in_place_ignored);
     RUN_TEST(ledge_catch_up_hop);
     RUN_TEST(connection_rebase);
+    RUN_TEST(connection_crossing_keeps_follower);
+    RUN_TEST(warp_after_fade_hides);
+    RUN_TEST(lead_change_clears_stale_jump);
     RUN_TEST(reset_hides_and_arms_reveal);
     RUN_TEST(bike_and_too_tall_indoors_use_ball);
     RUN_TEST(no_lead_hides);

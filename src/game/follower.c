@@ -161,6 +161,8 @@ static void place(Follower* f, int16_t x, int16_t y) {
     f->ty = f->from_y = y;
     f->step_t = f->step_len = 0;
     f->hop_y = 0;
+    f->jump_pending = false;
+    f->jump_dir = 0;
 }
 
 static void start_step(Follower* f, int16_t nx, int16_t ny, uint8_t len) {
@@ -266,12 +268,14 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
     uint8_t fainted = (uint8_t)(in->party_hp_zero & ~f->p_party_hp_zero);
     if (f->p_in_battle && (fainted & (1u << f->p_lead_slot))) f->faint_pid = prev_lead_pid;
 
-    bool new_map = !f->p_valid || in->loc_group != f->p_loc_group || in->loc_num != f->p_loc_num;
+    /* Walking across a map connection rewrites the location while the field stays up
+     * with no fade; the coords are rebased below when gCamera.active rises. Warps
+     * always pass through a fade or leave CB2_Overworld first. */
+    bool loc_changed = in->loc_group != f->p_loc_group || in->loc_num != f->p_loc_num;
+    bool new_map = !f->p_valid || (loc_changed && (f->p_in_battle || in->fade_active));
     if (new_map) {
         f->vis = FOL_HIDDEN;
         f->reveal_pending = true;
-        f->jump_pending = false;
-        f->jump_dir = 0;
         place(f, in->cur_x, in->cur_y);
     }
 
