@@ -21,6 +21,7 @@
 #define GLOW_R       6.0f
 #define STAR_COLOR  0xFFFFF8D0u
 #define ITEM_PT      9.0f
+#define MIN_TEXT_PX 10.0f   /* CLAUDE.md: text never below 10 px */
 #define ITEM_H      14.0f   /* points */
 #define ITEM_PAD     6.0f
 #define ITEM_BG     0x3A2F08u
@@ -99,10 +100,12 @@ void overworld_marker_text(const OwMarker* mk, char* out, size_t out_size) {
 
 typedef struct { float pt, h, pad; bool dot; } PillStyle;
 
-static PillStyle label_style(const OverworldSnapshot* s, const OwLabel* l) {
+static PillStyle label_style(const UiCanvas* c, const OverworldSnapshot* s, const OwLabel* l) {
     if (l->source == OW_LABEL_TRAINER) return (PillStyle){PILL_PT, PILL_H, PILL_PAD, !s->trainers[l->index].beaten};
     if (s->markers[l->index].kind == OW_MARK_GIFT) return (PillStyle){PILL_PT, PILL_H, PILL_PAD, false};
-    return (PillStyle){ITEM_PT, ITEM_H, ITEM_PAD, false};
+    /* Smaller than the other pills, but never below 10 px on low-density screens. */
+    float pt = ITEM_PT * c->scale < MIN_TEXT_PX ? MIN_TEXT_PX / c->scale : ITEM_PT;
+    return (PillStyle){pt, ITEM_H, ITEM_PAD, false};
 }
 
 static void label_text(const OverworldSnapshot* s, const OwLabel* l, char* out, size_t n) {
@@ -201,7 +204,7 @@ uint32_t overworld_label_rects(const UiCanvas* c, const OverworldSnapshot* s, fl
             OwLabel l = {pass == 0 ? OW_LABEL_TRAINER : OW_LABEL_MARKER, (uint8_t)i, {0, 0, 0, 0}};
             char text[LABEL_TEXT];
             label_text(s, &l, text, sizeof(text));
-            PillStyle st = label_style(s, &l);
+            PillStyle st = label_style(c, s, &l);
             float w = 2 * st.pad + ui_text_width(c, UI_FONT_SEMIBOLD, st.pt, text) + (st.dot ? PILL_DOT + PILL_GAP : 0.0f);
             l.rect = place(c, label_anchor(s, &l, g), w, st.h, out, n, cones, nc);
             out[n++] = l;
@@ -212,7 +215,7 @@ uint32_t overworld_label_rects(const UiCanvas* c, const OverworldSnapshot* s, fl
 
 static void draw_label(UiCanvas* c, const OverworldSnapshot* s, const OwLabel* l) {
     char text[LABEL_TEXT];
-    PillStyle st = label_style(s, l);
+    PillStyle st = label_style(c, s, l);
     uint32_t bg, fg;
     label_text(s, l, text, sizeof(text));
     if (l->source == OW_LABEL_TRAINER) {

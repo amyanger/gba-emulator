@@ -243,7 +243,28 @@ TEST(owd_many_labels_stay_inside_canvas) {
     overworld_draw(&c, &s, 2.0f);   /* must not crash */
 }
 
+TEST(owd_item_text_never_below_10px) {
+    static uint32_t px[240 * 160];
+    UiCanvas c;
+    static OverworldSnapshot s;
+    OwLabel l[OW_MAX_LABELS];
+    ui_font_init();
+    ui_canvas_init(&c, px, 240, 160, 1.0f);    /* density 1: 1 point = 1 pixel */
+    memset(&s, 0, sizeof(s));
+    s.visible = true;
+    s.marker_count = 1;
+    s.markers[0] = marker(OW_MARK_ITEM_BALL, 64, 64, "RARE CANDY", NULL);
+    ASSERT_EQ(overworld_label_rects(&c, &s, 1.0f, l), 1);
+    float at10 = ui_text_width(&c, UI_FONT_SEMIBOLD, 10.0f, "Rare Candy");
+    ASSERT_TRUE(l[0].rect.w >= at10 + 2 * 6.0f - 0.01f);   /* 6 pt item padding each side */
+    ui_canvas_init(&c, s_px, W, H, 2.0f);       /* Retina: 9 pt is 18 px, keep 9 pt */
+    ASSERT_EQ(overworld_label_rects(&c, &s, 1.0f, l), 1);
+    float at9 = ui_text_width(&c, UI_FONT_SEMIBOLD, 9.0f, "Rare Candy");
+    ASSERT_TRUE(l[0].rect.w <= at9 + 2 * 6.0f + 0.01f);
+}
+
 void run_overworld_draw_tests(void) {
+    RUN_TEST(owd_item_text_never_below_10px);
     RUN_TEST(owd_marker_text);
     RUN_TEST(owd_pill_tints_by_kind);
     RUN_TEST(owd_adjacent_labels_do_not_overlap);
