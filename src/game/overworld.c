@@ -1,4 +1,5 @@
 #include "game/overworld.h"
+#include <stdlib.h>
 #include <string.h>
 #include "game/gen3_text.h"
 #include "gba.h"
@@ -539,6 +540,54 @@ bool overworld_dump(const OverworldSnapshot* s, FILE* out) {
         if (fprintf(out, "marker kind=%s x=%d y=%d name=%s%s%s\n", k_mark[mk->kind < 3 ? mk->kind : 0], mk->x,
                     mk->y, mk->name[0], mk->name_count > 1 ? "/" : "", mk->name_count > 1 ? mk->name[1] : "") < 0)
             return false;
+    }
+    return true;
+}
+
+static int pair_cmp(const void* a, const void* b) {
+    const uint16_t* x = (const uint16_t*)a;
+    const uint16_t* y = (const uint16_t*)b;
+    if (x[0] != y[0]) return x[0] < y[0] ? -1 : 1;
+    return x[1] < y[1] ? -1 : x[1] > y[1];
+}
+
+bool overworld_gift_audit(const GameProfile* p, const GameMem* m, FILE* out) {
+    if (!p) return false;
+    for (uint32_t g = 0; g < p->map_group_count; g++) {
+        uint32_t list = 0, next = p->map_groups;
+        if (!game_mem_read32(m, p->map_groups + 4u * g, &list)) return false;
+        /* Group arrays are contiguous and the last one ends where gMapGroups starts. */
+        if (g + 1 < p->map_group_count && !game_mem_read32(m, p->map_groups + 4u * (g + 1), &next)) return false;
+        if (next <= list) continue;
+        for (uint32_t n = 0; n < (next - list) / 4u; n++) {
+            uint32_t header = 0, events = 0, objs = 0;
+            uint8_t count = 0;
+            if (!game_mem_read32(m, list + 4u * n, &header) || !game_mem_read32(m, header + MAP_HEADER_EVENTS, &events) ||
+                !game_mem_read8(m, events + EVENTS_OBJ_COUNT, &count) || !game_mem_read32(m, events + EVENTS_OBJS, &objs))
+                continue;
+            for (uint32_t i = 0; i < count; i++) {
+                uint32_t t = objs + i * TEMPLATE_SIZE, script = 0;
+                uint16_t flag = 0, pairs[2 * SW_MAX_GIFTS][2];
+                uint8_t lid = 0, np = 0;
+                ScriptGifts gifts;
+                if (!game_mem_read8(m, t, &lid) || !game_mem_read32(m, t + TEMPLATE_SCRIPT, &script) ||
+                    script < 0x08000000u)
+                    continue;
+                game_mem_read16(m, t + TEMPLATE_FLAG, &flag);
+                script_walk_gifts(m, script, lid, flag, &gifts);
+                for (uint8_t k = 0; k < gifts.count; k++)
+                    for (uint8_t j = 0; j < gifts.gift[k].item_count; j++) {
+                        pairs[np][0] = gifts.gift[k].item[j];
+                        pairs[np++][1] = gifts.gift[k].flag;
+                    }
+                if (np == 0) continue;
+                qsort(pairs, np, sizeof(pairs[0]), pair_cmp);
+                if (fprintf(out, "%u.%u lid=%u", (unsigned)g, (unsigned)n, (unsigned)lid) < 0) return false;
+                for (uint8_t k = 0; k < np; k++)
+                    if (fprintf(out, "%s%04x:%04x", k ? "," : " ", pairs[k][0], pairs[k][1]) < 0) return false;
+                if (fprintf(out, "\n") < 0) return false;
+            }
+        }
     }
     return true;
 }

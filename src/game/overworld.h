@@ -74,5 +74,9 @@ void overworld_feed_capture(OverworldFeed* f, const GameMem* m);
 /* GbaVblankObserver: ctx is the OverworldFeed. */
 void overworld_capture(const GBA* gba, void* feed);
 bool overworld_dump(const OverworldSnapshot* s, FILE* out);
+/* Walks every NPC template in the ROM and writes one line per gift tag,
+ * "<group>.<num> lid=<id> <item>:<flag>[,...]" (hex, pairs sorted). For checking
+ * the walker against a known list; not used while playing. */
+bool overworld_gift_audit(const GameProfile* p, const GameMem* m, FILE* out);
 
 #endif // OVERWORLD_H

@@ -148,6 +148,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--nuzlocke-file <file>` | Track a Nuzlocke run in `file` during the run, starting one if the file has none. `--game-dump` then adds `nuz` lines. Requires `--headless`. |
 | `--xray-out <file>` | After the run, render the Hardware X-Ray window to a 2400x1640 PNG. Requires `--headless` and an X-Ray build. |
 | `--overworld-out <file>` | After the run, write the final frame at 3x (720x480 PNG) with the Overworld X-Ray drawn on it. Requires `--headless`; original Pokemon Emerald (US) only. |
+| `--gift-audit <file>` | Walk every NPC in the ROM and list the Overworld X-Ray gift tags it would show, one line per NPC (`<group>.<map> lid=<id> <item>:<flag>`, hex). For checking the gift detection; original Pokemon Emerald (US) only. Requires `--headless`. |
 | `--game-dump <file>` | After the run, write the decoded Emerald game state (party, battle, encounters, and an `[overworld]` section matching the final frame) to `file`. Requires `--headless`. |
 
 An input script has one event per line, `<frame> <press|release> <KEY>`,

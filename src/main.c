@@ -115,6 +115,7 @@ static void print_usage(const char* prog) {
     printf("  --nuzlocke-file <f>    Headless: track a Nuzlocke run in this file, starting one if it has none\n");
     printf("  --xray-out <file>      Headless: render the Hardware X-Ray window to a PNG after the run\n");
     printf("  --overworld-out <f>    Headless: final frame at 3x with the Overworld X-Ray drawn, as PNG\n");
+    printf("  --gift-audit <file>    Headless: list every NPC gift tag in the ROM (Emerald only)\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
@@ -165,6 +166,7 @@ int main(int argc, char* argv[]) {
     const char* xray_out_path = NULL;
     const char* overworld_out_path = NULL;
     const char* nuzlocke_file = NULL;
+    const char* gift_audit_path = NULL;
 
     // Parse arguments
     for (int i = 2; i < argc; i++) {
@@ -216,6 +218,8 @@ int main(int argc, char* argv[]) {
             overworld_out_path = argv[++i];
         } else if (strcmp(argv[i], "--nuzlocke-file") == 0 && i + 1 < argc) {
             nuzlocke_file = argv[++i];
+        } else if (strcmp(argv[i], "--gift-audit") == 0 && i + 1 < argc) {
+            gift_audit_path = argv[++i];
         } else if (strcmp(argv[i], "--panel-select") == 0 && i + 1 < argc) {
             panel_select_arg = argv[++i];
         } else {
@@ -252,6 +256,10 @@ int main(int argc, char* argv[]) {
     }
     if (xray_out_path && !headless) {
         LOG_ERROR("--xray-out requires --headless");
+        return 1;
+    }
+    if (gift_audit_path && !headless) {
+        LOG_ERROR("--gift-audit requires --headless");
         return 1;
     }
     if (overworld_out_path && !headless) {
@@ -463,6 +471,18 @@ int main(int argc, char* argv[]) {
             g_xray = &s_xray_state;
         }
 #endif
+        if (gift_audit_path) {
+            FILE* f = fopen(gift_audit_path, "w");
+            GameMem gm = { gba.bus.ewram, gba.bus.iwram, gba.cart.rom, gba.cart.rom_size };
+            bool ok = f && s_game.profile && overworld_gift_audit(s_game.profile, &gm, f);
+            if (f) fclose(f);
+            if (!ok) {
+                LOG_ERROR("--gift-audit needs the original Pokemon Emerald (US) and a writable file: %s",
+                          gift_audit_path);
+                gba_destroy(&gba);
+                return 1;
+            }
+        }
         if (s_game.profile && (game_dump_path || overworld_out_path))
             gba_set_vblank_observer(&gba, overworld_capture, &s_ow);
         if (overworld_out_path && !s_game.profile)
