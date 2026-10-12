@@ -73,6 +73,10 @@ typedef struct {
      * src/daycare.c, src/wild_encounter.c) */
     uint32_t wild_feebas;              /* sWildFeebas {u8 min, u8 max, u16 species} */
     uint8_t  feebas_map_group, feebas_map_num;   /* Route 119 */
+    uint32_t feebas_water_tiles;       /* sRoute119WaterTileData u16[3][3] {yMin, yMax, spot base} */
+    uint32_t tile_bit_attributes;      /* sTileBitAttributes u8[], indexed by metatile behavior */
+    uint32_t tasks;                    /* gTasks, struct Task[16], 0x28 each: func @0, isActive @4 */
+    uint32_t task_fishing;             /* Task_Fishing (Thumb bit set), func while a rod is out */
     uint8_t  mirage_map_group, mirage_map_num;   /* Route 130 land = Mirage Island */
     uint8_t  mirage_mapsec;                      /* MAPSEC_MIRAGE_ISLAND */
     uint8_t  dive_map[2][2];                     /* Underwater_Route124, Underwater_Route126 */

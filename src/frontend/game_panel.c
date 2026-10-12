@@ -755,8 +755,8 @@ static void draw_route(UiCanvas* c, const GameSnapshot* s, float top) {
     ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, PANEL_H - top - 4.0f});
     if (s->mirage.valid) draw_mirage(c, &s->mirage, MIRAGE_Y);
     ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, 456.0f, RIGHT - LEFT, UI_ALIGN_LEFT, UI_FAINT,
-            "\xE2\x9C\x93 caught. Not shown: outbreaks, Feebas tiles, roamers, Altering Cave, "
-            "lead abilities, Pyramid/Pike.");
+            "\xE2\x9C\x93 caught. Not shown: outbreaks, roamers, Altering Cave, lead abilities, "
+            "Pyramid/Pike.");
 }
 
 /* ---- Nuzlocke page ---- */

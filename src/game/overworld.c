@@ -1,6 +1,7 @@
 #include "game/overworld.h"
 #include <stdlib.h>
 #include <string.h>
+#include "game/feebas.h"
 #include "game/gen3_text.h"
 #include "gba.h"
 
@@ -61,6 +62,11 @@
 #define BG_ITEM            0x08
 #define BG_HIDDEN_ID       0x0A
 #define ITEM_SIZE          44     /* struct Item: name[14] first */
+#define SPECIES_NAME_LEN   11
+#define TASK_COUNT         16
+#define TASK_SIZE          0x28
+#define TASK_ACTIVE        0x04
+#define MSGBOX_TOP         112    /* GBA px: the field message box covers the rows below */
 #define BG_KIND_HIDDEN_ITEM 7
 #define CONN_SIZE          12
 #define CONN_CAP           8
@@ -370,16 +376,97 @@ static void read_gift(const OwCtx* c, const uint8_t* o, OverworldSnapshot* s) {
     }
 }
 
-static bool field_visible(const OwCtx* c) {
+/* The field is on screen and not fading. Field controls may still be locked. */
+static bool field_shown(const OwCtx* c) {
     uint32_t cb2 = 0;
-    uint8_t fade = 0, lock = 0;
+    uint8_t fade = 0;
     if (!game_mem_read32(c->m, c->p->main_callback2, &cb2) || cb2 != c->p->cb2_overworld) return false;
     if (!game_mem_read8(c->m, c->p->palette_fade_byte, &fade) || (fade & 0x80)) return false;
-    if (!game_mem_read8(c->m, c->p->lock_field_controls, &lock) || lock) return false;
     if (c->loc_group == MAPGRP_FRONTIER &&
         (c->loc_num == MAP_PYRAMID_FLOOR || (c->loc_num >= MAP_HILL_FIRST && c->loc_num <= MAP_HILL_LAST)))
         return false;
     return true;
+}
+
+static bool controls_locked(const OwCtx* c) {
+    uint8_t lock = 0;
+    return !game_mem_read8(c->m, c->p->lock_field_controls, &lock) || lock;
+}
+
+/* A rod is out: Task_Fishing runs from the cast until the rod is put away. */
+static bool fishing(const OwCtx* c) {
+    for (uint32_t i = 0; i < TASK_COUNT; i++) {
+        uint32_t func = 0;
+        uint8_t active = 0;
+        if (game_mem_read32(c->m, c->p->tasks + i * TASK_SIZE, &func) &&
+            game_mem_read8(c->m, c->p->tasks + i * TASK_SIZE + TASK_ACTIVE, &active) && active &&
+            func == c->p->task_fishing)
+            return true;
+    }
+    return false;
+}
+
+/* Zero-filled: the snapshot is compared with memcmp. */
+static void feebas_name(const OwCtx* c, char* out) {
+    uint8_t raw[SPECIES_NAME_LEN];
+    uint16_t species = 0;
+    memset(out, 0, OW_ITEM_NAME_LEN);
+    if (!game_mem_read16(c->m, c->p->wild_feebas + 2, &species) || species == 0 ||
+        species >= c->p->species_count ||
+        !game_mem_copy(c->m, c->p->species_names + (uint32_t)species * SPECIES_NAME_LEN, raw, sizeof(raw)))
+        return;
+    gen3_decode(raw, sizeof(raw), out, OW_ITEM_NAME_LEN);
+}
+
+static int player_slot(const OwCtx* c) {
+    for (int i = 0; i < OBJ_COUNT; i++)
+        if (c->obj_ok[i] && (c->objs[i][OBJ_FLAGS0] & 1) && (c->objs[i][OBJ_FLAGS2] & 1)) return i;
+    return -1;
+}
+
+/* Feebas tiles on screen become markers (before any other marker, so the cap never
+ * drops them). With none fishable on screen, the hint points at the nearest one.
+ * While fishing: tiles only, none under the message box, no hint. */
+static void read_feebas(const OwCtx* c, OverworldSnapshot* s, bool rod_out) {
+    static FeebasState fb;
+    char name[OW_ITEM_NAME_LEN];
+    int player = player_slot(c), best = -1;
+    int32_t px = 0, py = 0, best_d = 0;
+    bool fishable_shown = false;
+    if (!feebas_read(c->p, c->m, &fb)) return;
+    s->feebas_visible = true;
+    feebas_name(c, name);
+    if (player >= 0) {
+        px = s16_at(c->objs[player] + OBJ_CUR) - MAP_OFFSET;
+        py = s16_at(c->objs[player] + OBJ_CUR + 2) - MAP_OFFSET;
+    }
+    for (uint8_t i = 0; i < fb.count; i++) {
+        const FeebasTile* t = &fb.tile[i];
+        int16_t x, y;
+        tile_to_screen(c, t->x + MAP_OFFSET, t->y + MAP_OFFSET, &x, &y);
+        if (on_screen(x, y) && !(rod_out && y + 16 > MSGBOX_TOP)) {
+            OwMarker* mk = add_marker(s, t->fishable ? OW_MARK_FEEBAS : OW_MARK_FEEBAS_BLOCKED, x, y);
+            if (mk) {
+                mk->name_count = 1;
+                memcpy(mk->name[0], name, sizeof(name));
+                mk->spot = t->spot;
+                mk->bridge = t->bridge;
+            }
+        }
+        /* At least half the tile in view, or the hint still points to it. */
+        if (t->fishable && x > -8 && x < SCREEN_WIDTH - 8 && y > -8 && y < SCREEN_HEIGHT - 8)
+            fishable_shown = true;
+        int32_t d = abs(t->x - px) + abs(t->y - py);
+        if (t->fishable && (best < 0 || d < best_d)) {
+            best = i;
+            best_d = d;
+        }
+    }
+    if (rod_out || fishable_shown || best < 0 || player < 0) return;
+    s->hint.show = true;
+    tile_to_screen(c, px + MAP_OFFSET, py + MAP_OFFSET, &s->hint.px, &s->hint.py);
+    tile_to_screen(c, fb.tile[best].x + MAP_OFFSET, fb.tile[best].y + MAP_OFFSET, &s->hint.tx, &s->hint.ty);
+    memcpy(s->hint.name, name, sizeof(name));
 }
 
 static void add_hidden(const OwCtx* c, uint32_t events, int32_t ox, int32_t oy, OverworldSnapshot* s) {
@@ -507,7 +594,7 @@ void overworld_read_cached(const GameProfile* p, const GameMem* m, OwGiftCache* 
     c.pos_y = s16_at(sb + 2);
     c.loc_group = sb[SB1_LOC_GROUP];
     c.loc_num = sb[SB1_LOC_NUM];
-    if (!field_visible(&c)) return;
+    if (!field_shown(&c)) return;
     if (cache && (!cache->valid || cache->group != c.loc_group || cache->num != c.loc_num)) {
         memset(cache, 0, sizeof(*cache));
         cache->valid = true;
@@ -521,11 +608,16 @@ void overworld_read_cached(const GameProfile* p, const GameMem* m, OwGiftCache* 
     game_mem_read16(m, p->sprite_coord_offset + 2, &off[1]);
     c.spr_off_x = (int16_t)off[0];
     c.spr_off_y = (int16_t)off[1];
+    for (int i = 0; i < OBJ_COUNT; i++)
+        c.obj_ok[i] = game_mem_copy(m, p->object_events + (uint32_t)i * OBJ_SIZE, c.objs[i], OBJ_SIZE);
+    /* Fishing locks the controls for the whole cast: only the Feebas tiles stay then.
+     * Any other lock (menus, dialog, cutscenes) hides everything. */
+    bool locked = controls_locked(&c), rod_out = locked && fishing(&c);
+    if (!locked || rod_out) read_feebas(&c, out, rod_out);
+    if (locked) return;
     out->visible = true;
     grid_init(&c);
 
-    for (int i = 0; i < OBJ_COUNT; i++)
-        c.obj_ok[i] = game_mem_copy(m, p->object_events + (uint32_t)i * OBJ_SIZE, c.objs[i], OBJ_SIZE);
     for (int i = 0; i < OBJ_COUNT; i++)
         if (c.obj_ok[i] && (c.objs[i][OBJ_FLAGS0] & 1) && !(c.objs[i][OBJ_FLAGS2] & 1)) {
             read_trainer(&c, i, out);
@@ -559,7 +651,9 @@ void overworld_capture(const GBA* gba, void* feed) {
 
 bool overworld_dump(const OverworldSnapshot* s, FILE* out) {
     static const char* const k_dir[OW_DIR_COUNT] = {"down", "up", "left", "right"};
-    if (fprintf(out, "[overworld]\nvisible %d\n", s->visible ? 1 : 0) < 0) return false;
+    if (fprintf(out, "[overworld]\nvisible %d\nfeebas_visible %d\n", s->visible ? 1 : 0,
+                s->feebas_visible ? 1 : 0) < 0)
+        return false;
     for (uint8_t i = 0; i < s->trainer_count; i++) {
         const OwTrainer* t = &s->trainers[i];
         if (fprintf(out,
@@ -571,13 +665,19 @@ bool overworld_dump(const OverworldSnapshot* s, FILE* out) {
                     (unsigned)t->clear[3], t->x, t->y) < 0)
             return false;
     }
-    static const char* const k_mark[] = {"hidden", "ball", "gift"};
+    static const char* const k_mark[] = {"hidden", "ball", "gift", "feebas", "feebas_blocked"};
     for (uint8_t i = 0; i < s->marker_count; i++) {
         const OwMarker* mk = &s->markers[i];
-        if (fprintf(out, "marker kind=%s x=%d y=%d name=%s%s%s\n", k_mark[mk->kind < 3 ? mk->kind : 0], mk->x,
-                    mk->y, mk->name[0], mk->name_count > 1 ? "/" : "", mk->name_count > 1 ? mk->name[1] : "") < 0)
+        bool feebas = mk->kind == OW_MARK_FEEBAS || mk->kind == OW_MARK_FEEBAS_BLOCKED;
+        if (fprintf(out, "marker kind=%s x=%d y=%d name=%s%s%s", k_mark[mk->kind <= OW_MARK_FEEBAS_BLOCKED ? mk->kind : 0],
+                    mk->x, mk->y, mk->name[0], mk->name_count > 1 ? "/" : "", mk->name_count > 1 ? mk->name[1] : "") < 0)
             return false;
+        if (feebas && fprintf(out, " spot=%u bridge=%d", (unsigned)mk->spot, mk->bridge ? 1 : 0) < 0) return false;
+        if (fputc('\n', out) == EOF) return false;
     }
+    if (s->hint.show && fprintf(out, "feebas_hint px=%d py=%d tx=%d ty=%d\n", s->hint.px, s->hint.py, s->hint.tx,
+                                s->hint.ty) < 0)
+        return false;
     return true;
 }
 

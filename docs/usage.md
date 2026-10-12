@@ -271,7 +271,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--overworld-out <file>` | After the run, write the final frame at 3x (720x480 PNG) with the Overworld X-Ray drawn on it. Requires `--headless`; original Pokemon Emerald (US) only. |
 | `--gift-audit <file>` | Walk every NPC in the ROM and list the Overworld X-Ray gift tags it would show, one line per NPC (`<group>.<map> lid=<id> <item>:<flag>`, hex). For checking the gift detection; original Pokemon Emerald (US) only. Requires `--headless`. |
 | `--follower-hgss <rom>` | Turn on Following Pokemon for the run, using this HeartGold or SoulSilver ROM. `--screenshot-out` then includes the text box during a talk. Never writes the mood file. Requires `--headless`; original Pokemon Emerald (US) only. |
-| `--game-dump <file>` | After the run, write the decoded Emerald game state (party, battle, encounters, and an `[overworld]` section matching the final frame) to `file`. Requires `--headless`. |
+| `--game-dump <file>` | After the run, write the decoded Emerald game state (party, battle, encounters, an `[overworld]` section matching the final frame, and a `[feebas]` section listing the Route 119 Feebas tiles) to `file`. Requires `--headless`. |
 
 An input script has one event per line, `<frame> <press|release> <KEY>`,
 where `<frame>` is the 0-based frame index (same as in `--hash-out`) and

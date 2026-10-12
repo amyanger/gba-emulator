@@ -133,6 +133,7 @@ set(SOURCES
     src/game/encounters.c
     src/game/game.c
     src/game/overworld.c
+    src/game/feebas.c
     src/game/nuzlocke_read.c
     src/game/species_search.c
     src/game/nuzlocke.c
@@ -319,6 +320,7 @@ set(LIB_SOURCES
     src/game/encounters.c
     src/game/game.c
     src/game/overworld.c
+    src/game/feebas.c
     src/game/nuzlocke_read.c
     src/game/species_search.c
     src/game/nuzlocke.c
@@ -438,6 +440,7 @@ set(TEST_SOURCES
     tests/test_berry.c
     tests/test_game_panel.c
     tests/test_overworld.c
+    tests/test_feebas.c
     tests/test_nds_fs.c
     tests/test_hgss_msg.c
     tests/test_hgss_gfx.c

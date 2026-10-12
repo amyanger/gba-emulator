@@ -64,6 +64,10 @@ const GameProfile g_emerald_profile = {
      * incense pairs from src/daycare.c AlterEggSpeciesWithIncenseItem. */
     .wild_feebas = 0x08553A78,
     .feebas_map_group = 0, .feebas_map_num = 34,
+    .feebas_water_tiles = 0x08553A7C,
+    .tile_bit_attributes = 0x08486EFC,
+    .tasks = 0x03005E00,
+    .task_fishing = 0x0808C8C1,
     .mirage_map_group = 0, .mirage_map_num = 45,
     .mirage_mapsec = 71,
     .dive_map = {{0, 50}, {0, 51}},

@@ -16,6 +16,7 @@
 #include "frontend/overworld_draw.h"
 #include "frontend/prefs.h"
 #include "frontend/video_filter.h"
+#include "game/feebas.h"
 #include "game/follower.h"
 #include "game/game.h"
 #include "game/overworld.h"
@@ -759,7 +760,11 @@ int main(int argc, char* argv[]) {
         }
         if (rc == 0 && game_dump_path) {
             FILE* f = fopen(game_dump_path, "w");
+            static FeebasState feebas;
+            GameMem gm = { gba.bus.ewram, gba.bus.iwram, gba.cart.rom, gba.cart.rom_size };
+            feebas_read(s_game.profile, &gm, &feebas);
             if (!f || !game_dump(&dump_state.snap, f) || (s_game.profile && !overworld_dump(&s_ow.shown, f)) ||
+                (s_game.profile && !feebas_dump(&feebas, f)) ||
                 (nuzlocke_file && !nuz_session_dump(&s_nuz, f))) {
                 LOG_ERROR("Failed to write --game-dump file: %s", game_dump_path);
                 rc = 1;

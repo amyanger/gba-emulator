@@ -1,6 +1,7 @@
 #include "frontend/overworld_draw.h"
 
 #include <ctype.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include "ui/ui_font.h"
@@ -28,8 +29,14 @@
 #define ITEM_TEXT   0xFFFFE9A8u
 #define GIFT_BG     0x0F3D2Au
 #define GIFT_TEXT   0xFFB6F5D6u
+#define FEEBAS_RGB  0x2EC4E8u
+#define FEEBAS_BG   0x0B3442u
+#define FEEBAS_TEXT 0xFFA8ECFFu
+#define FEEBAS_LINE  1.5f   /* GBA px */
+#define CHEVRON_W    8.0f   /* points */
 #define STACK_ROWS   3
 #define MAX_CONES   (OW_MAX_TRAINERS * OW_DIR_COUNT)
+#define MAX_AVOID   (MAX_CONES + OW_MAX_MARKERS)
 #define LABEL_TEXT  48
 
 static const int8_t k_dx[OW_DIR_COUNT] = {0, 0, -1, 1};
@@ -83,9 +90,36 @@ static void draw_hidden(UiCanvas* c, const OwMarker* p, float g) {
     ui_capsule(c, cx, cy - STAR_ARM * g, cx, cy + STAR_ARM * g, STAR_LINE * g, STAR_COLOR);
 }
 
+static bool is_feebas(const OwMarker* mk) {
+    return mk->kind == OW_MARK_FEEBAS || mk->kind == OW_MARK_FEEBAS_BLOCKED;
+}
+
+/* Bridge, blocked or plain water: one label per spot and kind. */
+static int feebas_key(const OwMarker* mk) {
+    return mk->kind == OW_MARK_FEEBAS_BLOCKED ? 2 : mk->bridge ? 1 : 0;
+}
+
+static void draw_feebas_tile(UiCanvas* c, const OwMarker* mk, float g) {
+    bool blocked = mk->kind == OW_MARK_FEEBAS_BLOCKED;
+    uint32_t rgb = blocked ? UI_MUTED : FEEBAS_RGB;
+    float x0 = ((float)mk->x + 1) * g, y0 = ((float)mk->y + 1) * g, s = (TILE - 2) * g, t = FEEBAS_LINE * g;
+    ui_fill_round_rect(c, (UiRect){x0, y0, s, s}, 3.0f * g, with_alpha(rgb, blocked ? 0.18f : 0.30f));
+    uint32_t line = with_alpha(rgb, blocked ? 0.55f : 0.85f);
+    float a = x0 + t / 2, b = y0 + t / 2, e = x0 + s - t / 2, f = y0 + s - t / 2;
+    ui_capsule(c, a, b, e, b, t, line);
+    ui_capsule(c, a, f, e, f, t, line);
+    ui_capsule(c, a, b, a, f, t, line);
+    ui_capsule(c, e, b, e, f, t, line);
+}
+
 void overworld_marker_text(const OwMarker* mk, char* out, size_t out_size) {
     char a[OW_ITEM_NAME_LEN * 2], b[OW_ITEM_NAME_LEN * 2];
     game_panel_title_case(mk->name[0], a, sizeof(a));
+    if (is_feebas(mk)) {
+        const char* note = mk->kind == OW_MARK_FEEBAS_BLOCKED ? " \xC2\xB7 can't fish" : mk->bridge ? " \xC2\xB7 bridge" : "";
+        snprintf(out, out_size, "%s%s", a, note);
+        return;
+    }
     if (mk->kind != OW_MARK_GIFT) {
         snprintf(out, out_size, "%s", a);
         return;
@@ -102,14 +136,16 @@ typedef struct { float pt, h, pad; bool dot; } PillStyle;
 
 static PillStyle label_style(const UiCanvas* c, const OverworldSnapshot* s, const OwLabel* l) {
     if (l->source == OW_LABEL_TRAINER) return (PillStyle){PILL_PT, PILL_H, PILL_PAD, !s->trainers[l->index].beaten};
-    if (s->markers[l->index].kind == OW_MARK_GIFT) return (PillStyle){PILL_PT, PILL_H, PILL_PAD, false};
+    if (l->source == OW_LABEL_HINT || s->markers[l->index].kind == OW_MARK_GIFT || is_feebas(&s->markers[l->index]))
+        return (PillStyle){PILL_PT, PILL_H, PILL_PAD, false};
     /* Smaller than the other pills, but never below 10 px on low-density screens. */
     float pt = ITEM_PT * c->scale < MIN_TEXT_PX ? MIN_TEXT_PX / c->scale : ITEM_PT;
     return (PillStyle){pt, ITEM_H, ITEM_PAD, false};
 }
 
 static void label_text(const OverworldSnapshot* s, const OwLabel* l, char* out, size_t n) {
-    if (l->source == OW_LABEL_TRAINER) overworld_pill_text(&s->trainers[l->index], out, n);
+    if (l->source == OW_LABEL_HINT) game_panel_title_case(s->hint.name, out, n);
+    else if (l->source == OW_LABEL_TRAINER) overworld_pill_text(&s->trainers[l->index], out, n);
     else overworld_marker_text(&s->markers[l->index], out, n);
 }
 
@@ -161,6 +197,36 @@ static uint32_t cone_rects(const OverworldSnapshot* s, float g, UiRect* out) {
     return n;
 }
 
+/* On-screen Feebas tiles, in points, so other labels keep off them. */
+static uint32_t feebas_rects(const OverworldSnapshot* s, float g, UiRect* out) {
+    uint32_t n = 0;
+    for (uint8_t i = 0; i < s->marker_count; i++)
+        if (is_feebas(&s->markers[i]))
+            out[n++] = (UiRect){(float)s->markers[i].x * g, (float)s->markers[i].y * g, TILE * g, TILE * g};
+    return n;
+}
+
+static float label_width(const UiCanvas* c, const OverworldSnapshot* s, const OwLabel* l, PillStyle st) {
+    char text[LABEL_TEXT];
+    label_text(s, l, text, sizeof(text));
+    float w = 2 * st.pad + ui_text_width(c, UI_FONT_SEMIBOLD, st.pt, text) + (st.dot ? PILL_DOT + PILL_GAP : 0.0f);
+    return l->source == OW_LABEL_HINT ? w + PILL_GAP + CHEVRON_W : w;
+}
+
+/* Player and target tile centres in points; the hint goes where that ray leaves the screen. */
+static UiRect hint_rect(const UiCanvas* c, const OwFeebasHint* h, float g, float w, float hh) {
+    float cw = (float)c->w / c->scale, ch = (float)c->h / c->scale;
+    float px = ((float)h->px + TILE / 2) * g, py = ((float)h->py + TILE / 2) * g;
+    float dx = ((float)h->tx + TILE / 2) * g - px, dy = ((float)h->ty + TILE / 2) * g - py;
+    float mx = w / 2 + EDGE, my = hh / 2 + EDGE, t = 1.0f;
+    if (dx > 0.0f) t = fminf(t, (cw - mx - px) / dx);
+    if (dx < 0.0f) t = fminf(t, (mx - px) / dx);
+    if (dy > 0.0f) t = fminf(t, (ch - my - py) / dy);
+    if (dy < 0.0f) t = fminf(t, (my - py) / dy);
+    if (t < 0.0f) t = 0.0f;
+    return clamp_rect(c, (UiRect){px + dx * t - w / 2, py + dy * t - hh / 2, w, hh});
+}
+
 static bool blocked(UiRect r, const OwLabel* placed, uint32_t n, const UiRect* cones, uint32_t nc) {
     for (uint32_t i = 0; i < n; i++)
         if (overlaps(r, placed[i].rect)) return true;
@@ -192,25 +258,50 @@ static UiRect place(const UiCanvas* c, UiRect anchor, float w, float h, const Ow
     return clamp_rect(c, cand[0]);
 }
 
+static bool feebas_label_taken(const OverworldSnapshot* s, uint32_t i) {
+    for (uint32_t j = 0; j < i; j++)
+        if (is_feebas(&s->markers[j]) && s->markers[j].spot == s->markers[i].spot &&
+            feebas_key(&s->markers[j]) == feebas_key(&s->markers[i]))
+            return true;
+    return false;
+}
+
 uint32_t overworld_label_rects(const UiCanvas* c, const OverworldSnapshot* s, float g, OwLabel* out) {
-    UiRect cones[MAX_CONES];
-    uint32_t nc = cone_rects(s, g, cones), n = 0;
-    /* Priority order: who can see you, then gifts, then items. */
-    for (int pass = 0; pass < 3; pass++) {
+    UiRect avoid[MAX_AVOID];
+    uint32_t na = cone_rects(s, g, avoid), n = 0;
+    na += feebas_rects(s, g, avoid + na);
+    if (s->feebas_visible && s->hint.show) {
+        OwLabel l = {OW_LABEL_HINT, 0, {0, 0, 0, 0}};
+        PillStyle st = label_style(c, s, &l);
+        l.rect = hint_rect(c, &s->hint, g, label_width(c, s, &l, st), st.h);
+        out[n++] = l;
+    }
+    /* Priority order: who can see you, Feebas, gifts, then items. */
+    for (int pass = 0; pass < 4; pass++) {
         uint32_t count = pass == 0 ? s->trainer_count : s->marker_count;
         for (uint32_t i = 0; i < count && n < OW_MAX_LABELS; i++) {
-            if (pass == 1 && s->markers[i].kind != OW_MARK_GIFT) continue;
-            if (pass == 2 && s->markers[i].kind == OW_MARK_GIFT) continue;
+            if (pass > 0) {
+                const OwMarker* mk = &s->markers[i];
+                int kind = is_feebas(mk) ? 1 : mk->kind == OW_MARK_GIFT ? 2 : 3;
+                if (kind != pass || (kind == 1 && feebas_label_taken(s, i))) continue;
+            }
             OwLabel l = {pass == 0 ? OW_LABEL_TRAINER : OW_LABEL_MARKER, (uint8_t)i, {0, 0, 0, 0}};
-            char text[LABEL_TEXT];
-            label_text(s, &l, text, sizeof(text));
             PillStyle st = label_style(c, s, &l);
-            float w = 2 * st.pad + ui_text_width(c, UI_FONT_SEMIBOLD, st.pt, text) + (st.dot ? PILL_DOT + PILL_GAP : 0.0f);
-            l.rect = place(c, label_anchor(s, &l, g), w, st.h, out, n, cones, nc);
+            l.rect = place(c, label_anchor(s, &l, g), label_width(c, s, &l, st), st.h, out, n, avoid, na);
             out[n++] = l;
         }
     }
     return n;
+}
+
+/* An arrowhead pointing from the player toward the hint's target. */
+static void draw_chevron(UiCanvas* c, const OwFeebasHint* h, float cx, float cy, uint32_t argb) {
+    float dx = (float)(h->tx - h->px), dy = (float)(h->ty - h->py), len = sqrtf(dx * dx + dy * dy);
+    if (len < 1.0f) return;
+    float ux = dx / len, uy = dy / len, tipx = cx + ux * 3.0f, tipy = cy + uy * 3.0f;
+    float bx = cx - ux * 2.0f, by = cy - uy * 2.0f;
+    ui_capsule(c, tipx, tipy, bx - uy * 3.0f, by + ux * 3.0f, 1.5f, argb);
+    ui_capsule(c, tipx, tipy, bx + uy * 3.0f, by - ux * 3.0f, 1.5f, argb);
 }
 
 static void draw_label(UiCanvas* c, const OverworldSnapshot* s, const OwLabel* l) {
@@ -218,10 +309,19 @@ static void draw_label(UiCanvas* c, const OverworldSnapshot* s, const OwLabel* l
     PillStyle st = label_style(c, s, l);
     uint32_t bg, fg;
     label_text(s, l, text, sizeof(text));
-    if (l->source == OW_LABEL_TRAINER) {
+    if (l->source == OW_LABEL_HINT) {
+        bg = with_alpha(FEEBAS_BG, 0.92f);
+        fg = FEEBAS_TEXT;
+    } else if (l->source == OW_LABEL_TRAINER) {
         bool beaten = s->trainers[l->index].beaten;
         bg = with_alpha(UI_BG, beaten ? 0.60f : 0.88f);
         fg = beaten ? UI_MUTED : UI_TEXT;
+    } else if (s->markers[l->index].kind == OW_MARK_FEEBAS) {
+        bg = with_alpha(FEEBAS_BG, 0.90f);
+        fg = FEEBAS_TEXT;
+    } else if (s->markers[l->index].kind == OW_MARK_FEEBAS_BLOCKED) {
+        bg = with_alpha(UI_BG, 0.60f);
+        fg = UI_MUTED;
     } else if (s->markers[l->index].kind == OW_MARK_GIFT) {
         bg = with_alpha(GIFT_BG, 0.90f);
         fg = GIFT_TEXT;
@@ -238,17 +338,23 @@ static void draw_label(UiCanvas* c, const OverworldSnapshot* s, const OwLabel* l
     }
     float ty = r.y + st.h / 2 - ui_text_cap_middle(c, UI_FONT_SEMIBOLD, st.pt);
     ui_text(c, UI_FONT_SEMIBOLD, st.pt, tx, ty, 0, UI_ALIGN_LEFT, fg, text);
+    if (l->source == OW_LABEL_HINT)
+        draw_chevron(c, &s->hint, r.x + r.w - st.pad - CHEVRON_W / 2, r.y + st.h / 2, fg);
 }
 
 void overworld_draw(UiCanvas* c, const OverworldSnapshot* s, float g) {
     OwLabel labels[OW_MAX_LABELS];
-    if (!s->visible) return;
+    if (!s->visible && !s->feebas_visible) return;
+    /* Feebas tiles first, under everything else. While fishing only they are in the snapshot. */
+    for (uint8_t i = 0; i < s->marker_count; i++)
+        if (is_feebas(&s->markers[i])) draw_feebas_tile(c, &s->markers[i], g);
     for (uint8_t i = 0; i < s->marker_count; i++)
         if (s->markers[i].kind == OW_MARK_HIDDEN) draw_hidden(c, &s->markers[i], g);
     for (uint8_t i = 0; i < s->trainer_count; i++)
         for (int d = 0; d < OW_DIR_COUNT; d++)
             if (s->trainers[i].clear[d]) draw_cone(c, &s->trainers[i], d, g);
-    /* Labels last, so no cone covers one. */
+    /* Labels last, so no cone covers one. None while fishing: the message box is up. */
+    if (!s->visible) return;
     uint32_t n = overworld_label_rects(c, s, g, labels);
     for (uint32_t i = 0; i < n; i++) draw_label(c, s, &labels[i]);
 }

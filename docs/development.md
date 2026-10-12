@@ -168,6 +168,7 @@ src/
     encounters.c/h         Wild encounter tables for the current map
     gen3_text.c/h          Gen 3 character set to ASCII
     overworld.c/h          Overworld X-Ray: trainers, sight lines and hidden items on screen
+    feebas.c/h             The Route 119 tiles that give Feebas for the current seed
   ui/
     ui_canvas.c/h          Software canvas: rects, rounded shapes, alpha blending
     ui_font.c/h            Text measuring and drawing from the embedded Inter font

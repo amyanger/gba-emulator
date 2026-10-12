@@ -439,7 +439,7 @@ void frontend_toggle_berry_alerts(Frontend* fe) {
 }
 
 void frontend_update_overworld(Frontend* fe, const OverworldSnapshot* s) {
-    fe->ow_shown = s && s->visible && fe->ow_texture && !fe->settings.open;
+    fe->ow_shown = s && (s->visible || s->feebas_visible) && fe->ow_texture && !fe->settings.open;
     if (!fe->ow_shown) {
         fe->ow_dirty = true;   /* repaint when it shows again */
         return;

@@ -263,7 +263,141 @@ TEST(owd_item_text_never_below_10px) {
     ASSERT_TRUE(l[0].rect.w <= at9 + 2 * 6.0f + 0.01f);
 }
 
+/* ---- Feebas ---- */
+
+static OwMarker feebas(uint8_t kind, int16_t x, int16_t y, uint16_t spot, bool bridge) {
+    OwMarker mk = marker(kind, x, y, "FEEBAS", NULL);
+    mk.spot = spot;
+    mk.bridge = bridge;
+    return mk;
+}
+
+TEST(owd_feebas_marker_text) {
+    char buf[48];
+    OwMarker mk = feebas(OW_MARK_FEEBAS, 0, 0, 149, false);
+    overworld_marker_text(&mk, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "Feebas");
+    mk = feebas(OW_MARK_FEEBAS, 0, 0, 132, true);
+    overworld_marker_text(&mk, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "Feebas \xC2\xB7 bridge");
+    mk = feebas(OW_MARK_FEEBAS_BLOCKED, 0, 0, 132, false);
+    overworld_marker_text(&mk, buf, sizeof(buf));
+    ASSERT_STR_EQ(buf, "Feebas \xC2\xB7 can't fish");
+}
+
+TEST(owd_feebas_tile_tinted) {
+    UiCanvas c;
+    static OverworldSnapshot s;
+    canvas(&c);
+    memset(&s, 0, sizeof(s));
+    s.visible = true;
+    s.feebas_visible = true;
+    s.marker_count = 1;
+    s.markers[0] = feebas(OW_MARK_FEEBAS, 96, 112, 149, false);
+    overworld_draw(&c, &s, 2.0f);
+    uint32_t in = px_at_gba(104, 120);
+    ASSERT_TRUE((in >> 24) > 0);
+    ASSERT_TRUE((in & 0xFF) > ((in >> 16) & 0xFF));   /* cyan: blue over red */
+    ASSERT_EQ(px_at_gba(104, 140) >> 24, 0);
+}
+
+TEST(owd_feebas_blocked_is_grey) {
+    UiCanvas c;
+    static OverworldSnapshot s;
+    canvas(&c);
+    memset(&s, 0, sizeof(s));
+    s.feebas_visible = true;
+    s.marker_count = 1;
+    s.markers[0] = feebas(OW_MARK_FEEBAS_BLOCKED, 96, 112, 132, false);
+    overworld_draw(&c, &s, 2.0f);
+    uint32_t in = px_at_gba(104, 120);
+    ASSERT_TRUE((in >> 24) > 0);
+    int r = (in >> 16) & 0xFF, b = in & 0xFF;
+    ASSERT_TRUE(b - r < 40);   /* muted grey, not cyan */
+}
+
+TEST(owd_feebas_drawn_when_only_feebas_visible) {
+    UiCanvas c;
+    static OverworldSnapshot s;
+    canvas(&c);
+    memset(&s, 0, sizeof(s));
+    s.feebas_visible = true;   /* the rod is out: visible is false */
+    s.marker_count = 1;
+    s.markers[0] = feebas(OW_MARK_FEEBAS, 96, 112, 149, false);
+    overworld_draw(&c, &s, 2.0f);
+    ASSERT_TRUE((px_at_gba(104, 120) >> 24) > 0);
+    ASSERT_EQ(px_at_gba(104, 106) >> 24, 0);   /* no "Feebas" pill: the message box is up */
+}
+
+TEST(owd_feebas_one_label_per_spot) {
+    UiCanvas c;
+    static OverworldSnapshot s;
+    OwLabel l[OW_MAX_LABELS];
+    canvas(&c);
+    memset(&s, 0, sizeof(s));
+    s.visible = true;
+    s.feebas_visible = true;
+    s.marker_count = 4;
+    s.markers[0] = feebas(OW_MARK_FEEBAS, 64, 96, 132, true);       /* bridge tiles share spot 132 */
+    s.markers[1] = feebas(OW_MARK_FEEBAS, 80, 96, 132, true);
+    s.markers[2] = feebas(OW_MARK_FEEBAS, 96, 96, 132, true);
+    s.markers[3] = feebas(OW_MARK_FEEBAS_BLOCKED, 160, 40, 132, false);  /* same id, other kind */
+    ASSERT_EQ(overworld_label_rects(&c, &s, 2.0f, l), 2);
+}
+
+TEST(owd_label_avoids_feebas_tile) {
+    UiCanvas c;
+    static OverworldSnapshot s;
+    OwLabel l[OW_MAX_LABELS];
+    canvas(&c);
+    memset(&s, 0, sizeof(s));
+    s.visible = true;
+    s.feebas_visible = true;
+    s.marker_count = 2;
+    s.markers[0] = feebas(OW_MARK_FEEBAS, 96, 64, 149, false);
+    s.markers[1] = marker(OW_MARK_ITEM_BALL, 96, 80, "RARE CANDY", NULL);   /* its "above" slot is the tile */
+    uint32_t n = overworld_label_rects(&c, &s, 2.0f, l);
+    UiRect tile = {96 * 2.0f, 64 * 2.0f, 32.0f, 32.0f};
+    for (uint32_t i = 0; i < n; i++)
+        if (l[i].source == OW_LABEL_MARKER && l[i].index == 1) ASSERT_TRUE(!overlap(l[i].rect, tile));
+}
+
+TEST(owd_feebas_hint_inside_canvas_at_corners) {
+    static const int16_t dir[8][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
+    UiCanvas c;
+    static OverworldSnapshot s;
+    OwLabel l[OW_MAX_LABELS];
+    canvas(&c);
+    for (int k = 0; k < 8; k++) {
+        memset(&s, 0, sizeof(s));
+        s.visible = true;
+        s.feebas_visible = true;
+        s.hint.show = true;
+        s.hint.px = 112;
+        s.hint.py = 72;
+        s.hint.tx = (int16_t)(112 + dir[k][0] * 400);
+        s.hint.ty = (int16_t)(72 + dir[k][1] * 400);
+        memcpy(s.hint.name, "FEEBAS", 7);
+        ASSERT_EQ(overworld_label_rects(&c, &s, 2.0f, l), 1);
+        UiRect r = l[0].rect;
+        ASSERT_EQ(l[0].source, OW_LABEL_HINT);
+        ASSERT_TRUE(r.x >= 0 && r.y >= 0 && r.x + r.w <= W && r.y + r.h <= H);
+        /* It sits on the side of the target. */
+        float cx = r.x + r.w / 2 - W / 2.0f, cy = r.y + r.h / 2 - 72 * 2.0f - 16;
+        if (dir[k][0]) ASSERT_TRUE(cx * dir[k][0] > 0);
+        if (dir[k][1]) ASSERT_TRUE(cy * dir[k][1] > 0);
+        overworld_draw(&c, &s, 2.0f);
+    }
+}
+
 void run_overworld_draw_tests(void) {
+    RUN_TEST(owd_feebas_marker_text);
+    RUN_TEST(owd_feebas_tile_tinted);
+    RUN_TEST(owd_feebas_blocked_is_grey);
+    RUN_TEST(owd_feebas_drawn_when_only_feebas_visible);
+    RUN_TEST(owd_feebas_one_label_per_spot);
+    RUN_TEST(owd_label_avoids_feebas_tile);
+    RUN_TEST(owd_feebas_hint_inside_canvas_at_corners);
     RUN_TEST(owd_item_text_never_below_10px);
     RUN_TEST(owd_marker_text);
     RUN_TEST(owd_pill_tints_by_kind);

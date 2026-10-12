@@ -29,21 +29,33 @@ typedef struct {
 #define OW_MAX_MARKERS   32
 #define OW_ITEM_NAME_LEN 14
 
-typedef enum { OW_MARK_HIDDEN, OW_MARK_ITEM_BALL, OW_MARK_GIFT } OwMarkKind;
+typedef enum { OW_MARK_HIDDEN, OW_MARK_ITEM_BALL, OW_MARK_GIFT, OW_MARK_FEEBAS, OW_MARK_FEEBAS_BLOCKED } OwMarkKind;
 
 typedef struct {
     uint8_t kind;                      /* OwMarkKind */
     uint8_t name_count;                /* 1, or 2 for a choice gift */
     int16_t x, y;                      /* tile top-left, GBA px */
-    char name[2][OW_ITEM_NAME_LEN];    /* raw ROM item names, decoded */
+    char name[2][OW_ITEM_NAME_LEN];    /* raw ROM item names, decoded (Feebas: species name) */
+    uint16_t spot;                     /* Feebas kinds: the game's fishing spot id */
+    bool bridge;                       /* Feebas kinds: a bridge tile */
 } OwMarker;
+
+/* Points the way to the nearest fishable Feebas tile when none is on screen.
+ * Screen px of the player's tile and of the target tile (off screen). */
+typedef struct {
+    bool show;
+    int16_t px, py, tx, ty;
+    char name[OW_ITEM_NAME_LEN];
+} OwFeebasHint;
 
 /* No pointers and zeroed before filling, so memcmp detects change. */
 typedef struct {
-    bool visible;
+    bool visible;          /* trainers, items and gifts */
+    bool feebas_visible;   /* Feebas tiles; stays up while fishing locks the controls */
     uint8_t trainer_count, marker_count;
     OwTrainer trainers[OW_MAX_TRAINERS];
     OwMarker markers[OW_MAX_MARKERS];
+    OwFeebasHint hint;
 } OverworldSnapshot;
 
 /* next = captured at the last line 160; shown = the capture before it, which is

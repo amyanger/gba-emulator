@@ -52,6 +52,7 @@ void run_berry_tests(void);
 void run_berry_alerts_tests(void);
 void run_game_panel_tests(void);
 void run_overworld_tests(void);
+void run_feebas_tests(void);
 void run_nds_fs_tests(void);
 void run_hgss_msg_tests(void);
 void run_hgss_gfx_tests(void);
@@ -141,6 +142,7 @@ int main(void) {
     RUN_SUITE(run_berry_alerts_tests);
     RUN_SUITE(run_game_panel_tests);
     RUN_SUITE(run_overworld_tests);
+    RUN_SUITE(run_feebas_tests);
     RUN_SUITE(run_nds_fs_tests);
     RUN_SUITE(run_hgss_msg_tests);
     RUN_SUITE(run_hgss_gfx_tests);

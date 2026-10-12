@@ -715,7 +715,207 @@ TEST(ow_feed_clear_empties_gift_cache) {
     ASSERT_TRUE(!f.gifts.valid);
 }
 
+/* ---- Feebas ---- */
+
+#define FB_SECTIONS 0x08006000u
+#define FB_TILEBITS 0x08006100u
+#define FB_WILD     0x08006200u
+#define FB_SPECIES  0x08006300u
+#define FB_TASKS    0x03001000u
+#define FB_FISHING  0x08000201u
+
+/* k_profile plus the Feebas fields; the scene's map (0.1) plays Route 119. */
+static const GameProfile k_fb_profile = {
+    .name = "test",
+    .save_block1_ptr = 0x03000000, .save_block2_ptr = 0x03000004,
+    .map_header = MAP_HDR,
+    .object_events = OBJS, .sprites = SPRITES, .sprite_coord_offset = SPR_OFF,
+    .field_camera = CAMERA, .camera_pan = PAN,
+    .backup_map_layout = BACKUP, .backup_map_data = GRID,
+    .main_callback2 = CB2, .cb2_overworld = CB2_FIELD,
+    .palette_fade_byte = FADE, .lock_field_controls = LOCK,
+    .trainers = TRAINERS, .trainer_count = 16,
+    .trainer_class_names = CLASSES, .trainer_class_count = 4,
+    .map_groups = GROUPS, .map_group_count = 2,
+    .items = ITEMS, .item_count = 80,
+    .species_names = FB_SPECIES, .species_count = 8,
+    .wild_feebas = FB_WILD,
+    .feebas_map_group = 0, .feebas_map_num = 1,
+    .feebas_water_tiles = FB_SECTIONS, .tile_bit_attributes = FB_TILEBITS,
+    .tasks = FB_TASKS, .task_fishing = FB_FISHING,
+};
+
+/* Locks field controls; with a rod out, task 3 runs Task_Fishing. */
+static void fb_lock(bool rod_out) {
+    put8(LOCK, 1);
+    put32(FB_TASKS + 0x28 * 3, rod_out ? FB_FISHING : 0x08000301u);
+    put8(FB_TASKS + 0x28 * 3 + 4, 1);
+}
+
+/* Map coords: VMap minus 7. Metatile 2 is ocean water. */
+static void fb_water(int mx, int my, uint16_t collision) {
+    set_cell(mx + 7, my + 7, (uint16_t)(0x1002 | (collision << 10)));
+}
+
+/* Layout 25x26 (sections rows 0-8, 9-17, 18-25), seed 0: spots 447,149,291,351,369,78.
+ * Water at map (5,16) = section 1's first tile = 149, drawn at screen (32, 8).
+ * Water at map (20,1) = section 0's first tile = 78, off screen. */
+static void fb_scene(bool on_screen_tile, bool off_screen_tile) {
+    static const uint16_t sec[9] = {0, 8, 77, 9, 17, 148, 18, 25, 400};
+    scene();
+    for (int i = 0; i < 9; i++) put16(FB_SECTIONS + 2u * (uint32_t)i, sec[i]);
+    put16(ATTRS1 + 2 * 2, 0x15);
+    put8(FB_TILEBITS + 0x15, 0x03);
+    put16(FB_WILD + 2, 3);
+    put_name(FB_SPECIES + 3 * 11, "FEEBAS");
+    put16(SB1 + 0x2E6A, 0x0000);
+    if (on_screen_tile) fb_water(5, 16, 0);
+    if (off_screen_tile) fb_water(20, 1, 0);
+}
+
+static const OwMarker* fb_marker(const OverworldSnapshot* s) {
+    for (uint8_t i = 0; i < s->marker_count; i++)
+        if (s->markers[i].kind == OW_MARK_FEEBAS || s->markers[i].kind == OW_MARK_FEEBAS_BLOCKED)
+            return &s->markers[i];
+    return NULL;
+}
+
+TEST(ow_feebas_markers_on_screen_only) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    fb_scene(true, true);
+    overworld_read(&k_fb_profile, &m, &s);
+    ASSERT_TRUE(s.visible);
+    ASSERT_TRUE(s.feebas_visible);
+    ASSERT_EQ(s.marker_count, 1);
+    const OwMarker* mk = fb_marker(&s);
+    ASSERT_TRUE(mk != NULL);
+    ASSERT_EQ(mk->kind, OW_MARK_FEEBAS);
+    ASSERT_EQ(mk->x, 32);
+    ASSERT_EQ(mk->y, 8);
+    ASSERT_EQ(mk->spot, 149);
+    ASSERT_STR_EQ(mk->name[0], "FEEBAS");
+    ASSERT_TRUE(!s.hint.show);   /* a fishable tile is on screen */
+}
+
+TEST(ow_feebas_survive_fishing_lock) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    fb_scene(true, true);
+    fb_lock(true);
+    overworld_read(&k_fb_profile, &m, &s);
+    ASSERT_TRUE(!s.visible);
+    ASSERT_TRUE(s.feebas_visible);
+    ASSERT_EQ(s.trainer_count, 0);
+    ASSERT_EQ(s.marker_count, 1);
+    ASSERT_EQ(s.markers[0].kind, OW_MARK_FEEBAS);
+    ASSERT_TRUE(!s.hint.show);
+}
+
+TEST(ow_feebas_hidden_in_other_locks) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    fb_scene(true, true);
+    fb_lock(false);   /* a menu or dialog, not fishing */
+    overworld_read(&k_fb_profile, &m, &s);
+    ASSERT_TRUE(!s.visible);
+    ASSERT_TRUE(!s.feebas_visible);
+    ASSERT_EQ(s.marker_count, 0);
+    ASSERT_TRUE(!s.hint.show);
+}
+
+TEST(ow_feebas_skips_message_box_while_fishing) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    fb_scene(false, false);
+    fb_water(5, 22, 0);               /* section 2's first tile: base 400 + 1, not a spot */
+    put16(FB_SECTIONS + 2 * 8, 290);  /* now 291, a spot; drawn at y = 104, into the box */
+    overworld_read(&k_fb_profile, &m, &s);
+    ASSERT_TRUE(fb_marker(&s) != NULL);
+    fb_lock(true);
+    overworld_read(&k_fb_profile, &m, &s);
+    ASSERT_TRUE(s.feebas_visible);
+    ASSERT_TRUE(fb_marker(&s) == NULL);
+}
+
+TEST(ow_feebas_sliver_on_screen_still_hints) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    fb_scene(false, false);
+    fb_water(2, 16, 0);               /* 149 at VMap (9, 23) */
+    put32(CAMERA + 0x10, 12);         /* scrolling: tiles shift 4 px right, this one sits at x = -12 */
+    overworld_read(&k_fb_profile, &m, &s);
+    const OwMarker* mk = fb_marker(&s);
+    ASSERT_TRUE(mk != NULL);
+    ASSERT_EQ(mk->x, -12);
+    ASSERT_TRUE(s.hint.show);         /* 4 px of it is not enough to see */
+}
+
+TEST(ow_feebas_hint_when_none_on_screen) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    fb_scene(false, true);
+    overworld_read(&k_fb_profile, &m, &s);
+    ASSERT_TRUE(fb_marker(&s) == NULL);
+    ASSERT_TRUE(s.hint.show);
+    ASSERT_EQ(s.hint.px, 112);        /* player VMap (17, 27) */
+    ASSERT_EQ(s.hint.py, 72);
+    ASSERT_EQ(s.hint.tx, 272);        /* VMap (27, 8) */
+    ASSERT_EQ(s.hint.ty, -232);
+    ASSERT_STR_EQ(s.hint.name, "FEEBAS");
+}
+
+TEST(ow_feebas_blocked_on_screen_still_hints) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    fb_scene(false, true);
+    fb_water(5, 16, 1);               /* 149 on screen, but blocked */
+    overworld_read(&k_fb_profile, &m, &s);
+    const OwMarker* mk = fb_marker(&s);
+    ASSERT_TRUE(mk != NULL && mk->kind == OW_MARK_FEEBAS_BLOCKED);
+    ASSERT_TRUE(s.hint.show);
+    ASSERT_EQ(s.hint.tx, 272);
+}
+
+TEST(ow_feebas_none_off_route) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    fb_scene(true, true);
+    put8(SB1 + 0x05, 2);
+    overworld_read(&k_fb_profile, &m, &s);
+    ASSERT_TRUE(s.visible);
+    ASSERT_TRUE(!s.feebas_visible);
+    ASSERT_TRUE(fb_marker(&s) == NULL);
+    ASSERT_TRUE(!s.hint.show);
+}
+
+TEST(ow_dump_feebas_lines) {
+    OverworldSnapshot s;
+    GameMem m = mem();
+    char buf[1024];
+    fb_scene(true, false);
+    overworld_read(&k_fb_profile, &m, &s);
+    FILE* f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    ASSERT_TRUE(overworld_dump(&s, f));
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    buf[n] = '\0';
+    fclose(f);
+    ASSERT_TRUE(strstr(buf, "[overworld]\nvisible 1\nfeebas_visible 1\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "marker kind=feebas x=32 y=8 name=FEEBAS spot=149 bridge=0\n") != NULL);
+}
+
 void run_overworld_tests(void) {
+    RUN_TEST(ow_feebas_markers_on_screen_only);
+    RUN_TEST(ow_feebas_survive_fishing_lock);
+    RUN_TEST(ow_feebas_hidden_in_other_locks);
+    RUN_TEST(ow_feebas_skips_message_box_while_fishing);
+    RUN_TEST(ow_feebas_sliver_on_screen_still_hints);
+    RUN_TEST(ow_feebas_hint_when_none_on_screen);
+    RUN_TEST(ow_feebas_blocked_on_screen_still_hints);
+    RUN_TEST(ow_feebas_none_off_route);
+    RUN_TEST(ow_dump_feebas_lines);
     RUN_TEST(ow_gift_tag_shown_until_received);
     RUN_TEST(ow_no_gift_tags_without_cache);
     RUN_TEST(ow_gift_cache_shared_script_walks_once);
