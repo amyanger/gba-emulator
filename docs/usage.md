@@ -122,10 +122,11 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 | F3 | Toggle input display HUD (mini-GBA overlay showing held buttons) |
 | F4 | Show or hide Overworld X-Ray: trainer sight lines and hidden items on the map (original Pokemon Emerald US/English ROM only, remembered between launches) |
 | F9 | Show or hide Emerald Companion (original Pokemon Emerald US/English ROM only) |
-| F10 | Cycle the Emerald Companion page: Auto, Party, Route, Nuzlocke (Auto shows the battle page during battles; a battle switches to Auto and the old page returns afterwards) |
-| [ and ] | Select the previous or next Pokemon on the Party page, or switch Nuzlocke views (unless bound to a GBA button) |
+| F10 | Cycle the Emerald Companion page: Auto, Party, Route, Nuzlocke, Berries (Auto shows the battle page during battles; a battle switches to Auto and the old page returns afterwards) |
+| [ and ] | Select the previous or next Pokemon on the Party page, switch Nuzlocke views, or open another place on the Berries page (unless bound to a GBA button) |
 | N | Start a Nuzlocke run, on the Nuzlocke page (unless bound to a GBA button) |
 | J, twice | Move the clock to the next Mirage Island day, on the Route page (unless bound to a GBA button) |
+| B | Turn berry alerts on or off, on the Berries page (unless bound to a GBA button) |
 | F5 | Save state to current slot |
 | F6 | Edit label of current save-state slot |
 | F7 | Open save-state slot picker |
@@ -258,8 +259,8 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--input-script <file>` | Replay scripted keypad input. Headless only. Format below. |
 | `--panel-out <file>` | After the run, render the Emerald Companion panel to a PNG. Requires `--headless`. |
 | `--panel-density <f>` | Panel pixels per point, 0.5 to 4.0 (default 1.0). Requires `--headless`. |
-| `--panel-page <p>` | Panel page: `auto`, `party`, `route` or `nuzlocke` (default `auto`). Requires `--headless`. |
-| `--panel-select <n>` | Selected party slot, 0 to 5, for the party page, or the Nuzlocke view: 0 routes, 1 team, 2 graveyard (default 0). Requires `--headless`. |
+| `--panel-page <p>` | Panel page: `auto`, `party`, `route`, `nuzlocke` or `berries` (default `auto`). Requires `--headless`. |
+| `--panel-select <n>` | Selected party slot, 0 to 5, for the party page, the Nuzlocke view: 0 routes, 1 team, 2 graveyard, or the open place on the Berries page (default 0). Requires `--headless`. |
 | `--library-folder <dir>` | Game folder for the library, used only when none has been chosen yet. |
 | `--library-out <file>` | Render the library for `--library-folder` to a PNG and exit. Takes no ROM and never reads or writes `library.txt`. |
 | `--nuzlocke-file <file>` | Track a Nuzlocke run in `file` during the run, starting one if the file has none. `--game-dump` then adds `nuz` lines. Requires `--headless`. |

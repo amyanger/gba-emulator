@@ -51,6 +51,7 @@ typedef struct {
     uint32_t wild_mon_headers;   uint16_t wild_header_cap; /* 20-byte stride */
     uint32_t region_map_entries; uint8_t region_map_count; /* 8-byte stride */
     uint32_t evolution_table;                             /* 5 x 8-byte entries per species */
+    uint32_t berries;                                     /* gBerries, 28-byte stride, index berry-1 */
 
     /* Overworld X-Ray (docs/superpowers/specs/emerald-game-layer/overworld-*.md) */
     uint32_t object_events;         /* struct ObjectEvent[16], 0x24 each */

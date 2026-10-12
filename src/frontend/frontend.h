@@ -10,6 +10,7 @@
 #include "frontend/audio_out.h"
 #include "frontend/settings.h"
 #include "frontend/prefs.h"
+#include "frontend/berry_alerts.h"
 #include "frontend/frame_pacer.h"
 #include "frontend/video_filter.h"
 #include "frontend/follower_draw.h"
@@ -43,6 +44,9 @@ typedef struct Frontend {
     PanelBattleFollow panel_follow; /* switches to Auto while a battle runs */
     uint8_t panel_sel;            /* selected party slot, [ and ] */
     uint8_t nuz_sub;              /* NuzSubView on the Nuzlocke page, [ and ] */
+    uint8_t berry_sel;            /* open place on the Berries page, [ and ] */
+    bool berry_alerts;            /* berry toasts; B on the Berries page, prefs berry_alerts */
+    BerryAlerts berry_watch;      /* reset on state load and rewind */
     NuzSession* nuz;              /* set by main; N starts a run on the Nuzlocke page */
     LayoutPlan plan;
     PxRect game_rect, panel_rect; /* drawable pixels */
@@ -50,7 +54,8 @@ typedef struct Frontend {
     /* What the panel buffer currently shows, so unchanged frames skip the redraw. */
     GameSnapshot last_snap;
     MirageArm mirage_arm;    /* J J clock jump on the Route page */
-    uint8_t last_page, last_sel, last_nuz_sub;
+    uint8_t last_page, last_sel, last_nuz_sub, last_berry_sel;
+    bool last_berry_alerts;
     uint32_t last_nuz_version;
     bool panel_dirty;
 
@@ -174,6 +179,8 @@ void frontend_toast_keyed(Frontend* fe, const char* key, ToastKind kind, const c
                           const char* detail);
 /* Updates badges from frontend state, expires toasts, redraws the HUD if needed. */
 void frontend_update_hud(Frontend* fe, uint32_t now_ms);
+/* B on the Berries page: berry toasts on or off, saved to prefs. */
+void frontend_toggle_berry_alerts(Frontend* fe);
 /* F4: turns the overlay on or off, (un)registers the line-160 observer, saves prefs. */
 void frontend_toggle_overworld(Frontend* fe, GBA* gba);
 /* Line-160 observer hub: feeds the Overworld X-Ray and Following Pokemon (ctx = Frontend). */

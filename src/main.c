@@ -58,6 +58,18 @@ static void nuz_tick(GBA* gba, void* ctx) {
     if (s_nuz_on) nuz_session_frame((NuzSession*)ctx, &m);
 }
 
+/* Berry toasts, checked once a second whether or not the panel is open. */
+static void berry_tick(Frontend* fe, GBA* gba) {
+    static uint32_t frames;
+    static BerryView view;   /* ~4 KB: keep it off the stack */
+    if (!fe->berry_alerts || !s_game.profile || ++frames % 60 != 0) return;
+    BerryToast toasts[BERRY_TOAST_MAX];
+    game_read_berries(&s_game, gba, &view);
+    uint8_t n = berry_alerts_update(&fe->berry_watch, &view, toasts, BERRY_TOAST_MAX);
+    for (uint8_t i = 0; i < n; i++)
+        frontend_toast_keyed(fe, toasts[i].key, TOAST_INFO, toasts[i].title, toasts[i].detail);
+}
+
 /* Following Pokemon around one emulated frame: place the follower before it runs and hold
  * game input during a talk; afterwards restore input and advance the talk. */
 static void follower_pre_frame(GBA* gba, void* ctx) {
@@ -123,13 +135,16 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
         /* Redraw only when something on the panel can have changed. */
         if (fe->panel_dirty || fe->last_page != fe->panel_page || fe->last_sel != fe->panel_sel ||
             fe->last_nuz_sub != fe->nuz_sub || fe->last_nuz_version != s_nuz.view_version ||
+            fe->last_berry_sel != fe->berry_sel || fe->last_berry_alerts != fe->berry_alerts ||
             memcmp(&fe->last_snap, &s_game.snap, sizeof(s_game.snap)) != 0) {
             UiCanvas canvas;
             ui_canvas_init(&canvas, fe->panel_buffer, fe->panel_px_w, fe->panel_px_h,
                            fe->panel_density);
             game_panel_draw(&canvas, &s_game.snap, (GamePage)fe->panel_page, fe->panel_sel,
-                            &s_nuz.view, fe->nuz_sub);
+                            &s_nuz.view, fe->nuz_sub, fe->berry_sel, fe->berry_alerts);
             fe->last_nuz_sub = fe->nuz_sub;
+            fe->last_berry_sel = fe->berry_sel;
+            fe->last_berry_alerts = fe->berry_alerts;
             fe->last_nuz_version = s_nuz.view_version;
             SDL_UpdateTexture(fe->panel_texture, NULL, fe->panel_buffer,
                               fe->panel_px_w * (int)sizeof(uint32_t));
@@ -163,7 +178,7 @@ static void print_usage(const char* prog) {
     printf("  --game-dump <file>     Headless: write decoded Emerald state after the run\n");
     printf("  --panel-out <file>     Headless: render the Emerald Companion panel to a PNG after the run\n");
     printf("  --panel-density <f>    Headless: panel pixels per point, 0.5 to 4.0 (default: 1.0)\n");
-    printf("  --panel-page <p>       Headless: panel page, auto|party|route|nuzlocke (default: auto)\n");
+    printf("  --panel-page <p>       Headless: panel page, auto|party|route|nuzlocke|berries (default: auto)\n");
     printf("  --panel-select <n>     Headless: party slot, or Nuzlocke view 0-2 (routes, team, graveyard)\n");
     printf("  --nuzlocke-file <f>    Headless: track a Nuzlocke run in this file, starting one if it has none\n");
     printf("  --library-folder <dir> Game folder for the library, used when none has been chosen yet\n");
@@ -373,8 +388,10 @@ int main(int argc, char* argv[]) {
             panel_page = GAME_PAGE_ENCOUNTERS;
         } else if (strcmp(panel_page_arg, "nuzlocke") == 0) {
             panel_page = GAME_PAGE_NUZLOCKE;
+        } else if (strcmp(panel_page_arg, "berries") == 0) {
+            panel_page = GAME_PAGE_BERRIES;
         } else if (strcmp(panel_page_arg, "auto") != 0) {
-            LOG_ERROR("--panel-page must be auto, party, route or nuzlocke (got %s)", panel_page_arg);
+            LOG_ERROR("--panel-page must be auto, party, route, nuzlocke or berries (got %s)", panel_page_arg);
             return 1;
         }
     }
@@ -706,7 +723,8 @@ int main(int argc, char* argv[]) {
                 UiCanvas canvas;
                 ui_canvas_init(&canvas, px, w, h, panel_density);
                 game_panel_draw(&canvas, &dump_state.snap, panel_page, panel_select,
-                                nuzlocke_file ? &s_nuz.view : NULL, (uint8_t)(panel_select % NUZ_SUB_COUNT));
+                                nuzlocke_file ? &s_nuz.view : NULL, (uint8_t)(panel_select % NUZ_SUB_COUNT),
+                                panel_select, true);
                 if (!screenshot_save_argb(px, w, h, panel_out_path)) {
                     LOG_ERROR("Failed to write --panel-out file: %s", panel_out_path);
                     rc = 1;
@@ -825,6 +843,7 @@ int main(int argc, char* argv[]) {
         const char* ff = prefs_get(&s_prefs, "ff_speed");
         fe.ff_speed = !ff ? 3 : strcmp(ff, "max") == 0 ? 0 : (ff[0] >= '2' && ff[0] <= '4' && !ff[1]) ? (uint8_t)(ff[0] - '0') : 3;
         fe.pause_on_blur = prefs_get_bool(&s_prefs, "pause_on_blur", false);
+        fe.berry_alerts = prefs_get_bool(&s_prefs, "berry_alerts", true);
     }
     fe.color_correct = color_correct_arg || prefs_get_bool(&s_prefs, "color_correct", false);
     if (fe.ow_feed && prefs_get_bool(&s_prefs, "overworld_xray", false)) fe.overworld_xray = true;
@@ -948,6 +967,7 @@ int main(int argc, char* argv[]) {
                     frontend_toast(&fe, TOAST_OK, "State loaded", slot_detail);
                     frontend_audio_stop(&fe, &gba.apu);
                     overworld_feed_clear(&s_ow);
+                    berry_alerts_rebase(&fe.berry_watch);
                     frontend_hq_reset(&fe);
                     frontend_follower_reset(&fe, &gba);
 #ifdef ENABLE_REWIND
@@ -993,6 +1013,7 @@ int main(int argc, char* argv[]) {
                 // Hit oldest frame — freeze on screen until release.
             }
             overworld_feed_clear(&s_ow);
+            berry_alerts_rebase(&fe.berry_watch);
             frontend_follower_reset(&fe, &gba);
             nuz_tick(&gba, &s_nuz);
             render_with_overlay(&fe, &gba);
@@ -1014,6 +1035,7 @@ int main(int argc, char* argv[]) {
         if (gba.frame_complete) {
             trace_frame_tick();
             nuz_tick(&gba, &s_nuz);
+            berry_tick(&fe, &gba);
             CartFlushResult flush = cartridge_save_tick(&gba.cart, time(NULL));
             if (toast_failure_edge(&save_fail_reported, flush != CART_FLUSH_NONE,
                                    flush == CART_FLUSH_OK))

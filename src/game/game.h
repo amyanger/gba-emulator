@@ -7,6 +7,7 @@
 #include "game/pokemon.h"
 #include "game/encounters.h"
 #include "game/mirage.h"
+#include "game/berry.h"
 
 typedef struct GBA GBA;
 
@@ -93,6 +94,7 @@ typedef struct {
     uint8_t enc_count[ENC_METHOD_COUNT];
     GameEncRow enc[ENC_METHOD_COUNT][12];
     MirageInfo mirage;
+    BerryView berries;
 } GameSnapshot;
 
 typedef struct {
@@ -101,6 +103,7 @@ typedef struct {
     GameSnapshot snap;
     MirageCache mirage;  /* owned Pokemon and last forecast, kept between snapshots */
     MirageClock clock;   /* set by game_update from the cartridge RTC */
+    BerryPlaces places;  /* berry tree places, built from the ROM by game_init */
 } GameState;
 
 /* Pick the profile for this ROM (NULL when unsupported). */
@@ -110,6 +113,8 @@ void game_update_mem(GameState* gs, const GameMem* mem);
 /* Builds a GameMem from gba->bus / gba->cart and calls game_update_mem. */
 void game_update(GameState* gs, const GBA* gba);
 /* ROM name lookups; species gives "???" and mapsec "" when out of range. */
+/* Just the berry trees, for alerts while the panel is closed (much cheaper than game_update). */
+void game_read_berries(GameState* gs, const GBA* gba, BerryView* out);
 void game_species_name(const GameMem* m, const GameProfile* p, uint16_t species, char* out);
 void game_mapsec_name(const GameMem* m, const GameProfile* p, uint8_t sec, char* out);
 /* Plain-text dump of a snapshot (used by --game-dump). */

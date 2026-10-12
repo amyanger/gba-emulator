@@ -32,6 +32,7 @@ static const GameProfile k_test_profile = {
     .species_to_national = 0x08001800,
     .wild_mon_headers = 0x08001900, .wild_header_cap = 200,
     .region_map_entries = 0x08001C00, .region_map_count = 2,
+    .berries = 0x08002000,
 };
 
 static GameMem test_mem(void) {
@@ -467,7 +468,39 @@ TEST(snapshot_includes_mirage_and_dump_line) {
     ASSERT_TRUE(strstr(buf, "mirage value 12345678") != NULL);
 }
 
+TEST(snapshot_reads_berries_and_dumps_them) {
+    build_world();
+    GameState* gs = test_state();
+    gs->places.count = 1;
+    gs->places.place[0].sec = 1;
+    gs->places.place[0].spots = 2;
+    game_strcpy(gs->places.place[0].name, sizeof(gs->places.place[0].name), "ROUTE ONE");
+    memset(gs->places.place_of, BERRY_PLACE_NONE, sizeof(gs->places.place_of));
+    gs->places.place_of[3] = 0;
+    put_str(0x08002000, "CHERI");          /* gBerries[0]: yield 2-3, 3 h stages */
+    at(0x08002000)[0x0A] = 3;
+    at(0x08002000)[0x0B] = 2;
+    at(0x08002000)[0x14] = 3;
+    uint8_t* t = at(SB1 + 0x169C + 8 * 3);
+    t[0] = 1; t[1] = 5; fixture_put16(t + 2, 300); t[4] = 3;
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(gs->snap.berries.valid);
+    ASSERT_EQ(gs->snap.berries.count, 1);
+    ASSERT_EQ(gs->snap.berries.here, 0);
+    char buf[2048] = {0};
+    FILE* f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    ASSERT_TRUE(game_dump(&gs->snap, f));
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    ASSERT_TRUE(strstr(buf, "\nberry 3 ROUTE ONE CHERI stage 5 next 300 ripe 0 yield 3-3 status 1 water 0\n") != NULL);
+}
+
 void run_game_snapshot_tests(void) {
+    RUN_TEST(snapshot_reads_berries_and_dumps_them);
     TEST_SUITE("game_snapshot");
     RUN_TEST(snapshot_without_profile_explains);
     RUN_TEST(snapshot_waits_when_save_pointers_invalid);
