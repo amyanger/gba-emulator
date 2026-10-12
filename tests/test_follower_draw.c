@@ -113,8 +113,8 @@ TEST(lead_change_reloads_gfx) {
 }
 
 /* Visible 32x32 follower at VMap tile (5, 4) with screen origin (0, 0). */
-static void visible_setup(FollowerView* v, FollowerFeed* fd) {
-    memset(v, 0, sizeof(*v));
+static void visible_setup_with(FollowerView* v, FollowerFeed* fd, HgssAssets* assets) {
+    follower_view_init(v, assets, NULL);
     v->enabled = true;
     v->gfx_pid = 6;
     v->gfx.size = 32;
@@ -130,6 +130,8 @@ static void visible_setup(FollowerView* v, FollowerFeed* fd) {
     fd->sim.elevation = 3;
     fd->in.fol_elevation = 15;                     /* priority uses the kept elevation */
 }
+
+static void visible_setup(FollowerView* v, FollowerFeed* fd) { visible_setup_with(v, fd, NULL); }
 
 TEST(visible_follower_obj) {
     static FollowerView v;
@@ -204,6 +206,193 @@ TEST(tall_grass_obj_rustles) {
     ASSERT_TRUE(objs[1].pixels == v.grass_px[0]);
 }
 
+/* Synthetic ball/burst assets: ball all index 3, each burst crop's top-left pixel marks its frame. */
+static HgssAssets s_fx;
+static const uint8_t k_crop[4][4] = { {0, 23, 8, 7}, {8, 19, 8, 7}, {16, 16, 8, 5}, {24, 12, 8, 5} };
+
+static void ball_setup(FollowerView* v, FollowerFeed* fd, uint8_t fx, uint8_t t) {
+    memset(&s_fx, 0, sizeof(s_fx));
+    s_fx.fx_ok = true;
+    memset(s_fx.ball.px, 3, sizeof(s_fx.ball.px));
+    for (int i = 0; i < 16; i++) s_fx.ball.pal[i] = (uint16_t)(0x2000 + i);
+    for (int i = 0; i < 16; i++) s_fx.burst.pal[i] = (uint16_t)(0x3000 + i);
+    for (int f = 0; f < 4; f++) s_fx.burst.px[k_crop[f][1] * 32 + k_crop[f][0]] = (uint8_t)(f + 1);
+    visible_setup_with(v, fd, &s_fx);
+    for (int i = 0; i < 32 * 32; i++) v->gfx.px[2][i] = 5;   /* fully opaque frame */
+    fd->sim.ball_fx = fx;
+    fd->sim.ball_t = t;
+}
+
+static uint32_t count_on(const PpuExtraObj* o) {
+    uint32_t n = 0;
+    for (int i = 0; i < PPU_EXTRA_OBJ_MAX; i++) n += o[i].on;
+    return n;
+}
+
+static uint32_t opaque(const PpuExtraObj* o, int32_t* bottom) {
+    uint32_t n = 0;
+    *bottom = -1;
+    for (int32_t y = 0; y < o->h; y++)
+        for (int32_t x = 0; x < o->w; x++)
+            if (o->pixels[y * o->w + x]) { n++; *bottom = y; }
+    return n;
+}
+
+TEST(ball_in_white_silhouette) {
+    static FollowerView v;
+    static FollowerFeed fd;
+    static uint8_t oam[1024];
+    PpuExtraObj objs[PPU_EXTRA_OBJ_MAX];
+    clear_oam(oam);
+    ball_setup(&v, &fd, FOL_BALL_IN, 0);
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ(count_on(objs), 1);
+    ASSERT_EQ(objs[0].x, 88 - 16);
+    ASSERT_EQ(objs[0].y, 80 - 32 + 4);
+    ASSERT_EQ(objs[0].w, 32);
+    ASSERT_EQ(objs[0].priority, 1);
+    for (int i = 1; i < 16; i++) ASSERT_EQ_HEX(objs[0].pal[i], 0x7FFF);
+    int32_t bottom;
+    ASSERT_EQ(opaque(&objs[0], &bottom), 32 * 32);
+
+    fd.in.fade_mask = 0xFFFF0000u; fd.in.fade_y = 16; fd.in.fade_color = 0;
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ_HEX(objs[0].pal[5], 0x0000);          /* fade still applies to the white */
+}
+
+TEST(ball_in_shrinks_around_feet) {
+    static FollowerView v;
+    static FollowerFeed fd;
+    static uint8_t oam[1024];
+    PpuExtraObj objs[PPU_EXTRA_OBJ_MAX];
+    clear_oam(oam);
+    ball_setup(&v, &fd, FOL_BALL_IN, 6);            /* k = 4 */
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ(count_on(objs), 1);
+    ASSERT_EQ(objs[0].x, 88 - 16);
+    ASSERT_EQ(objs[0].y, 80 - 32 + 4);
+    int32_t bottom;
+    uint32_t n = opaque(&objs[0], &bottom);
+    ASSERT_TRUE(n >= 1024 / 16 - 16 && n <= 1024 / 16 + 16);
+    ASSERT_EQ(objs[0].y + bottom, 80);              /* the feet row */
+    ASSERT_TRUE(objs[0].pixels[(bottom) * 32 + 16] != 0);   /* centred */
+}
+
+TEST(ball_in_then_ball) {
+    static FollowerView v;
+    static FollowerFeed fd;
+    static uint8_t oam[1024];
+    PpuExtraObj objs[PPU_EXTRA_OBJ_MAX];
+    clear_oam(oam);
+    put_oam(oam, 9, 70, 2, 2, 1);                   /* player-like sprite, feet 102: lower on screen */
+    ball_setup(&v, &fd, FOL_BALL_IN, 8);
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ(count_on(objs), 1);
+    ASSERT_EQ(objs[0].x, 88 - 8);
+    ASSERT_EQ(objs[0].y, 80 - 16);
+    ASSERT_EQ(objs[0].w, 16);
+    ASSERT_EQ(objs[0].h, 16);
+    ASSERT_EQ(objs[0].priority, 1);
+    ASSERT_EQ(objs[0].slot, follower_oam_slot(oam, 1, 80));   /* same slot as the follower */
+    ASSERT_EQ(objs[0].slot, 9);
+    ASSERT_TRUE(objs[0].pixels == s_fx.ball.px);
+    ASSERT_EQ_HEX(objs[0].pal[3], 0x2003);
+}
+
+TEST(ball_loses_feet_tie) {
+    static FollowerView v;
+    static FollowerFeed fd;
+    static uint8_t oam[1024];
+    PpuExtraObj objs[PPU_EXTRA_OBJ_MAX];
+    clear_oam(oam);
+    put_oam(oam, 9, 48, 2, 2, 1);                   /* sprite bottom 80 == the feet row */
+    ball_setup(&v, &fd, FOL_BALL_OUT, 0);
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ(objs[0].slot, 9);                     /* ball behind the sprite */
+    fd.sim.ball_t = 4;
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ(objs[0].slot, -1);                    /* the follower keeps its own tie rule */
+}
+
+TEST(ball_out_ball_only) {
+    static FollowerView v;
+    static FollowerFeed fd;
+    static uint8_t oam[1024];
+    PpuExtraObj objs[PPU_EXTRA_OBJ_MAX];
+    clear_oam(oam);
+    put_oam(oam, 9, 70, 2, 2, 1);
+    ball_setup(&v, &fd, FOL_BALL_OUT, 0);
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ(count_on(objs), 1);
+    ASSERT_EQ(objs[0].slot, 9);
+    ASSERT_EQ(objs[0].w, 16);
+    ASSERT_EQ(objs[0].x, 88 - 8);
+    ASSERT_EQ(objs[0].y, 80 - 16);
+
+    fd.in.fade_mask = 0xFFFF0000u; fd.in.fade_y = 16; fd.in.fade_color = 0;
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ_HEX(objs[0].pal[3], 0x0000);          /* ball palette faded */
+}
+
+/* Rounded (dist cos a, -dist sin a) for frames 0 and 3, a = 0, 45, ..., 315. */
+static const int8_t k_off0[8][2] = { {6, 0}, {4, -4}, {0, -6}, {-4, -4}, {-6, 0}, {-4, 4}, {0, 6}, {4, 4} };
+static const int8_t k_off3[8][2] = { {20, 0}, {14, -14}, {0, -20}, {-14, -14}, {-20, 0}, {-14, 14}, {0, 20}, {14, 14} };
+
+static void check_burst(const PpuExtraObj* objs, uint8_t f, const int8_t off[8][2]) {
+    ASSERT_EQ(count_on(objs), 9);
+    ASSERT_EQ(objs[0].w, 32);                       /* follower at full size */
+    ASSERT_EQ_HEX(objs[0].pal[4], 0x0104);
+    for (int i = 0; i < 8; i++) {
+        const PpuExtraObj* o = &objs[1 + i];
+        ASSERT_EQ(o->w, k_crop[f][2]);
+        ASSERT_EQ(o->h, k_crop[f][3]);
+        ASSERT_EQ(o->x + o->w / 2, 88 + off[i][0]);
+        ASSERT_EQ(o->y + o->h / 2, 80 - 17 + off[i][1]);
+        ASSERT_EQ(o->pixels[0], f + 1);
+        ASSERT_EQ(o->priority, 1);
+        ASSERT_EQ(o->slot, -1);
+        ASSERT_EQ_HEX(o->pal[2], 0x3002);
+    }
+}
+
+TEST(ball_out_burst_frames) {
+    static FollowerView v;
+    static FollowerFeed fd;
+    static uint8_t oam[1024];
+    PpuExtraObj objs[PPU_EXTRA_OBJ_MAX];
+    clear_oam(oam);
+    ball_setup(&v, &fd, FOL_BALL_OUT, 4);
+    follower_view_objs(&v, &fd, oam, objs);
+    check_burst(objs, 0, k_off0);
+    fd.sim.ball_t = 19;
+    follower_view_objs(&v, &fd, oam, objs);
+    check_burst(objs, 3, k_off3);
+}
+
+TEST(ball_fx_missing_falls_back) {
+    static FollowerView v;
+    static FollowerFeed fd;
+    static uint8_t oam[1024];
+    PpuExtraObj objs[PPU_EXTRA_OBJ_MAX];
+    clear_oam(oam);
+    ball_setup(&v, &fd, FOL_BALL_IN, 6);
+    s_fx.fx_ok = false;
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ(count_on(objs), 1);                   /* plain follower */
+    ASSERT_TRUE(objs[0].pixels == v.gfx.px[2]);
+    fd.sim.ball_t = 12;
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_TRUE(objs[0].pixels == v.gfx.px[2]);
+    fd.sim.ball_fx = FOL_BALL_OUT;
+    fd.sim.ball_t = 2;
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ(count_on(objs), 0);
+    fd.sim.ball_t = 8;
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ(count_on(objs), 1);
+    ASSERT_TRUE(objs[0].pixels == v.gfx.px[2]);
+}
+
 void run_follower_draw_tests(void) {
     RUN_TEST(slot_sorts_by_feet);
     RUN_TEST(fade_palette);
@@ -215,4 +404,11 @@ void run_follower_draw_tests(void) {
     RUN_TEST(visible_follower_obj);
     RUN_TEST(long_grass_splits_halves);
     RUN_TEST(tall_grass_obj_rustles);
+    RUN_TEST(ball_in_white_silhouette);
+    RUN_TEST(ball_in_shrinks_around_feet);
+    RUN_TEST(ball_in_then_ball);
+    RUN_TEST(ball_out_ball_only);
+    RUN_TEST(ball_loses_feet_tie);
+    RUN_TEST(ball_out_burst_frames);
+    RUN_TEST(ball_fx_missing_falls_back);
 }

@@ -34,6 +34,8 @@ typedef struct {
     bool grass_in;                 /* follower tile was tall grass last frame */
     int16_t grass_tx, grass_ty;    /* that tile */
     uint8_t grass_t;               /* frames since entering it, saturates */
+    uint8_t shrink_px[HGSS_FOLLOW_MAX * HGSS_FOLLOW_MAX];   /* Poke Ball shrink frame */
+    uint8_t burst_px[4][8 * 7];    /* the 4 burst sparkle crops, cut at init */
 } FollowerView;
 
 void follower_view_init(FollowerView* v, HgssAssets* assets, const char* save_path);

@@ -13,10 +13,30 @@
 
 static const uint8_t k_obj_h[3][4] = { {8, 16, 32, 64}, {8, 8, 16, 32}, {16, 32, 32, 64} };
 
+/* HGSS Poke Ball burst (hgss-follow-mon ball_effect.c, Part 2): crop box inside the 32x32 texture. */
+typedef struct { uint8_t src_x, src_y, w, h; } BurstCrop;
+static const BurstCrop k_burst_crop[4] = { {0, 23, 8, 7}, {8, 19, 8, 7}, {16, 16, 8, 5}, {24, 12, 8, 5} };
+#define BURST_CENTER_Y 17
+/* Sparkle offsets from the burst centre: round(dist * (cos a, -sin a)) for a = 0, 45, ..., 315 degrees,
+ * with dist 6.3, 11.0, 15.6, 20.2 per frame (diagonals 4.45, 7.78, 11.03, 14.28). */
+static const int8_t k_burst_off[4][8][2] = {
+    { {6, 0}, {4, -4}, {0, -6}, {-4, -4}, {-6, 0}, {-4, 4}, {0, 6}, {4, 4} },
+    { {11, 0}, {8, -8}, {0, -11}, {-8, -8}, {-11, 0}, {-8, 8}, {0, 11}, {8, 8} },
+    { {16, 0}, {11, -11}, {0, -16}, {-11, -11}, {-16, 0}, {-11, 11}, {0, 16}, {11, 11} },
+    { {20, 0}, {14, -14}, {0, -20}, {-14, -14}, {-20, 0}, {-14, 14}, {0, 20}, {14, 14} },
+};
+
 void follower_view_init(FollowerView* v, HgssAssets* assets, const char* save_path) {
     memset(v, 0, sizeof(*v));
     v->assets = assets;
     v->rng = 0x2545F491u;
+    if (assets && assets->fx_ok) {
+        for (uint32_t f = 0; f < 4; f++) {
+            const BurstCrop* c = &k_burst_crop[f];
+            for (uint32_t y = 0; y < c->h; y++)
+                memcpy(&v->burst_px[f][y * c->w], &assets->burst.px[(c->src_y + y) * 32 + c->src_x], c->w);
+        }
+    }
     if (save_path && save_path[0]) {
         int n = snprintf(v->mood_path, sizeof(v->mood_path), "%s.follow", save_path);
         if (n < 0 || (size_t)n >= sizeof(v->mood_path)) v->mood_path[0] = '\0';   /* too long: no sidecar */
@@ -136,6 +156,26 @@ static void obj_set(PpuExtraObj* o, int16_t x, int16_t y, uint8_t w, uint8_t h, 
     memcpy(o->pal, pal, sizeof(o->pal));
 }
 
+/* Nearest-neighbour scale by 1/k around the feet point (bottom-centre, above the foot pad). */
+static void shrink_frame(const uint8_t* src, uint8_t size, int32_t k, uint8_t* dst) {
+    int32_t ax = size / 2, ay = size - FOLLOW_FOOT_PAD;
+    for (int32_t y = 0; y < size; y++) {
+        int32_t sy = ay + (y - ay) * k;
+        for (int32_t x = 0; x < size; x++) {
+            int32_t sx = ax + (x - ax) * k;
+            bool in = sy >= 0 && sy < size && sx >= 0 && sx < size;
+            dst[y * size + x] = in ? src[sy * size + sx] : 0;
+        }
+    }
+}
+
+static void ball_obj(PpuExtraObj* o, const HgssAssets* a, const FollowerInput* in, int16_t fx, int16_t fy,
+                     uint8_t prio, int16_t slot) {
+    uint16_t pal[16];
+    follower_fade_palette(a->ball.pal, in, pal);
+    obj_set(o, (int16_t)(fx - 8), (int16_t)(fy - 16), 16, 16, prio, slot, a->ball.px, pal);
+}
+
 void follower_view_objs(FollowerView* v, const FollowerFeed* fd, const uint8_t* oam,
                         PpuExtraObj out[PPU_EXTRA_OBJ_MAX]) {
     memset(out, 0, sizeof(PpuExtraObj) * PPU_EXTRA_OBJ_MAX);
@@ -156,6 +196,26 @@ void follower_view_objs(FollowerView* v, const FollowerFeed* fd, const uint8_t* 
 
     int16_t fx, fy;
     follower_feet(s, in, &fx, &fy);
+    uint8_t prio = v->elev_prio[s->elevation & 15] & 3;
+    int16_t slot = follower_oam_slot(oam, prio, fy);
+    /* The ball sorts like the follower, but a sprite with feet on the same row (the player) wins the tie. */
+    int16_t ball_slot = follower_oam_slot(oam, prio, (int16_t)(fy - 1));
+    bool fx_ok = v->assets && v->assets->fx_ok;
+    bool shrink = false, burst = false;
+    if (s->ball_fx == FOL_BALL_IN && fx_ok) {
+        if (s->ball_t >= FOL_BALL_IN_SHRINK) {
+            ball_obj(&out[0], v->assets, in, fx, fy, prio, ball_slot);
+            return;
+        }
+        shrink = true;
+    } else if (s->ball_fx == FOL_BALL_OUT) {
+        if (s->ball_t < FOL_BALL_OUT_BALL) {
+            if (fx_ok) ball_obj(&out[0], v->assets, in, fx, fy, prio, ball_slot);
+            return;
+        }
+        burst = fx_ok && s->ball_t < FOL_BALL_OUT_TOTAL;
+    }
+
     Follower posed = *s;
     int16_t ox = 0, oy = 0;
     if (talk_active(&v->talk)) {
@@ -166,32 +226,51 @@ void follower_view_objs(FollowerView* v, const FollowerFeed* fd, const uint8_t* 
     uint8_t frame = follower_frame(&posed);
     int16_t x = (int16_t)(fx - size / 2 + ox);
     int16_t y = (int16_t)(fy - size + FOLLOW_FOOT_PAD + oy);
-    uint8_t prio = v->elev_prio[s->elevation & 15] & 3;
-    int16_t slot = follower_oam_slot(oam, prio, fy);
 
     uint16_t pal[16];
-    follower_fade_palette(v->gfx.pal[v->shiny ? 1 : 0], in, pal);
-
     const uint8_t* px = v->gfx.px[frame];
+    if (shrink) {
+        static const uint16_t k_white[16] = { 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF,
+                                              0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF, 0x7FFF };
+        follower_fade_palette(k_white, in, pal);
+        shrink_frame(px, size, s->ball_t / 2 + 1, v->shrink_px);
+        px = v->shrink_px;
+    } else {
+        follower_fade_palette(v->gfx.pal[v->shiny ? 1 : 0], in, pal);
+    }
+
+    uint32_t n = 0;
     if (in->fol_behavior == MB_LONG_GRASS) {
         /* Bottom half at priority 3 so the BG grass covers the legs. */
         uint32_t half = (uint32_t)size * size / 2;
         memcpy(v->split_px[0], px, half);
         memcpy(v->split_px[1], px + half, half);
         uint8_t hh = (uint8_t)(size / 2);
-        obj_set(&out[0], x, y, size, hh, prio, slot, v->split_px[0], pal);
-        obj_set(&out[1], x, (int16_t)(y + hh), size, hh, 3, follower_oam_slot(oam, 3, fy), v->split_px[1], pal);
-        return;
+        obj_set(&out[n++], x, y, size, hh, prio, slot, v->split_px[0], pal);
+        obj_set(&out[n++], x, (int16_t)(y + hh), size, hh, 3, follower_oam_slot(oam, 3, fy), v->split_px[1], pal);
+    } else {
+        obj_set(&out[n++], x, y, size, size, prio, slot, px, pal);
+        if (in_grass && v->grass_ok) {
+            uint8_t gf = grass_t < GRASS_RUSTLE_END ? (uint8_t)(1 + grass_t / GRASS_RUSTLE) : 0;
+            int16_t gx = (int16_t)((s->tx - in->origin.pos_x) * 16 + in->origin.cam_dx);
+            int16_t gy = (int16_t)((s->ty - in->origin.pos_y) * 16 + in->origin.cam_dy);
+            uint16_t gpal[16];
+            follower_fade_palette(v->grass_pal, in, gpal);
+            obj_set(&out[n++], gx, gy, 16, 16, prio, slot, v->grass_px[gf], gpal);
+        }
     }
-    obj_set(&out[0], x, y, size, size, prio, slot, px, pal);
 
-    if (in_grass && v->grass_ok) {
-        uint8_t gf = grass_t < GRASS_RUSTLE_END ? (uint8_t)(1 + grass_t / GRASS_RUSTLE) : 0;
-        int16_t gx = (int16_t)((s->tx - in->origin.pos_x) * 16 + in->origin.cam_dx);
-        int16_t gy = (int16_t)((s->ty - in->origin.pos_y) * 16 + in->origin.cam_dy);
-        uint16_t gpal[16];
-        follower_fade_palette(v->grass_pal, in, gpal);
-        obj_set(&out[1], gx, gy, 16, 16, prio, slot, v->grass_px[gf], gpal);
+    if (burst) {
+        uint32_t f = (uint32_t)(s->ball_t - FOL_BALL_OUT_BALL) / 4;
+        const BurstCrop* c = &k_burst_crop[f];
+        uint16_t bpal[16];
+        follower_fade_palette(v->assets->burst.pal, in, bpal);
+        int16_t cy = (int16_t)(fy - BURST_CENTER_Y);
+        for (uint32_t i = 0; i < 8 && n < PPU_EXTRA_OBJ_MAX; i++) {
+            int16_t sx = (int16_t)(fx + k_burst_off[f][i][0] - c->w / 2);
+            int16_t sy = (int16_t)(cy + k_burst_off[f][i][1] - c->h / 2);
+            obj_set(&out[n++], sx, sy, c->w, c->h, prio, -1, v->burst_px[f], bpal);
+        }
     }
 }
 
