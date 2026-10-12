@@ -48,6 +48,7 @@ typedef struct Frontend {
 
     /* What the panel buffer currently shows, so unchanged frames skip the redraw. */
     GameSnapshot last_snap;
+    MirageArm mirage_arm;    /* J J clock jump on the Route page */
     uint8_t last_page, last_sel, last_nuz_sub;
     uint32_t last_nuz_version;
     bool panel_dirty;

@@ -8,6 +8,7 @@
 #include "frontend/macos_menu.h"
 #include "gba.h"
 #include "apu/apu.h"
+#include "cartridge/rtc.h"
 #include "input/input.h"
 #include "input/keymap.h"
 #include "frontend/rom_picker.h"
@@ -956,6 +957,45 @@ void frontend_update_settings(Frontend* fe, GBA* gba) {
     if (fe->settings.close_requested) frontend_settings_close(fe, gba);
 }
 
+/* J on the Route page: first press arms, second within 3 s moves the RTC to the next
+ * Mirage day. Only the host-side clock offset changes; the game steps its own value
+ * on the next map load. */
+static void frontend_mirage_key(Frontend* fe, GBA* gba) {
+    const MirageInfo* mi = &fe->last_snap.mirage;
+    char title[TOAST_TITLE_LEN], detail[TOAST_DETAIL_LEN], name[GAME_NAME_LEN];
+    switch (game_panel_mirage_key(&fe->last_snap, SDL_GetTicks(), &fe->mirage_arm)) {
+    case MIRAGE_KEY_IGNORE:
+        return;
+    case MIRAGE_KEY_NOT_SET:
+        frontend_toast(fe, TOAST_INFO, "Mirage Island", "The game's clock isn't set yet");
+        return;
+    case MIRAGE_KEY_ALREADY_UP:
+        game_panel_title_case(mi->today.name, name, sizeof(name));
+        snprintf(detail, sizeof(detail), "%s in your party raises it", name);
+        frontend_toast(fe, TOAST_INFO, "Mirage Island is up today", detail);
+        return;
+    case MIRAGE_KEY_NO_MATCH:
+        frontend_toast(fe, TOAST_INFO, "No Mirage day to jump to", NULL);
+        return;
+    case MIRAGE_KEY_ARM:
+        snprintf(title, sizeof(title), "Jump %u days? Press J again", mi->forecast[0].days);
+        frontend_toast(fe, TOAST_INFO, title, "Berries, tides and daily events move too");
+        return;
+    case MIRAGE_KEY_JUMP:
+        break;
+    }
+    const MirageHit* h = &mi->forecast[0];
+    if (!rtc_advance_days(&gba->cart.rtc, h->days)) {
+        frontend_toast(fe, TOAST_ERROR, "Couldn't move the clock", NULL);
+        return;
+    }
+    gba->cart.save_dirty = true; /* the offset lives in the .sav trailer */
+    game_panel_title_case(h->name, name, sizeof(name));
+    snprintf(title, sizeof(title), "Clock moved %u days", h->days);
+    snprintf(detail, sizeof(detail), "Go through a door with %s in party", name);
+    frontend_toast(fe, TOAST_OK, title, detail);
+}
+
 void frontend_poll_input(Frontend* fe, GBA* gba) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -1055,6 +1095,9 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 shown_page == GAME_PAGE_NUZLOCKE && fe->nuz && keymap_lookup(SDL_SCANCODE_N) == 0 &&
                 nuz_session_request_start(fe->nuz))
                 frontend_toast(fe, TOAST_OK, "Nuzlocke run started", "Your current Pok\xC3\xA9mon joined the run");
+            if (event.key.keysym.scancode == SDL_SCANCODE_J && !event.key.repeat && fe->panel_visible &&
+                shown_page == GAME_PAGE_ENCOUNTERS && keymap_lookup(SDL_SCANCODE_J) == 0)
+                frontend_mirage_key(fe, gba);
 
             // Save state and screenshot files are named after the ROM; main.c clears
             // rom_path when it was too long to keep.
