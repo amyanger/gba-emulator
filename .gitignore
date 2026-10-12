@@ -26,6 +26,7 @@ bios/*.rom
 roms/*.sav
 roms/*.ss[0-9]
 roms/*.nuzlocke
+roms/*.run
 roms/*.follow
 # Legacy saves/ dir (pre-2026-04 layout)
 saves/*.sav
