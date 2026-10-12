@@ -25,6 +25,9 @@ typedef struct MonData {
     uint8_t ivs[6];      /* HP, Atk, Def, Spe, SpA, SpD */
     uint8_t ability_num;
     uint8_t met_location; /* region map section where it was met or hatched */
+    uint8_t pokerus;      /* misc substruct +0 */
+    uint8_t met_level;    /* misc +2 bits 0-6, 0 = hatched */
+    uint8_t ball;         /* misc +2 bits 11-14, item id (1 Master .. 4 Poke .. 12 Premier) */
     /* Party-only fields (party == true) */
     uint32_t status;
     uint8_t level;

@@ -136,6 +136,9 @@ set(SOURCES
     src/game/feebas.c
     src/game/nuzlocke_read.c
     src/game/species_search.c
+    src/game/runlog_read.c
+    src/game/runlog.c
+    src/game/run_track.c
     src/game/nuzlocke.c
     src/game/script_walk.c
     src/game/follower.c
@@ -171,6 +174,8 @@ set(SOURCES
     src/frontend/xbr.c
     src/frontend/super_xbr.c
     src/frontend/nuzlocke_session.c
+    src/frontend/run_session.c
+    src/frontend/run_panel.c
     src/frontend/library.c
     src/frontend/library_view.c
     src/frontend/search_view.c
@@ -323,6 +328,9 @@ set(LIB_SOURCES
     src/game/feebas.c
     src/game/nuzlocke_read.c
     src/game/species_search.c
+    src/game/runlog_read.c
+    src/game/runlog.c
+    src/game/run_track.c
     src/game/nuzlocke.c
     src/game/script_walk.c
     src/game/follower.c
@@ -358,6 +366,8 @@ set(LIB_SOURCES
     src/frontend/xbr.c
     src/frontend/super_xbr.c
     src/frontend/nuzlocke_session.c
+    src/frontend/run_session.c
+    src/frontend/run_panel.c
     src/frontend/library.c
     src/frontend/library_view.c
     src/frontend/search_view.c
@@ -468,8 +478,12 @@ set(TEST_SOURCES
     tests/test_overworld_draw.c
     tests/test_nuzlocke_read.c
     tests/test_species_search.c
+    tests/test_run_read.c
+    tests/test_runlog.c
+    tests/test_run_track.c
     tests/test_nuzlocke.c
     tests/test_nuzlocke_session.c
+    tests/test_run_session.c
     tests/test_library.c
     tests/test_library_view.c
     tests/test_search_view.c

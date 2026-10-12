@@ -2,7 +2,7 @@
 
 Emerald Companion is a side panel that shows live info from your Pokemon Emerald game: the wild Pokemon you're fighting, your party's hidden stats, and the encounter table for where you are. Press **F9** to open it next to the game.
 
-**On this page:** [Battle](#battle) · [Party](#party) · [Route](#route) · [Mirage Island](#mirage-island) · [Nuzlocke](#nuzlocke) · [Berries](#berries) · [Search](#search) · [Details](#details) · [Overworld X-Ray](#overworld-x-ray)
+**On this page:** [Battle](#battle) · [Party](#party) · [Route](#route) · [Mirage Island](#mirage-island) · [Nuzlocke](#nuzlocke) · [Berries](#berries) · [Search](#search) · [Run](#run) · [Details](#details) · [Overworld X-Ray](#overworld-x-ray)
 
 > [!IMPORTANT]
 > **Emerald Companion only works with the original, unmodified Pokemon Emerald (US/English) ROM.** This is the version it was built and tested with. It's the retail cartridge release, game code `BPEE`, sold in North America and Europe.
@@ -17,14 +17,15 @@ Emerald Companion is a side panel that shows live info from your Pokemon Emerald
 | Key | Panel action |
 |-----|--------------|
 | F9 | Show or hide the panel |
-| F10 | Cycle the page: Auto, Party, Route, Nuzlocke, Berries, Search. Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
-| [ and ] | Select the previous or next Pokemon on the Party page, switch views on the Nuzlocke page, or open the previous or next place on the Berries page |
+| F10 | Cycle the page: Auto, Party, Route, Nuzlocke, Berries, Search, Run. Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
+| [ and ] | Select the previous or next Pokemon on the Party page, switch views on the Nuzlocke page, open the previous or next place on the Berries page, move the Search selection, or scroll the list on the Run page |
 | N | Start a Nuzlocke run, on the Nuzlocke page |
 | J, twice | Move the clock to the next Mirage Island day, on the Route page |
 | B | Turn berry alerts on or off, on the Berries page |
 | / | Start typing a Pokemon name, on the Search page |
+| D | Switch between the Run page's dashboard and its Details sheet |
 
-On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is set to use F1, F2 and so on as standard function keys. `[`, `]`, `N`, `J`, `B` and `/` only work on their pages, and only when they are not bound to a GBA button in a custom keymap.
+On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is set to use F1, F2 and so on as standard function keys. `[`, `]`, `N`, `J`, `B`, `/` and `D` only work on their pages, and only when they are not bound to a GBA button in a custom keymap.
 
 ## Battle
 
@@ -122,6 +123,22 @@ Type part of a Pokemon's name and see where to get it in Emerald. Open the Searc
 ![Searching "gardevoir" on Route 102: Gardevoir isn't wild, so the page says to evolve Kirlia at Lv 30 and Ralts at Lv 20, and that Ralts is caught in Route 102's grass](screenshots/panel-search.png)
 
 Gifts, legendaries, trades and roaming Pokemon aren't covered yet. Like the rest of the panel, every name and location is read from your own ROM.
+
+## Run
+
+The story of your playthrough. It is always on: there is nothing to start, it keeps going whether the panel is open or not, and it runs alongside a Nuzlocke run if you have one. Open the Run page with F10.
+
+The dashboard shows:
+
+- **Badges.** All eight, with the play time it took to earn each one. The first shows the time you got it, the rest show the time since the badge before ("+1:02").
+- **Journey.** Everything that happened, newest first: badges and the leader you beat, story moments such as choosing your starter, Mt. Chimney, Groudon and Kyogre, and the Hall of Fame, Pokemon you caught or were given, evolutions, faints with what knocked them out, times you whited out, and which of your Pokemon knocked out the last Pokemon of a gym leader, Elite Four member or the Champion. Each line has the play time, and lines for catches, faints and the like also say where. Use `[` and `]` to scroll.
+- **Highlights.** Pokemon caught, faints, steps and battles, plus an MVP (most knockouts), your closest call (one of your Pokemon still standing at the end of a won battle on 10% HP or less) and a fun fact from the game's own counters, such as ledges jumped or times rained on.
+
+Press **D** for the Details sheet: every Pokemon that has been in your team, with when and where it joined, its level then and now, its knockouts, faints and evolution. Party first, then the PC, then Pokemon no longer with you. Under it are the game's own counters for battles, Pokemon, exploring and a few just for fun, and at the bottom the species you ran into most and the balls you caught with. Press **D** again to go back.
+
+The run is saved as `<rom>.<trainer id>.run` next to the ROM, one event per line, and is only ever added to. Loading a savestate, loading an older in-game save or rewinding more than about a second takes the run back with you, so nothing you undid stays on the page and nothing is counted twice. A shorter rewind is treated as a misread and changes nothing.
+
+Tracking starts the first time you open a save in this emulator. Anything that happened before that (badges you already had, Pokemon already in your team or PC) is shown with a "·" instead of a time, because there is no way to know when it happened. The game's play time clock stops at 999 hours, so after that new events all share one time and reloads are no longer noticed. A knockout from a delayed move such as Future Sight is credited to whichever of your Pokemon is out when it lands.
 
 ## Details
 

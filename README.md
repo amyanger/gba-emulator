@@ -54,6 +54,7 @@ These need the original, unmodified Pokemon Emerald (US/English) ROM. Every othe
 | &nbsp;&nbsp;[Nuzlocke](docs/emerald-companion.md#nuzlocke) | N | Logs each area's first encounter, every death and any reload after a death. |
 | &nbsp;&nbsp;[Berries](docs/emerald-companion.md#berries) | B | Every berry tree you've planted, with growth, watering and countdowns, plus a toast when berries are ripe, need water or are about to drop. |
 | &nbsp;&nbsp;[Search](docs/emerald-companion.md#search) | / | Type a Pokemon's name to see every wild spot with levels and odds, or how to get it by evolution or breeding. |
+| &nbsp;&nbsp;[Run stats](docs/emerald-companion.md#run) | F10 | Your playthrough's story: badge times, catches, faints, evolutions, an MVP and the game's own counters. |
 | **[Overworld X-Ray](docs/emerald-companion.md#overworld-x-ray)** | F4 | Trainer sight lines, item names, NPC gifts and the hidden Feebas tiles drawn right on the map. |
 | **[Following Pokemon](docs/usage.md#following-pokemon)** | F1 | Your lead Pokemon walks behind you and talks like it does in HeartGold and SoulSilver, using your own HeartGold or SoulSilver ROM. |
 

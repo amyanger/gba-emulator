@@ -80,8 +80,12 @@ void run_overworld_draw_tests(void);
 void run_nuzlocke_read_tests(void);
 void run_species_search_tests(void);
 void run_search_view_tests(void);
+void run_run_read_tests(void);
+void run_runlog_tests(void);
+void run_run_track_tests(void);
 void run_nuzlocke_tests(void);
 void run_nuzlocke_session_tests(void);
+void run_run_session_tests(void);
 void run_library_tests(void);
 void run_library_view_tests(void);
 #ifndef _WIN32
@@ -170,8 +174,12 @@ int main(void) {
     RUN_SUITE(run_nuzlocke_read_tests);
     RUN_SUITE(run_species_search_tests);
     RUN_SUITE(run_search_view_tests);
+    RUN_SUITE(run_run_read_tests);
+    RUN_SUITE(run_runlog_tests);
+    RUN_SUITE(run_run_track_tests);
     RUN_SUITE(run_nuzlocke_tests);
     RUN_SUITE(run_nuzlocke_session_tests);
+    RUN_SUITE(run_run_session_tests);
     RUN_SUITE(run_library_tests);
     RUN_SUITE(run_library_view_tests);
 #ifndef _WIN32

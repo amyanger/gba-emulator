@@ -161,6 +161,24 @@ TEST(nuz_session_leaves_foreign_file_alone) {
     remove(FILE_A);
 }
 
+TEST(nuz_session_start_reads_boxes_fresh) {
+    remove(FILE_A);
+    build();
+    fixture_put32(at(0x03000008), 0x02020000);   /* PokemonStorage, boxes at +4 */
+    nuz_session_init(&s_a, &k_profile, ROM, NULL);
+    frames(&s_a, 62);   /* the last cadence box read (frame 60) saw empty boxes */
+    uint8_t plain[4][12], raw[100];
+    fixture_plain_mon(plain, 3);
+    plain[3][1] = 4;
+    fixture_encode_mon(raw, 0x55556666, 0x0000BEEF, plain, 0x02);
+    memcpy(at(0x02020000 + 4), raw, 80);
+    ASSERT_TRUE(nuz_session_request_start(&s_a));
+    frames(&s_a, 2);    /* not a cadence frame: the start must read boxes itself */
+    ASSERT_EQ(s_a.view.state, NUZ_VIEW_RUN);
+    ASSERT_EQ(s_a.run.member_count, 2);
+    remove(FILE_A);
+}
+
 TEST(nuz_session_off_without_profile) {
     nuz_session_init(&s_a, NULL, ROM, NULL);
     frames(&s_a, 5);
@@ -173,5 +191,6 @@ void run_nuzlocke_session_tests(void) {
     RUN_TEST(nuz_session_replays_file_into_same_run);
     RUN_TEST(nuz_session_switches_runs_with_trainer_id);
     RUN_TEST(nuz_session_leaves_foreign_file_alone);
+    RUN_TEST(nuz_session_start_reads_boxes_fresh);
     RUN_TEST(nuz_session_off_without_profile);
 }

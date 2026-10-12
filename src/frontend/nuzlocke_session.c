@@ -246,7 +246,8 @@ void nuz_session_frame(NuzSession* s, const GameMem* m) {
 
     bool active = s->attached && s->run.active;
     bool starting = !active && (s->start_requested || s->fixed_path[0]);
-    bool boxes = starting || (active && s->frame % BOX_EVERY == 0);
+    /* Boxes are read on a fixed cadence even without a Nuzlocke run: the run log needs them. */
+    bool boxes = starting || s->frame % BOX_EVERY == 0;
     s->frame++;
     if (!nuz_read(s->profile, m, boxes, &s->facts)) {
         if (s->attached) return;  /* keep showing the run while the save blocks move */
@@ -265,6 +266,8 @@ void nuz_session_frame(NuzSession* s, const GameMem* m) {
         attach(s, s->facts.trainer_id);
         active = s->run.active;
         starting = !active && (s->start_requested || s->fixed_path[0]);
+        /* has_boxes is per read (nuz_read clears it), so the back-fill always sees boxes read
+         * this frame, never the list kept from the last cadence read. */
         if (starting && !s->facts.has_boxes) nuz_read(s->profile, m, true, &s->facts);
     }
 

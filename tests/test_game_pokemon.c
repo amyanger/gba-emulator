@@ -65,6 +65,28 @@ TEST(pokemon_party_fields_and_egg_flag) {
     ASSERT_EQ(d.status, 0x40);
 }
 
+TEST(pokemon_decode_extras) {
+    uint8_t plain[4][12];
+    uint8_t raw[100];
+    fixture_plain_mon(plain, 25);
+    plain[3][0] = 0x12;                                  /* pokerus */
+    plain[3][1] = 0x10;                                  /* met location */
+    fixture_put16(plain[3] + 2, (uint16_t)(7 | (3 << 7) | (2 << 11)));
+    fixture_encode_mon(raw, 0x1234567, 0x0BADF00D, plain, 0x02);
+    MonData d;
+    ASSERT_TRUE(pokemon_decode(raw, false, &d));
+    ASSERT_EQ_HEX(d.pokerus, 0x12);
+    ASSERT_EQ(d.met_location, 0x10);
+    ASSERT_EQ(d.met_level, 7);
+    ASSERT_EQ(d.ball, 2);
+
+    fixture_put16(plain[3] + 2, (uint16_t)(0x7F | (15 << 7) | (15 << 11) | 0x8000));
+    fixture_encode_mon(raw, 0x1234567, 0x0BADF00D, plain, 0x02);
+    ASSERT_TRUE(pokemon_decode(raw, false, &d));
+    ASSERT_EQ(d.met_level, 127);
+    ASSERT_EQ(d.ball, 15);
+}
+
 TEST(pokemon_nature_and_effects) {
     int8_t up, down;
     ASSERT_EQ(pokemon_nature(28), 3);              /* 28 % 25 = Adamant */
@@ -103,6 +125,7 @@ void run_game_pokemon_tests(void) {
     RUN_TEST(pokemon_checksum_mismatch_is_bad_and_raw_untouched);
     RUN_TEST(pokemon_empty_slot_is_not_present);
     RUN_TEST(pokemon_party_fields_and_egg_flag);
+    RUN_TEST(pokemon_decode_extras);
     RUN_TEST(pokemon_nature_and_effects);
     RUN_TEST(pokemon_gender_rules);
     RUN_TEST(pokemon_hidden_power);

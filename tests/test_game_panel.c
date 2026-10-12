@@ -4,6 +4,10 @@
 #include "ui/ui_theme.h"
 #include "ui/ui_widgets.h"
 #include "frontend/search_view.h"
+#include "frontend/run_panel.h"
+#include "ui/ui_font.h"
+#include "screenshot/screenshot.h"
+#include <stdlib.h>
 
 #define BUF_W 1800
 #define BUF_H 1440
@@ -18,7 +22,8 @@ TEST(panel_page_cycles) {
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_ENCOUNTERS), GAME_PAGE_NUZLOCKE);
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_NUZLOCKE), GAME_PAGE_BERRIES);
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_BERRIES), GAME_PAGE_SEARCH);
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_SEARCH), GAME_PAGE_AUTO);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_SEARCH), GAME_PAGE_RUN);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_RUN), GAME_PAGE_AUTO);
 }
 
 TEST(panel_auto_page_follows_context) {
@@ -205,7 +210,8 @@ static bool draw_checked_full(float density, const GameSnapshot* snap, GamePage 
     for (int i = 0; i < GUARD; i++) s_buf[w * h + i] = SENTINEL;
     UiCanvas c;
     ui_canvas_init(&c, s_buf, w, h, density);
-    game_panel_draw(&c, snap, page, sel, nuz, (uint8_t)(sel % NUZ_SUB_COUNT), sel, true, search);
+    game_panel_draw(&c, snap, page, sel, nuz, (uint8_t)(sel % NUZ_SUB_COUNT), sel, true, search, NULL, 0,
+                    false);
     for (int i = 0; i < GUARD; i++)
         if (s_buf[w * h + i] != SENTINEL) return false;
     return (s_buf[w * h - 1] >> 24) == 0xFF;
@@ -323,7 +329,7 @@ TEST(panel_long_names_stay_in_columns) {
     snap.enemy_count = 1;
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false);
     /* Rows between the HP bar and the bottom of the enemy's move list; the gap between
      * the left column (ends at x 292) and the right one (starts at x 308),
      * minus a pixel either side for anti-aliasing. */
@@ -340,7 +346,7 @@ TEST(panel_invalid_snapshot_shows_reason) {
     game_strcpy(snap.reason, sizeof(snap.reason), "Waiting for save data");
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false);
     int lit = 0;
     for (int y = 220; y < 240; y++)
         for (int x = 0; x < 600; x++)
@@ -364,7 +370,7 @@ TEST(panel_unsupported_rom_explains_why) {
         snap.support = kinds[k];
         UiCanvas c;
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL);
+        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false);
         ASSERT_TRUE(lit_rows(160, 190) > 0);  /* heading */
         ASSERT_TRUE(lit_rows(200, 300) > 0);  /* explanation */
     }
@@ -388,7 +394,7 @@ static int lit_rect(int x0, int x1, int y0, int y1, bool tinted) {
 static void draw_1x(const GameSnapshot* snap) {
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL);
+    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false);
 }
 
 /* The enemy's moves sit in the right column under the IVs (which end near y 230). */
@@ -510,7 +516,7 @@ TEST(panel_route_overflow_keeps_whole_rows_and_counts_the_rest) {
     ASSERT_TRUE(l.height[0] <= l.avail && l.height[1] <= l.avail);
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0, NULL, 0, 0, true, NULL);
+    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0, NULL, 0, 0, true, NULL, NULL, 0, false);
 }
 
 static void fill_mirage(GameSnapshot* s, MirageWhere today) {
@@ -986,16 +992,260 @@ TEST(panel_search_detail_bottom_shows_last_line) {
         v.detail_top = tops[t];
         s_detail.row_total = 72;
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s);
+        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s, NULL, 0, false);
         memcpy(a, s_buf, sizeof(a));
         s_detail.row_total = 99;  /* only the last line changes */
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s);
+        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s, NULL, 0, false);
         ASSERT_EQ(memcmp(a, s_buf, sizeof(a)) != 0, last_shown[t]);
     }
 }
 
+/* ---- Run page ---- */
+
+static void fill_max(char* s, size_t size) {
+    memset(s, 'W', size - 1);
+    s[size - 1] = '\0';
+}
+#define FILL_MAX(a) fill_max((a), sizeof(a))
+
+/* Every array at capacity, every string at its longest. */
+static void fill_run_full(RunView* v) {
+    memset(v, 0, sizeof(*v));
+    v->state = RUN_VIEW_RUN;
+    FILL_MAX(v->player);
+    FILL_MAX(v->play_time);
+    v->badge_count = 8;
+    v->dex_owned = 386; v->dex_seen = 386;
+    for (int b = 0; b < RUN_BADGES; b++) {
+        v->badges[b].have = b % 3 != 2;
+        v->badges[b].untimed = b == 1;
+        FILL_MAX(v->badges[b].split);
+        FILL_MAX(v->badges[b].name);
+    }
+    v->feed_count = RUN_VIEW_FEED;
+    for (int i = 0; i < RUN_VIEW_FEED; i++) {
+        FILL_MAX(v->feed[i].time);
+        v->feed[i].icon = (uint8_t)(i % 9);   /* one out of range */
+        FILL_MAX(v->feed[i].text);
+        FILL_MAX(v->feed[i].where);
+    }
+    v->caught = 4294967295u; v->faints = 4294967295u; v->steps = 4294967295u; v->battles = 4294967295u;
+    v->faints_since_tracking = true;
+    FILL_MAX(v->mvp); FILL_MAX(v->closest); FILL_MAX(v->fun);
+    FILL_MAX(v->tracking_since);
+    v->team_count = RUN_VIEW_TEAM;
+    v->team_total = 60000;
+    for (int i = 0; i < RUN_VIEW_TEAM; i++) {
+        RunViewMon* m = &v->team[i];
+        FILL_MAX(m->name); FILL_MAX(m->species); FILL_MAX(m->joined); FILL_MAX(m->where);
+        FILL_MAX(m->evolved);
+        m->lv_from = 100; m->lv_to = 255; m->kos = 65535; m->faints = 65535;
+        m->mvp = i == 0; m->in_party = i < 6; m->away = i > 40;
+    }
+    v->wild = v->trainer_battles = v->whiteouts = v->upsets = v->shiny_seen = v->shiny_caught = 4294967295u;
+    v->eggs = v->evolutions = v->centers = v->shops = v->fishing = v->ledges = 4294967295u;
+    v->rained = v->clocks = v->splash = 4294967295u;
+    FILL_MAX(v->most_enc); FILL_MAX(v->caught_in);
+    v->write_failed = true; v->log_full = true;
+}
+
+static bool draw_checked_run(float density, const GameSnapshot* snap, const RunView* run, uint8_t scroll,
+                             bool details) {
+    int w = (int)(600 * density + 0.5f), h = (int)(480 * density + 0.5f);
+    for (int i = 0; i < GUARD; i++) s_buf[w * h + i] = SENTINEL;
+    UiCanvas c;
+    ui_canvas_init(&c, s_buf, w, h, density);
+    game_panel_draw(&c, snap, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, run, scroll, details);
+    for (int i = 0; i < GUARD; i++)
+        if (s_buf[w * h + i] != SENTINEL) return false;
+    return (s_buf[w * h - 1] >> 24) == 0xFF;
+}
+
+TEST(panel_run_views_stay_in_bounds) {
+    static const float densities[] = {0.75f, 1.0f, 2.0f, 3.0f};
+    static GameSnapshot rest, invalid;
+    static RunView full, empty, off, waiting;
+    fill_party_and_route(&rest);
+    memset(&invalid, 0, sizeof(invalid));
+    fill_run_full(&full);
+    memset(&empty, 0, sizeof(empty));
+    empty.state = RUN_VIEW_RUN;
+    memset(&off, 0, sizeof(off));
+    fill_max(off.reason, sizeof(off.reason));
+    memset(&waiting, 0, sizeof(waiting));
+    waiting.state = RUN_VIEW_WAITING;
+    strcpy(waiting.reason, "Waiting for save data");
+    const RunView* views[] = {&full, &empty, &off, &waiting, NULL};
+    const uint8_t scrolls[] = {0, 1, 200, 255};
+    for (size_t d = 0; d < sizeof(densities) / sizeof(densities[0]); d++)
+        for (size_t k = 0; k < sizeof(views) / sizeof(views[0]); k++)
+            for (int det = 0; det < 2; det++)
+                for (size_t sc = 0; sc < sizeof(scrolls); sc++) {
+                    ASSERT_TRUE(draw_checked_run(densities[d], &rest, views[k], scrolls[sc], det != 0));
+                    ASSERT_TRUE(draw_checked_run(densities[d], &invalid, views[k], scrolls[sc], det != 0));
+                }
+}
+
+/* The Journey feed (left) and Highlights (right) never run into each other. */
+TEST(panel_run_dashboard_columns_do_not_touch) {
+    static GameSnapshot rest;
+    static RunView full;
+    fill_party_and_route(&rest);
+    fill_run_full(&full);
+    UiCanvas c;
+    ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+    game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &full, 0, false);
+    int lit = 0;
+    for (int y = 140; y < 448; y++)
+        for (int x = 323; x < 335; x++)
+            if (s_buf[y * 600 + x] != UI_BG) lit++;
+    ASSERT_EQ(lit, 0);
+}
+
+TEST(panel_run_max_scroll) {
+    static RunView v;
+    memset(&v, 0, sizeof(v));
+    v.state = RUN_VIEW_RUN;
+    ASSERT_EQ(run_panel_max_scroll(&v, false), 0);
+    ASSERT_EQ(run_panel_max_scroll(&v, true), 0);
+    ASSERT_EQ(run_panel_max_scroll(NULL, false), 0);
+    v.feed_count = 3;
+    v.team_count = 3;
+    ASSERT_EQ(run_panel_max_scroll(&v, false), 0);
+    ASSERT_EQ(run_panel_max_scroll(&v, true), 0);
+    v.feed_count = RUN_VIEW_FEED;
+    v.team_count = RUN_VIEW_TEAM;
+    uint8_t feed_max = run_panel_max_scroll(&v, false);
+    uint8_t team_max = run_panel_max_scroll(&v, true);
+    ASSERT_TRUE(feed_max > 0 && feed_max < RUN_VIEW_FEED);
+    ASSERT_TRUE(team_max > 0 && team_max < RUN_VIEW_TEAM);
+    /* One more row means one more step. */
+    v.feed_count = RUN_VIEW_FEED - 1;
+    v.team_count = RUN_VIEW_TEAM - 1;
+    ASSERT_EQ(run_panel_max_scroll(&v, false), feed_max - 1);
+    ASSERT_EQ(run_panel_max_scroll(&v, true), team_max - 1);
+    v.state = RUN_VIEW_OFF;
+    ASSERT_EQ(run_panel_max_scroll(&v, false), 0);
+}
+
+/* R13: seven tabs, the Auto badge and the longest hint share one line. */
+TEST(panel_tab_bar_fits_every_hint) {
+    static NuzView nuz;
+    static RunView run;
+    memset(&nuz, 0, sizeof(nuz));
+    memset(&run, 0, sizeof(run));
+    run.state = RUN_VIEW_RUN;
+    const float densities[] = {0.75f, 1.0f, 2.0f};
+    for (size_t d = 0; d < sizeof(densities) / sizeof(densities[0]); d++) {
+        UiCanvas c;
+        int w = (int)(600 * densities[d] + 0.5f), h = (int)(480 * densities[d] + 0.5f);
+        ui_canvas_init(&c, s_buf, w, h, densities[d]);
+        for (int p = 0; p <= GAME_PAGE_COUNT; p++)
+            for (int ns = 0; ns < 4; ns++)
+                for (int det = 0; det < 4; det++) {
+                    nuz.state = (uint8_t)ns;
+                    const char* hint = game_panel_hint((GamePage)p, &nuz, det >= 2, &run, det % 2 != 0);
+                    float used = game_panel_tabs_width(&c, (GamePage)p, true);
+                    float hw = ui_text_width(&c, UI_FONT_REGULAR, UI_SIZE_LABEL, hint);
+                    ASSERT_TRUE(16.0f + used + 12.0f <= 584.0f - hw);
+                }
+    }
+    ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_RUN, NULL, false, &run, false), "F10 page   [ ] scroll   D details");
+}
+
+/* A sample run like the approved mockup. RUN_PREVIEW=1 writes run_preview_*.png to the CWD. */
+static void fill_run_sample(RunView* v) {
+    static const char* const badges[8] = {"Stone", "Knuckle", "Dynamo", "Heat", "Balance", "Feather", "Mind", "Rain"};
+    static const char* const splits[8] = {"0:48", "+1:02", "+1:31", "+2:14", "+1:09", "", "", ""};
+    static const struct { const char* t; uint8_t icon; const char* text; const char* where; } feed[] = {
+        {"6:41", RUN_ICON_BADGE, "Balance Badge, beat Norman", "Petalburg City"},
+        {"6:40", RUN_ICON_ACE, "Norman's Slaking KO'd by Blaze", "Petalburg City"},
+        {"6:33", RUN_ICON_FAINT, "Sparky fainted to Slaking", "Petalburg City"},
+        {"6:02", RUN_ICON_EVOLVE, "Kirlia evolved into Gardevoir", "Route 117"},
+        {"5:50", RUN_ICON_CATCH, "Caught Tropius", "Route 119"},
+        {"5:40", RUN_ICON_GIFT, "Got Castform", "Route 119"},
+        {"5:32", RUN_ICON_BADGE, "Heat Badge, beat Flannery", "Lavaridge Town"},
+        {"5:01", RUN_ICON_STORY, "Stopped Team Magma at Mt. Chimney", "Mt. Chimney"},
+        {"4:58", RUN_ICON_WHITEOUT, "Blacked out", "Fiery Path"},
+        {"4:20", RUN_ICON_CATCH, "Caught a shiny Numel", "Route 112"},
+    };
+    static const struct { const char* n; const char* sp; const char* j; const char* w; uint8_t a, b; uint16_t k, f; const char* e; } team[] = {
+        {"Blaze", "Combusken", "0:12", "Littleroot Town", 5, 36, 41, 0, "Combusken 1:44"},
+        {"Gardevoir", "Gardevoir", "0:31", "Route 102", 4, 33, 28, 2, "Gardevoir 6:02"},
+        {"Pelipper", "Pelipper", "1:58", "Route 104", 11, 31, 19, 4, "Pelipper 3:40"},
+        {"Sparky", "Electrike", "2:40", "New Mauville", 22, 30, 12, 2, ""},
+        {"Tropius", "Tropius", "5:50", "Route 119", 26, 29, 4, 1, ""},
+        {"Numel", "Numel", "4:20", "Route 112", 16, 28, 6, 0, ""},
+        {"Castform", "Castform", "5:40", "Route 119", 25, 25, 0, 0, ""},
+        {"Zigzagoon", "Zigzagoon", "\xC2\xB7", "Route 101", 3, 7, 1, 1, ""},
+    };
+    memset(v, 0, sizeof(*v));
+    v->state = RUN_VIEW_RUN;
+    strcpy(v->player, "May");
+    strcpy(v->play_time, "9:12");
+    v->badge_count = 5;
+    v->dex_owned = 61; v->dex_seen = 88;
+    for (int b = 0; b < 8; b++) {
+        v->badges[b].have = b < 5;
+        strcpy(v->badges[b].name, badges[b]);
+        strcpy(v->badges[b].split, splits[b]);
+    }
+    v->feed_count = (uint8_t)(sizeof(feed) / sizeof(feed[0]));
+    for (int i = 0; i < v->feed_count; i++) {
+        strcpy(v->feed[i].time, feed[i].t);
+        v->feed[i].icon = feed[i].icon;
+        strcpy(v->feed[i].text, feed[i].text);
+        strcpy(v->feed[i].where, feed[i].where);
+    }
+    v->caught = 14; v->faints = 9; v->steps = 18402; v->battles = 137;
+    strcpy(v->mvp, "Blaze \xC2\xB7 41 KOs, never fainted");
+    strcpy(v->closest, "Gardevoir held on with 3% HP vs Torkoal");
+    strcpy(v->fun, "Jumped 212 ledges");
+    strcpy(v->tracking_since, "Tracking since new game");
+    v->team_count = (uint8_t)(sizeof(team) / sizeof(team[0]));
+    v->team_total = v->team_count;
+    for (int i = 0; i < v->team_count; i++) {
+        RunViewMon* m = &v->team[i];
+        strcpy(m->name, team[i].n); strcpy(m->species, team[i].sp); strcpy(m->joined, team[i].j);
+        strcpy(m->where, team[i].w); strcpy(m->evolved, team[i].e);
+        m->lv_from = team[i].a; m->lv_to = team[i].b; m->kos = team[i].k; m->faints = team[i].f;
+        m->mvp = i == 0; m->in_party = i < 6; m->away = i == 7;
+    }
+    v->wild = 96; v->trainer_battles = 41; v->whiteouts = 1; v->upsets = 3;
+    v->shiny_seen = 1; v->shiny_caught = 1; v->eggs = 1; v->evolutions = 4;
+    v->centers = 37; v->shops = 22; v->fishing = 9;
+    v->ledges = 212; v->rained = 34; v->clocks = 5; v->splash = 2;
+    strcpy(v->most_enc, "Zigzagoon (31)");
+    strcpy(v->caught_in, "11 Pok\xC3\xA9 \xC2\xB7 3 Great");
+}
+
+TEST(panel_run_preview_png) {
+    if (!getenv("RUN_PREVIEW")) return;
+    static GameSnapshot rest;
+    static RunView v;
+    static RunView full;
+    fill_party_and_route(&rest);
+    fill_run_sample(&v);
+    fill_run_full(&full);
+    const RunView* views[2] = {&v, &full};
+    for (int k = 0; k < 2; k++)
+        for (int det = 0; det < 2; det++) {
+            UiCanvas c;
+            ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+            game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, views[k], 0, det != 0);
+            char path[48];
+            snprintf(path, sizeof(path), "run_preview_%s_%s.png", k ? "full" : "sample", det ? "details" : "dashboard");
+            ASSERT_TRUE(screenshot_save_argb(s_buf, 600, 480, path));
+        }
+}
+
 void run_game_panel_tests(void) {
+    RUN_TEST(panel_run_views_stay_in_bounds);
+    RUN_TEST(panel_run_dashboard_columns_do_not_touch);
+    RUN_TEST(panel_run_max_scroll);
+    RUN_TEST(panel_tab_bar_fits_every_hint);
+    RUN_TEST(panel_run_preview_png);
     RUN_TEST(panel_berries_more_places_line_stays_above_footer);
     RUN_TEST(panel_berry_time_format);
     RUN_TEST(panel_berry_place_order_here_first);
