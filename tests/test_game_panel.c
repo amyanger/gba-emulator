@@ -14,7 +14,8 @@ TEST(panel_page_cycles) {
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_AUTO), GAME_PAGE_PARTY);
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_PARTY), GAME_PAGE_ENCOUNTERS);
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_ENCOUNTERS), GAME_PAGE_NUZLOCKE);
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_NUZLOCKE), GAME_PAGE_AUTO);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_NUZLOCKE), GAME_PAGE_BERRIES);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_BERRIES), GAME_PAGE_AUTO);
 }
 
 TEST(panel_auto_page_follows_context) {
@@ -201,7 +202,7 @@ static bool draw_checked_nuz(float density, const GameSnapshot* snap, GamePage p
     for (int i = 0; i < GUARD; i++) s_buf[w * h + i] = SENTINEL;
     UiCanvas c;
     ui_canvas_init(&c, s_buf, w, h, density);
-    game_panel_draw(&c, snap, page, sel, nuz, (uint8_t)(sel % NUZ_SUB_COUNT));
+    game_panel_draw(&c, snap, page, sel, nuz, (uint8_t)(sel % NUZ_SUB_COUNT), sel, true);
     for (int i = 0; i < GUARD; i++)
         if (s_buf[w * h + i] != SENTINEL) return false;
     return (s_buf[w * h - 1] >> 24) == 0xFF;
@@ -314,7 +315,7 @@ TEST(panel_long_names_stay_in_columns) {
     snap.enemy_count = 1;
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true);
     /* Rows between the HP bar and the bottom of the enemy's move list; the gap between
      * the left column (ends at x 292) and the right one (starts at x 308),
      * minus a pixel either side for anti-aliasing. */
@@ -331,7 +332,7 @@ TEST(panel_invalid_snapshot_shows_reason) {
     game_strcpy(snap.reason, sizeof(snap.reason), "Waiting for save data");
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true);
     int lit = 0;
     for (int y = 220; y < 240; y++)
         for (int x = 0; x < 600; x++)
@@ -355,7 +356,7 @@ TEST(panel_unsupported_rom_explains_why) {
         snap.support = kinds[k];
         UiCanvas c;
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0);
+        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true);
         ASSERT_TRUE(lit_rows(160, 190) > 0);  /* heading */
         ASSERT_TRUE(lit_rows(200, 300) > 0);  /* explanation */
     }
@@ -379,7 +380,7 @@ static int lit_rect(int x0, int x1, int y0, int y1, bool tinted) {
 static void draw_1x(const GameSnapshot* snap) {
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0, NULL, 0);
+    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true);
 }
 
 /* The enemy's moves sit in the right column under the IVs (which end near y 230). */
@@ -501,7 +502,7 @@ TEST(panel_route_overflow_keeps_whole_rows_and_counts_the_rest) {
     ASSERT_TRUE(l.height[0] <= l.avail && l.height[1] <= l.avail);
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0, NULL, 0);
+    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0, NULL, 0, 0, true);
 }
 
 static void fill_mirage(GameSnapshot* s, MirageWhere today) {
@@ -606,7 +607,158 @@ TEST(panel_mirage_key_refuses_when_not_useful) {
     ASSERT_EQ(arm.armed_ms, 0);
 }
 
+
+/* ---- Berries page ---- */
+
+static BerryTree* add_tree(BerryView* v, uint8_t place, BerryStatus st, uint16_t next, bool paused) {
+    BerryTree* t = &v->tree[v->count];
+    memset(t, 0, sizeof(*t));
+    t->id = v->count;
+    t->place = place;
+    t->berry = 7;
+    t->stage = st == BERRY_RIPE || st == BERRY_FALLING ? 5 : 3;
+    t->watered = st == BERRY_WATER ? 0x3 : 0x7;
+    t->status = st;
+    t->paused = paused;
+    t->next_min = next;
+    t->ripe_min = t->stage == 5 ? 0 : next + 240u;
+    t->yield_lo = 2; t->yield_hi = 5;
+    strcpy(t->name, "WWWWWW");
+    v->growing[place]++;
+    v->count++;
+    return t;
+}
+
+static void fill_berries(GameSnapshot* s) {
+    memset(s, 0, sizeof(*s));
+    s->valid = true;
+    s->context = GAME_CTX_OVERWORLD;
+    BerryView* v = &s->berries;
+    v->valid = v->clock_set = v->projected = true;
+    v->place_count = 3;
+    for (uint8_t i = 0; i < 3; i++) {
+        snprintf(v->place[i].name, sizeof(v->place[i].name), "SAFARI ZONE NORTHWES%u", i);
+        v->place[i].spots = 40;
+    }
+    v->here = 0;
+    for (int i = 0; i < 60; i++) add_tree(v, 0, (BerryStatus)(i % 5), (uint16_t)(i * 37), i % 7 == 0);
+    add_tree(v, 1, BERRY_WATER, 100, false);
+    add_tree(v, 2, BERRY_GROWING, 900, false);
+}
+
+TEST(panel_berry_time_format) {
+    char b[24];
+    game_panel_berry_time(0, b, sizeof(b)); ASSERT_STR_EQ(b, "0m");
+    game_panel_berry_time(40, b, sizeof(b)); ASSERT_STR_EQ(b, "40m");
+    game_panel_berry_time(60, b, sizeof(b)); ASSERT_STR_EQ(b, "1h");
+    game_panel_berry_time(310, b, sizeof(b)); ASSERT_STR_EQ(b, "5h 10m");
+    game_panel_berry_time(1440, b, sizeof(b)); ASSERT_STR_EQ(b, "1d");
+    game_panel_berry_time(2000, b, sizeof(b)); ASSERT_STR_EQ(b, "1d 9h");
+    game_panel_berry_time(400000, b, sizeof(b)); ASSERT_STR_EQ(b, "277d 18h");
+}
+
+TEST(panel_berry_place_order_here_first) {
+    static BerryView v;
+    memset(&v, 0, sizeof(v));
+    v.valid = true;
+    v.place_count = 4;
+    strcpy(v.place[0].name, "B"); strcpy(v.place[1].name, "C");
+    strcpy(v.place[2].name, "A"); strcpy(v.place[3].name, "D");
+    add_tree(&v, 0, BERRY_GROWING, 10, false);
+    add_tree(&v, 1, BERRY_RIPE, 10, false);
+    add_tree(&v, 2, BERRY_GROWING, 10, false);
+    v.here = 3;   /* no trees there: not listed */
+    uint8_t order[BERRY_PLACE_MAX];
+    ASSERT_EQ(game_panel_berry_places(&v, order), 3);
+    ASSERT_EQ(order[0], 1);   /* most urgent */
+    ASSERT_EQ(order[1], 2);   /* then by name: A before B */
+    ASSERT_EQ(order[2], 0);
+    v.here = 0;
+    ASSERT_EQ(game_panel_berry_places(&v, order), 3);
+    ASSERT_EQ(order[0], 0);
+    ASSERT_EQ(order[1], 1);
+}
+
+TEST(panel_berry_needs_you_skips_untouched) {
+    static BerryView v;
+    memset(&v, 0, sizeof(v));
+    v.valid = true;
+    v.place_count = 1;
+    add_tree(&v, 0, BERRY_RIPE, 600, true);      /* untouched game tree */
+    add_tree(&v, 0, BERRY_WATER, 50, false);
+    add_tree(&v, 0, BERRY_RIPE, 300, false);
+    add_tree(&v, 0, BERRY_GROWING, 5, false);
+    add_tree(&v, 0, BERRY_FALLING, 20, false);
+    add_tree(&v, 0, BERRY_RIPE, 100, false);
+    uint8_t idx[BERRY_VIEW_MAX];
+    ASSERT_EQ(game_panel_berry_needs(&v, idx), 4);
+    ASSERT_EQ(idx[0], 4);   /* falling */
+    ASSERT_EQ(idx[1], 5);   /* ripe, sooner drop first */
+    ASSERT_EQ(idx[2], 2);
+    ASSERT_EQ(idx[3], 1);   /* water */
+}
+
+TEST(panel_berries_states_stay_in_bounds) {
+    static const float densities[] = {0.75f, 1.0f, 1.5f, 2.0f, 3.0f};
+    static GameSnapshot busy, empty, noclock, unread;
+    fill_berries(&busy);
+    memset(&empty, 0, sizeof(empty));
+    empty.valid = true;
+    empty.berries.valid = empty.berries.clock_set = true;
+    empty.berries.place_count = 16;
+    for (int i = 0; i < 16; i++) { strcpy(empty.berries.place[i].name, "ROUTE 123"); empty.berries.place[i].spots = 4; }
+    noclock = busy;
+    noclock.berries.clock_set = false;
+    memset(&unread, 0, sizeof(unread));
+    unread.valid = true;
+    for (size_t d = 0; d < sizeof(densities) / sizeof(densities[0]); d++)
+        for (uint8_t sel = 0; sel < 4; sel++) {
+            ASSERT_TRUE(draw_checked(densities[d], &busy, GAME_PAGE_BERRIES, sel));
+            ASSERT_TRUE(draw_checked(densities[d], &empty, GAME_PAGE_BERRIES, sel));
+            ASSERT_TRUE(draw_checked(densities[d], &noclock, GAME_PAGE_BERRIES, sel));
+            ASSERT_TRUE(draw_checked(densities[d], &unread, GAME_PAGE_BERRIES, sel));
+        }
+}
+
+TEST(panel_berries_overflow_rows_fit) {
+    static GameSnapshot snap;
+    fill_berries(&snap);
+    /* 60 trees at the selected place: the page shows whole rows that end above the footer. */
+    BerryPageLayout l;
+    game_panel_berry_layout(&snap.berries, 0, &l);
+    ASSERT_TRUE(l.rows > 0);
+    ASSERT_TRUE(l.rows < 60);
+    ASSERT_EQ(l.more, 60 - l.rows);
+    ASSERT_TRUE(l.list_end <= 452.0f);
+}
+
+TEST(panel_berries_more_places_line_stays_above_footer) {
+    static BerryView v;
+    /* Review repro: 15 trees open, 1 "Needs you" row, 8 places: "+N more places" hit the footer. */
+    for (uint8_t trees = 1; trees <= 30; trees++)
+        for (uint8_t places = 2; places <= 16; places++) {
+            memset(&v, 0, sizeof(v));
+            v.valid = v.clock_set = true;
+            v.here = 0;
+            v.place_count = places;
+            add_tree(&v, 0, BERRY_WATER, 50, false);
+            for (uint8_t i = 1; i < trees; i++) add_tree(&v, 0, BERRY_GROWING, 500, false);
+            for (uint8_t p = 1; p < places; p++) add_tree(&v, p, BERRY_GROWING, 500, false);
+            BerryPageLayout l;
+            game_panel_berry_layout(&v, 0, &l);
+            ASSERT_TRUE(l.others_end <= 452.0f);
+            ASSERT_EQ(l.others + l.others_more, l.others_more ? places - 1 : l.others);
+            if (!l.others_more) ASSERT_EQ(l.others, places - 1);
+        }
+}
+
 void run_game_panel_tests(void) {
+    RUN_TEST(panel_berries_more_places_line_stays_above_footer);
+    RUN_TEST(panel_berry_time_format);
+    RUN_TEST(panel_berry_place_order_here_first);
+    RUN_TEST(panel_berry_needs_you_skips_untouched);
+    RUN_TEST(panel_berries_states_stay_in_bounds);
+    RUN_TEST(panel_berries_overflow_rows_fit);
     TEST_SUITE("game_panel");
     RUN_TEST(panel_page_cycles);
     RUN_TEST(panel_auto_page_follows_context);

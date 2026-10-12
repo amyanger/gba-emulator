@@ -15,12 +15,13 @@ Emerald Companion is a side panel that shows live info from your Pokemon Emerald
 | Key | Panel action |
 |-----|--------------|
 | F9 | Show or hide the panel |
-| F10 | Cycle the page: Auto, Party, Route, Nuzlocke. Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
-| [ and ] | Select the previous or next Pokemon on the Party page, or switch views on the Nuzlocke page |
+| F10 | Cycle the page: Auto, Party, Route, Nuzlocke, Berries. Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
+| [ and ] | Select the previous or next Pokemon on the Party page, switch views on the Nuzlocke page, or open the previous or next place on the Berries page |
 | N | Start a Nuzlocke run, on the Nuzlocke page |
 | J, twice | Move the clock to the next Mirage Island day, on the Route page |
+| B | Turn berry alerts on or off, on the Berries page |
 
-On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is set to use F1, F2 and so on as standard function keys. `[`, `]`, `N` and `J` only work on their pages, and only when they are not bound to a GBA button in a custom keymap.
+On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is set to use F1, F2 and so on as standard function keys. `[`, `]`, `N`, `J` and `B` only work on their pages, and only when they are not bound to a GBA button in a custom keymap.
 
 ## Battle
 
@@ -86,6 +87,18 @@ Use `[` and `]` to switch between **Routes**, **Team** (everyone in the run: gre
 The run is saved as `<rom>.<trainer id>.nuzlocke` next to the ROM, one event per line. It is only ever added to, never rewritten. A new game or a different save file has a different trainer ID, so it gets its own run. To start over, delete that file.
 
 Not tracked yet: level caps, badges, and trainer names on deaths.
+
+## Berries
+
+Keeps track of every berry tree in your game: what's growing, where it is, and when it needs you. Open the Berries page with F10.
+
+- **Needs you.** At the top: trees that are ripe, about to drop their berries (red, under an hour left), or need water for the stage they're in, most urgent first.
+- **All trees.** Below, one place at a time. The place you're standing on opens first and is marked "You are here". Each tree shows its growth stage, a drop for each of the four stages you can water it in (filled when watered, an orange ring when it needs water now, dark when that stage was missed), what happens next and how many berries to expect. Before a tree is ripe, the number is the most it can still give if you water every stage that's left. Other places sit underneath with a one-line summary. Use `[` and `]` to open them.
+- **Empty soil.** Each place shows how many of its spots are free. With nothing planted, the page lists where the soft soil is.
+
+Times are real time, because Emerald's clock is. The countdowns keep moving between the game's own updates, and they match what the game will do when you next go through a door. The trees the game plants on its own show as "ripe, not visited yet" until you walk past them, since they don't grow before that.
+
+**Berry alerts.** While you play, with or without the panel open, a toast tells you when a tree becomes ripe, when it needs water for a new stage, when ripe berries are about to drop, and when you arrive somewhere with trees that need you. Trees on the map you're standing on stay quiet, events at the same place share one toast, and they wait until a battle is over. When you open a game, one toast sums up what needs you. Press **B** on the Berries page to turn alerts off or back on.
 
 ## Details
 

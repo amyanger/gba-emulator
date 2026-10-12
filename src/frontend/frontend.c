@@ -41,6 +41,7 @@ void frontend_set_hints(void) {
 
 bool frontend_init(Frontend* fe, int scale) {
     memset(fe, 0, sizeof(*fe));
+    berry_alerts_reset(&fe->berry_watch);
     frame_pacer_reset(&fe->pacer);
     fe->volume = 100;
     toast_init(&fe->toasts);
@@ -422,6 +423,17 @@ void frontend_toggle_overworld(Frontend* fe, GBA* gba) {
                          fe->overworld_xray ? "Overworld X-Ray on" : "Overworld X-Ray off", NULL);
     if (fe->prefs) {
         prefs_set_bool(fe->prefs, "overworld_xray", fe->overworld_xray);
+        if (!prefs_save(fe->prefs)) LOG_WARN("Couldn't save preferences to %s", fe->prefs->path);
+    }
+}
+
+void frontend_toggle_berry_alerts(Frontend* fe) {
+    fe->berry_alerts = !fe->berry_alerts;
+    berry_alerts_reset(&fe->berry_watch);   /* turning on again gives one fresh summary */
+    frontend_toast_keyed(fe, "berryalerts", TOAST_INFO, fe->berry_alerts ? "Berry alerts on" : "Berry alerts off",
+                         fe->berry_alerts ? "You get a toast when berries need you" : NULL);
+    if (fe->prefs) {
+        prefs_set_bool(fe->prefs, "berry_alerts", fe->berry_alerts);
         if (!prefs_save(fe->prefs)) LOG_WARN("Couldn't save preferences to %s", fe->prefs->path);
     }
 }
@@ -1131,7 +1143,15 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                     fe->panel_sel = game_panel_select(fe->panel_sel, delta, fe->last_snap.party_count);
                 else if (shown_page == GAME_PAGE_NUZLOCKE)
                     fe->nuz_sub = game_panel_nuz_sub(fe->nuz_sub, delta);
+                else if (shown_page == GAME_PAGE_BERRIES) {
+                    uint8_t order[BERRY_PLACE_MAX];
+                    fe->berry_sel = game_panel_select(fe->berry_sel, delta,
+                                                      game_panel_berry_places(&fe->last_snap.berries, order));
+                }
             }
+            if (event.key.keysym.scancode == SDL_SCANCODE_B && !event.key.repeat && fe->panel_visible &&
+                shown_page == GAME_PAGE_BERRIES && keymap_lookup(SDL_SCANCODE_B) == 0)
+                frontend_toggle_berry_alerts(fe);
             if (event.key.keysym.scancode == SDL_SCANCODE_N && !event.key.repeat && fe->panel_visible &&
                 shown_page == GAME_PAGE_NUZLOCKE && fe->nuz && keymap_lookup(SDL_SCANCODE_N) == 0 &&
                 nuz_session_request_start(fe->nuz))

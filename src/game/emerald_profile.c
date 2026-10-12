@@ -42,6 +42,7 @@ const GameProfile g_emerald_profile = {
     .wild_mon_headers = 0x08552D48, .wild_header_cap = 200,
     .region_map_entries = 0x085A147C, .region_map_count = 213,
     .evolution_table = 0x0832531C,
+    .berries = 0x0858A670,
 
     .object_events = 0x02037350,
     .sprites = 0x02020630,

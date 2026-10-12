@@ -402,6 +402,8 @@ static void read_encounters(const GameMem* m, const GameProfile* p, uint32_t sb1
 void game_init(GameState* gs, const uint8_t* rom, uint32_t rom_size) {
     memset(gs, 0, sizeof(*gs));
     gs->profile = game_profile_detect(rom, rom_size, &gs->support);
+    GameMem m = { NULL, NULL, rom, rom_size };
+    berry_places_build(&gs->places, gs->profile, &m);
 }
 
 void game_update_mem(GameState* gs, const GameMem* m) {
@@ -430,6 +432,7 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     map_name(m, p, s->map_name);
     read_party(m, p, s);
     mirage_read(&gs->mirage, p, m, &gs->clock, sb1, sb2, &s->mirage);
+    berry_read(&gs->places, p, m, &gs->clock, &s->berries);
 
     uint8_t enemies[2][BMON_SIZE], player[BMON_SIZE];
     bool have_player;
@@ -474,6 +477,12 @@ void game_update(GameState* gs, const GBA* gba) {
     game_update_mem(gs, &m);
 }
 
+void game_read_berries(GameState* gs, const GBA* gba, BerryView* out) {
+    GameMem m = { gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size };
+    read_clock(gba, &gs->clock);
+    berry_read(&gs->places, gs->profile, &m, &gs->clock, out);
+}
+
 const char* game_method_name(EncMethod method) {
     static const char* const names[ENC_METHOD_COUNT] = {
         "Grass", "Surf", "Rock Smash", "Old Rod", "Good Rod", "Super Rod",
@@ -506,6 +515,17 @@ bool game_dump(const GameSnapshot* s, FILE* out) {
             ok &= fprintf(out, "mirage_next %u %d/%u %s\n", mi->forecast[i].days,
                           (int)mi->forecast[i].where, mi->forecast[i].slot,
                           mi->forecast[i].name) >= 0;
+    }
+    if (s->berries.valid)
+        ok &= fprintf(out, "berries count %u clock_set %d projected %d here %d\n", s->berries.count,
+                      s->berries.clock_set, s->berries.projected,
+                      s->berries.here == BERRY_PLACE_NONE ? -1 : (int)s->berries.here) >= 0;
+    for (uint8_t i = 0; i < s->berries.count; i++) {
+        const BerryTree* t = &s->berries.tree[i];
+        const char* place = t->place < s->berries.place_count ? s->berries.place[t->place].name : "Other";
+        ok &= fprintf(out, "berry %u %s %s stage %u next %u ripe %u yield %u-%u status %d water %u%s\n", t->id,
+                      place, t->name, t->stage, t->next_min, (unsigned)t->ripe_min, t->yield_lo, t->yield_hi,
+                      (int)t->status, t->watered, t->paused ? " paused" : "") >= 0;
     }
     for (uint8_t i = 0; i < s->enemy_count; i++) {
         const GameEnemy* e = &s->enemies[i];

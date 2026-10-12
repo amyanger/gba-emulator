@@ -8,7 +8,9 @@
 #include "ui/ui_canvas.h"
 #include "frontend/nuzlocke_session.h"
 
-typedef enum { GAME_PAGE_AUTO, GAME_PAGE_PARTY, GAME_PAGE_ENCOUNTERS, GAME_PAGE_NUZLOCKE, GAME_PAGE_COUNT } GamePage;
+typedef enum {
+    GAME_PAGE_AUTO, GAME_PAGE_PARTY, GAME_PAGE_ENCOUNTERS, GAME_PAGE_NUZLOCKE, GAME_PAGE_BERRIES, GAME_PAGE_COUNT
+} GamePage;
 /* Views inside the Nuzlocke page, switched with [ and ]. */
 typedef enum { NUZ_SUB_ROUTES, NUZ_SUB_TEAM, NUZ_SUB_GRAVEYARD, NUZ_SUB_COUNT } NuzSubView;
 
@@ -25,9 +27,33 @@ typedef struct {
 /* Returns the page to show after the context becomes ctx. GAME_CTX_NONE is ignored. */
 GamePage game_panel_follow_battle(GamePage page, GameContext ctx, PanelBattleFollow* f);
 /* Draws the panel into a canvas sized 600*density by 480*density pixels. nuz may be
- * NULL (no tracking); nuz_sub is a NuzSubView. */
+ * NULL (no tracking); nuz_sub is a NuzSubView. berry_sel picks the open place on the
+ * Berries page (0 = the first, which is the current place when it has trees). */
 void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel,
-                     const NuzView* nuz, uint8_t nuz_sub);
+                     const NuzView* nuz, uint8_t nuz_sub, uint8_t berry_sel, bool berry_alerts);
+
+/* Berries page helpers, exposed for tests and the frontend. */
+/* "40m", "5h 10m", "1d 9h". */
+void game_panel_berry_time(uint32_t minutes, char* out, size_t size);
+/* Places with trees: the current place first, then most urgent, then by name. Returns the count. */
+uint8_t game_panel_berry_places(const BerryView* v, uint8_t order[BERRY_PLACE_MAX]);
+/* Tree indexes that need the player (falling, ripe, water; untouched trees left out), most
+ * urgent first. Returns the count. */
+uint8_t game_panel_berry_needs(const BerryView* v, uint8_t idx[BERRY_VIEW_MAX]);
+typedef struct {
+    uint8_t place;      /* open place, BERRY_PLACE_NONE when no place has trees */
+    uint8_t places;     /* places with trees */
+    uint8_t needs;      /* "Needs you" rows shown */
+    uint8_t needs_more; /* the rest, as "+N more" */
+    uint8_t rows;       /* tree rows shown for the open place */
+    uint8_t more;       /* the rest, as "+N more" */
+    float list_y;       /* first tree row */
+    float list_end;     /* bottom of the open place's block */
+    uint8_t others;      /* other places drawn as one-line summaries */
+    uint8_t others_more; /* the rest, as "+N more places" */
+    float others_end;    /* bottom of that list, at most the list end */
+} BerryPageLayout;
+void game_panel_berry_layout(const BerryView* v, uint8_t sel, BerryPageLayout* out);
 uint8_t game_panel_nuz_sub(uint8_t sub, int delta);
 /* First route row shown when only `fit` rows fit: keeps the current location in view. */
 uint8_t game_panel_nuz_route_start(const NuzView* v, uint8_t fit);

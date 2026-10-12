@@ -1014,6 +1014,368 @@ static void draw_nuzlocke(UiCanvas* c, const NuzView* v, float top, uint8_t sub)
             v->wiped ? UI_BAD : UI_FAINT, foot);
 }
 
+/* ---- Berries page ---- */
+
+#define BERRY_TOP        50.0f
+#define BERRY_ROW_H      20.0f
+#define BERRY_LINE_H     18.0f
+#define BERRY_NEEDS_MAX  3
+#define BERRY_LIST_END   452.0f   /* above the footer */
+#define BERRY_FOOT_Y     456.0f
+#define BERRY_NAME_X     (LEFT + 6.0f)
+#define BERRY_STAGE_X    (LEFT + 82.0f)
+#define BERRY_DROPS_X    (LEFT + 170.0f)
+#define BERRY_STATUS_X   (LEFT + 228.0f)
+#define BERRY_SEG_W      12.0f
+#define BERRY_SEG_GAP    3.0f
+#define BERRY_DROP_PITCH 12.0f
+#define BERRY_TEXT_LEN   96
+
+void game_panel_berry_time(uint32_t minutes, char* out, size_t size) {
+    uint32_t d = minutes / 1440, h = minutes % 1440 / 60, m = minutes % 60;
+    if (d) {
+        if (h) snprintf(out, size, "%ud %uh", (unsigned)d, (unsigned)h);
+        else snprintf(out, size, "%ud", (unsigned)d);
+    } else if (h) {
+        if (m) snprintf(out, size, "%uh %um", (unsigned)h, (unsigned)m);
+        else snprintf(out, size, "%uh", (unsigned)h);
+    } else {
+        snprintf(out, size, "%um", (unsigned)m);
+    }
+}
+
+/* Untouched trees rank after everything that is moving. */
+static int berry_rank(const BerryTree* t) {
+    return t->paused ? BERRY_PAUSED + 1 : (int)t->status;
+}
+
+static int place_rank(const BerryView* v, uint8_t place) {
+    int best = BERRY_PAUSED + 2;
+    for (uint8_t i = 0; i < v->count; i++)
+        if (v->tree[i].place == place && berry_rank(&v->tree[i]) < best) best = berry_rank(&v->tree[i]);
+    return best;
+}
+
+uint8_t game_panel_berry_places(const BerryView* v, uint8_t order[BERRY_PLACE_MAX]) {
+    uint8_t n = 0;
+    int rank[BERRY_PLACE_MAX];
+    for (uint8_t p = 0; p < v->place_count && p < BERRY_PLACE_MAX; p++) {
+        if (v->growing[p] == 0) continue;
+        int r = p == v->here ? -1 : place_rank(v, p);
+        /* Insertion sort: rank, then name. */
+        uint8_t k = n;
+        while (k > 0 && (rank[k - 1] > r ||
+                         (rank[k - 1] == r && strcmp(v->place[order[k - 1]].name, v->place[p].name) > 0))) {
+            order[k] = order[k - 1];
+            rank[k] = rank[k - 1];
+            k--;
+        }
+        order[k] = p;
+        rank[k] = r;
+        n++;
+    }
+    return n;
+}
+
+uint8_t game_panel_berry_needs(const BerryView* v, uint8_t idx[BERRY_VIEW_MAX]) {
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < v->count; i++) {
+        const BerryTree* t = &v->tree[i];
+        if (t->paused || t->status > BERRY_WATER) continue;
+        uint8_t k = n;
+        while (k > 0 && (v->tree[idx[k - 1]].status > t->status ||
+                         (v->tree[idx[k - 1]].status == t->status && v->tree[idx[k - 1]].next_min > t->next_min))) {
+            idx[k] = idx[k - 1];
+            k--;
+        }
+        idx[k] = i;
+        n++;
+    }
+    return n;
+}
+
+static uint8_t trees_at(const BerryView* v, uint8_t place) {
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < v->count; i++) n += v->tree[i].place == place;
+    return n;
+}
+
+void game_panel_berry_layout(const BerryView* v, uint8_t sel, BerryPageLayout* out) {
+    uint8_t order[BERRY_PLACE_MAX], idx[BERRY_VIEW_MAX];
+    memset(out, 0, sizeof(*out));
+    out->place = BERRY_PLACE_NONE;
+    uint8_t needs = game_panel_berry_needs(v, idx);
+    out->needs = needs < BERRY_NEEDS_MAX ? needs : BERRY_NEEDS_MAX;
+    out->needs_more = (uint8_t)(needs - out->needs);
+    float y = BERRY_TOP + SECTION_ADV + out->needs * BERRY_ROW_H;
+    if (out->needs_more || out->needs == 0) y += BERRY_LINE_H;
+    y += 10.0f + SECTION_ADV;   /* gap, ALL TREES */
+    out->places = game_panel_berry_places(v, order);
+    if (out->places == 0) return;
+    out->place = order[sel % out->places];
+    y += 22.0f;                 /* the open place's heading */
+    out->list_y = y;
+    uint8_t n = trees_at(v, out->place);
+    /* Leave a line for the other places, so a full place never hides that they exist. */
+    float avail = BERRY_LIST_END - y - (out->places > 1 ? 8.0f + BERRY_LINE_H : 0.0f);
+    if (n * BERRY_ROW_H <= avail) {
+        out->rows = n;
+    } else {
+        int rows = (int)((avail - BERRY_LINE_H) / BERRY_ROW_H);
+        out->rows = (uint8_t)(rows < 0 ? 0 : rows);
+        out->more = (uint8_t)(n - out->rows);
+    }
+    out->list_end = y + out->rows * BERRY_ROW_H + (out->more ? BERRY_LINE_H : 0);
+
+    /* Every other place on one line each; when they don't all fit, the last line says how
+     * many are left. */
+    float oy = out->list_end + 8.0f;
+    int lines = (int)((BERRY_LIST_END - oy) / BERRY_LINE_H);
+    uint8_t others = (uint8_t)(out->places - 1);
+    if (lines < 0) lines = 0;
+    if (others <= lines) {
+        out->others = others;
+    } else if (lines >= 1) {
+        out->others = (uint8_t)(lines - 1);
+        out->others_more = (uint8_t)(others - out->others);
+    }
+    out->others_end = oy + (out->others + (out->others_more ? 1 : 0)) * BERRY_LINE_H;
+}
+
+static void berry_place_title(const BerryView* v, uint8_t place, char* out, size_t size) {
+    if (place < v->place_count) game_panel_title_case(v->place[place].name, out, size);
+    else snprintf(out, size, "Other");
+}
+
+static uint32_t berry_status_color(const BerryTree* t) {
+    if (t->paused && t->stage < 5) return UI_FAINT;
+    switch (t->status) {
+    case BERRY_FALLING: return UI_BAD;
+    case BERRY_RIPE:    return UI_GOOD;
+    case BERRY_WATER:   return UI_WARN;
+    default:            return UI_MUTED;
+    }
+}
+
+/* out holds at least BERRY_TEXT_LEN bytes. */
+static void berry_status_text(const BerryTree* t, char* out, size_t size) {
+    char a[16], b[16];
+    game_panel_berry_time(t->next_min, a, sizeof(a));
+    if (t->stage == 5) {
+        if (t->paused) snprintf(out, size, "Ripe" MDOT "not visited yet");
+        else snprintf(out, size, "Ripe" MDOT "drops in %s", a);
+    } else if (t->paused) {
+        snprintf(out, size, "Not growing, visit to start");
+    } else if (t->status == BERRY_WATER) {
+        snprintf(out, size, "Water now" MDOT "%s left", a);
+    } else if (t->stage == 4) {
+        snprintf(out, size, "Ripe in %s", a);
+    } else {
+        game_panel_berry_time(t->ripe_min, b, sizeof(b));
+        snprintf(out, size, "Next in %s" MDOT "ripe in %s", a, b);
+    }
+}
+
+static void berry_yield_text(const BerryTree* t, char* out, size_t size) {
+    if (t->yield_lo == t->yield_hi) snprintf(out, size, TIMES "%u", t->yield_lo);
+    else snprintf(out, size, TIMES "%u" NDASH "%u", t->yield_lo, t->yield_hi);
+}
+
+static void berry_row(UiCanvas* c, const BerryTree* t, float y) {
+    char buf[BERRY_TEXT_LEN], name[BERRY_NAME_LEN + 4];
+    game_panel_title_case(t->name, name, sizeof(name));
+    ui_text(c, UI_FONT_SEMIBOLD, KV_SIZE, BERRY_NAME_X, y, BERRY_STAGE_X - BERRY_NAME_X - 6.0f, UI_ALIGN_LEFT,
+            UI_TEXT, name);
+    float by = bar_y(c, y, KV_SIZE, 5.0f);
+    for (uint8_t s = 1; s <= 5; s++) {
+        uint32_t col = s < t->stage || t->stage == 5 ? UI_GOOD : s == t->stage ? UI_ACCENT : UI_TRACK;
+        ui_fill_round_rect(c, (UiRect){BERRY_STAGE_X + (s - 1) * (BERRY_SEG_W + BERRY_SEG_GAP), by, BERRY_SEG_W, 5.0f},
+                           2.5f, col);
+    }
+    float cy = bar_y(c, y, KV_SIZE, 0.0f), r = 3.5f;
+    for (uint8_t s = 1; s <= 4; s++) {
+        float cx = BERRY_DROPS_X + (s - 1) * BERRY_DROP_PITCH + r;
+        bool watered = (t->watered >> (s - 1)) & 1;
+        if (watered)
+            ui_fill_round_rect(c, (UiRect){cx - r, cy - r, 2 * r, 2 * r}, r, UI_ACCENT);
+        else if (s == t->stage && !t->paused)
+            ui_ring(c, cx, cy, r, 1.5f, UI_WARN);
+        else if (s >= t->stage)
+            ui_ring(c, cx, cy, r, 1.2f, UI_FAINT);
+        else
+            ui_fill_round_rect(c, (UiRect){cx - r, cy - r, 2 * r, 2 * r}, r, UI_TRACK);
+    }
+    berry_status_text(t, buf, sizeof(buf));
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, BERRY_STATUS_X, y, RIGHT - 44.0f - BERRY_STATUS_X, UI_ALIGN_LEFT,
+            berry_status_color(t), buf);
+    berry_yield_text(t, buf, sizeof(buf));
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, RIGHT - 6.0f, y, 0, UI_ALIGN_RIGHT, UI_MUTED, buf);
+}
+
+static void needs_row(UiCanvas* c, const BerryView* v, const BerryTree* t, float y) {
+    static const char* const labels[3] = {"Falling", "Ripe", "Water"};
+    static const uint32_t colors[3] = {UI_BAD, UI_GOOD, UI_WARN};
+    char buf[BERRY_TEXT_LEN], name[BERRY_NAME_LEN + 4], yield[16], place[BERRY_PLACE_NAME_LEN + 4], when[16];
+    uint8_t k = (uint8_t)t->status;
+    float py = y + ui_text_cap_middle(c, UI_FONT_REGULAR, KV_SIZE) - (UI_SIZE_PILL + 5.0f) / 2;
+    ui_pill(c, LEFT, py, labels[k], colors[k]);
+    game_panel_title_case(t->name, name, sizeof(name));
+    if (t->status == BERRY_WATER) snprintf(buf, sizeof(buf), "%s", name);
+    else {
+        berry_yield_text(t, yield, sizeof(yield));
+        snprintf(buf, sizeof(buf), "%s %s", name, yield);
+    }
+    ui_text(c, UI_FONT_SEMIBOLD, KV_SIZE, LEFT + 66.0f, y, 110.0f, UI_ALIGN_LEFT, UI_TEXT, buf);
+    berry_place_title(v, t->place, place, sizeof(place));
+    game_panel_berry_time(t->next_min, when, sizeof(when));
+    if (t->status == BERRY_WATER) snprintf(buf, sizeof(buf), "%s" MDOT "%s left to water", place, when);
+    else snprintf(buf, sizeof(buf), "%s" MDOT "drops in %s", place, when);
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT + 182.0f, y, RIGHT - LEFT - 182.0f, UI_ALIGN_LEFT, UI_MUTED, buf);
+}
+
+/* "2 ripe · 1 needs water · 3 growing" for a collapsed place. */
+static void place_summary(const BerryView* v, uint8_t place, char* out, size_t size) {
+    static const char* const words[6] = {"falling", "ripe", "need water", "growing", "not growing",
+                                         "ripe, not visited yet"};
+    unsigned n[6] = {0};
+    for (uint8_t i = 0; i < v->count; i++) {
+        const BerryTree* t = &v->tree[i];
+        if (t->place == place) n[t->paused ? (t->stage == 5 ? 5 : 4) : t->status]++;
+    }
+    size_t len = 0;
+    out[0] = '\0';
+    for (int k = 0; k < 6; k++) {
+        if (!n[k] || len + 1 >= size) continue;
+        int w = snprintf(out + len, size - len, "%s%u %s", len ? MDOT : "", n[k],
+                         k == 2 && n[k] == 1 ? "needs water" : words[k]);
+        if (w > 0) len += (size_t)w < size - len ? (size_t)w : size - len - 1;
+    }
+}
+
+static void berry_message(UiCanvas* c, const char* title, const char* line) {
+    float x = PANEL_W / 2, w = RIGHT - LEFT;
+    ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, x, 190.0f, w, UI_ALIGN_CENTER, UI_TEXT, title);
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, x, 226.0f, w, UI_ALIGN_CENTER, UI_MUTED, line);
+}
+
+/* "Soft soil: Route 102, Route 104 and 12 more places." */
+static void soil_line(const BerryView* v, char* out, size_t size) {
+    char name[BERRY_PLACE_NAME_LEN + 4];
+    unsigned shown = 0, total = 0;
+    size_t len = (size_t)snprintf(out, size, "Soft soil: ");
+    for (uint8_t p = 0; p < v->place_count; p++) {
+        if (!v->place[p].spots) continue;
+        total++;
+        if (shown >= 2) continue;
+        berry_place_title(v, p, name, sizeof(name));
+        int w = snprintf(out + len, size - len, "%s%s", shown ? ", " : "", name);
+        if (w > 0 && (size_t)w < size - len) len += (size_t)w;
+        shown++;
+    }
+    if (total > shown) snprintf(out + len, size - len, " and %u more places.", total - shown);
+    else snprintf(out + len, size - len, ".");
+}
+
+static void draw_berries(UiCanvas* c, const BerryView* v, uint8_t sel, bool alerts) {
+    char buf[96], place[BERRY_PLACE_NAME_LEN + 4];
+    uint8_t idx[BERRY_VIEW_MAX];
+    float w = RIGHT - LEFT;
+    if (!v->valid) {
+        berry_message(c, "Berries show up in the game", "Load your save and they appear here.");
+        return;
+    }
+    if (!v->clock_set) {
+        berry_message(c, "Set the clock first", "Berries only grow once the game's clock is set.");
+        return;
+    }
+    if (v->count == 0) {
+        soil_line(v, buf, sizeof(buf));
+        berry_message(c, "No berries planted yet", buf);
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, PANEL_W / 2, 246.0f, w, UI_ALIGN_CENTER, UI_MUTED,
+                "Plant a berry there and it shows up here.");
+        return;
+    }
+
+    BerryPageLayout l;
+    game_panel_berry_layout(v, sel, &l);
+    uint8_t needs = game_panel_berry_needs(v, idx);
+    float y = BERRY_TOP;
+    section(c, LEFT, y, w, "NEEDS YOU");
+    if (needs) {
+        snprintf(buf, sizeof(buf), "%u", needs);
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_LABEL, RIGHT, y, 0, UI_ALIGN_RIGHT, UI_FAINT, buf);
+    }
+    y += SECTION_ADV;
+    for (uint8_t i = 0; i < l.needs; i++, y += BERRY_ROW_H) needs_row(c, v, &v->tree[idx[i]], y);
+    if (l.needs_more) {
+        more_line(c, LEFT, y, l.needs_more);
+        y += BERRY_LINE_H;
+    } else if (l.needs == 0) {
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, y, w, UI_ALIGN_LEFT, UI_MUTED,
+                "All caught up. Nothing to pick or water right now.");
+        y += BERRY_LINE_H;
+    }
+
+    y += 10.0f;
+    section(c, LEFT, y, w, "ALL TREES");
+    if (l.places > 1) {
+        snprintf(buf, sizeof(buf), "PLACE %u OF %u", (unsigned)(sel % l.places + 1), l.places);
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_LABEL, RIGHT, y, 0, UI_ALIGN_RIGHT, UI_FAINT, buf);
+    }
+    y += SECTION_ADV;
+    if (l.place == BERRY_PLACE_NONE) {
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, y, w, UI_ALIGN_LEFT, UI_MUTED, "No trees with a known place");
+        return;
+    }
+
+    /* The open place: heading, then a row per tree. */
+    ui_fill_round_rect(c, (UiRect){LEFT - 6.0f, y - 2.0f, 2.0f, l.list_end - y + 2.0f}, 1.0f, UI_ACCENT);
+    berry_place_title(v, l.place, place, sizeof(place));
+    float tw = ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, LEFT, y, 300.0f, UI_ALIGN_LEFT, UI_TEXT, place);
+    if (l.place == v->here) {
+        float py = y + ui_text_cap_middle(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY) - (UI_SIZE_PILL + 5.0f) / 2;
+        ui_pill(c, LEFT + tw + 8.0f, py, "You are here", UI_ACCENT);
+    }
+    uint8_t spots = l.place < v->place_count ? v->place[l.place].spots : 0;
+    uint8_t here_n = trees_at(v, l.place);
+    if (spots > here_n) snprintf(buf, sizeof(buf), "%u tree%s" MDOT "%u empty", here_n, here_n == 1 ? "" : "s",
+                                 (unsigned)(spots - here_n));
+    else snprintf(buf, sizeof(buf), "%u tree%s", here_n, here_n == 1 ? "" : "s");
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, RIGHT, y + 1.0f, 0, UI_ALIGN_RIGHT, UI_FAINT, buf);
+    y = l.list_y;
+    uint8_t drawn = 0;
+    for (uint8_t i = 0; i < v->count && drawn < l.rows; i++) {
+        if (v->tree[i].place != l.place) continue;
+        berry_row(c, &v->tree[i], y);
+        y += BERRY_ROW_H;
+        drawn++;
+    }
+    if (l.more) {
+        more_line(c, BERRY_NAME_X, y, l.more);
+        y += BERRY_LINE_H;
+    }
+
+    /* Every other place on one line each, as the layout fits them. */
+    uint8_t order[BERRY_PLACE_MAX];
+    uint8_t n = game_panel_berry_places(v, order);
+    y = l.list_end + 8.0f;
+    for (uint8_t k = 1; k <= l.others; k++, y += BERRY_LINE_H) {
+        uint8_t p = order[(sel % n + k) % n];
+        berry_place_title(v, p, place, sizeof(place));
+        ui_text(c, UI_FONT_SEMIBOLD, KV_SIZE, LEFT, y, 150.0f, UI_ALIGN_LEFT, p == v->here ? UI_ACCENT : UI_TEXT,
+                place);
+        place_summary(v, p, buf, sizeof(buf));
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT + 160.0f, y, w - 160.0f, UI_ALIGN_LEFT, UI_MUTED, buf);
+    }
+    if (l.others_more) {
+        snprintf(buf, sizeof(buf), "+%u more places", (unsigned)l.others_more);
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, y, 0, UI_ALIGN_LEFT, UI_MUTED, buf);
+    }
+
+    snprintf(buf, sizeof(buf), "Times are real time" MDOT "Berry alerts %s (B)", alerts ? "on" : "off");
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, BERRY_FOOT_Y, w, UI_ALIGN_LEFT, UI_FAINT, buf);
+}
+
 /* The ROM itself is unsupported: say so plainly, since a hack would otherwise look broken. */
 static void draw_unsupported(UiCanvas* c, GameSupport support) {
     static const char* const hack[] = {
@@ -1044,18 +1406,19 @@ static void draw_unsupported(UiCanvas* c, GameSupport support) {
 }
 
 void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel,
-                     const NuzView* nuz, uint8_t nuz_sub) {
-    static const char* const labels[4] = {"Battle", "Party", "Route", "Nuzlocke"};
+                     const NuzView* nuz, uint8_t nuz_sub, uint8_t berry_sel, bool berry_alerts) {
+    static const char* const labels[5] = {"Battle", "Party", "Route", "Nuzlocke", "Berries"};
     GamePage shown = game_panel_resolve_page(page, snap->context);
     int active = shown == GAME_PAGE_PARTY ? 1 : shown == GAME_PAGE_ENCOUNTERS ? 2
-               : shown == GAME_PAGE_NUZLOCKE ? 3 : 0;
+               : shown == GAME_PAGE_NUZLOCKE ? 3 : shown == GAME_PAGE_BERRIES ? 4 : 0;
     const char* hint = "F10 page";
     if (active == 1) hint = "F10 page   [ ] select";
     else if (active == 3) hint = nuz && nuz->state == NUZ_VIEW_NO_RUN ? "F10 page   N start" : "F10 page   [ ] view";
+    else if (active == 4) hint = "F10 page   [ ] place   B alerts";
 
     ui_canvas_unclip(c);
     ui_canvas_clear(c, UI_BG);
-    float top = ui_tabs(c, LEFT, 12.0f, RIGHT - LEFT, labels, 4, active,
+    float top = ui_tabs(c, LEFT, 12.0f, RIGHT - LEFT, labels, 5, active,
                         page == GAME_PAGE_AUTO ? "Auto" : NULL, hint);
 
     ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, PANEL_H - top - 4.0f});
@@ -1066,6 +1429,8 @@ void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8
     } else if (!snap->valid) {
         ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, PANEL_W / 2, 220.0f, RIGHT - LEFT,
                 UI_ALIGN_CENTER, UI_MUTED, snap->reason);
+    } else if (active == 4) {
+        draw_berries(c, &snap->berries, berry_sel, berry_alerts);
     } else if (active == 1) {
         draw_party(c, snap, top, party_sel);
     } else if (active == 2) {

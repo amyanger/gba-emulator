@@ -30,6 +30,7 @@ The apps aren't signed with a paid certificate, so macOS and Windows ask you to 
 - **[Emerald Companion](docs/emerald-companion.md)** (F9): a side panel for Pokemon Emerald with wild battle IVs, natures and catch odds, move matchups both ways, your party's hidden stats and the current route's encounter table.
 - **[Nuzlocke tracker](docs/emerald-companion.md#nuzlocke)**: a Companion page that keeps your Nuzlocke run honest, logging each area's first encounter, every death and any reload after a death.
 - **[Mirage Island helper](docs/emerald-companion.md#mirage-island)**: see which of your Pokemon raises Mirage Island today and when it next will, then jump the clock to that day.
+- **[Berry tracker](docs/emerald-companion.md#berries)**: every berry tree you've planted, with growth stage, watering and countdowns, plus a toast when berries are ripe, need water or are about to drop.
 - **[Overworld X-Ray](docs/emerald-companion.md#overworld-x-ray)** (F4): trainer sight lines, item names and NPC gifts drawn right on the map in Pokemon Emerald.
 - **[Following Pokemon](docs/usage.md#following-pokemon)** (F1): your lead Pokemon walks behind you in Pokemon Emerald and talks like it does in HeartGold and SoulSilver, using your own HeartGold or SoulSilver ROM.
 - **Save states and rewind**: 10 save-state slots, plus hold Backspace to rewind up to 60 seconds.
