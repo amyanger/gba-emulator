@@ -271,6 +271,20 @@ TEST(settings_audio_volume_and_start_muted) {
     ASSERT_TRUE(st.audio.changed);
 }
 
+TEST(settings_audio_hq_music_switch) {
+    setup();
+    st.page = SETTINGS_PAGE_AUDIO;
+    st.audio.volume = 100;
+    draw();
+    press_key_on(SETTINGS_ID_HQ_MUSIC, UI_KEY_SPACE);
+    ASSERT_TRUE(st.audio.hq_music);
+    ASSERT_TRUE(st.audio.changed);
+}
+
+TEST(controls_h_is_reserved_for_hq_music) {
+    ASSERT_TRUE(settings_controls_reserved(SDL_SCANCODE_H) != NULL);
+}
+
 TEST(controls_click_chip_then_key_rebinds) {
     setup(); keymap_reset_defaults();
     st.page = SETTINGS_PAGE_CONTROLS;
@@ -468,6 +482,8 @@ void run_settings_tests(void) {
     RUN_TEST(audio_scale_full_half_zero);
     RUN_TEST(audio_scale_zero_is_silence);
     RUN_TEST(settings_audio_volume_and_start_muted);
+    RUN_TEST(settings_audio_hq_music_switch);
+    RUN_TEST(controls_h_is_reserved_for_hq_music);
     RUN_TEST(controls_click_chip_then_key_rebinds);
     RUN_TEST(controls_reserved_key_refused_keeps_listening);
     RUN_TEST(controls_unbindable_key_refused_keeps_listening);

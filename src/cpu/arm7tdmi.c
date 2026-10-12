@@ -487,6 +487,11 @@ void cpu_run(ARM7TDMI* cpu, int cycles) {
             continue;
         }
 
+        /* After a refill pipeline[0] is the instruction at PC-4 (Thumb). */
+        if (cpu->pc_hook && cpu->pipeline_valid && BIT(cpu->cpsr, CPSR_T) &&
+            cpu->regs[REG_PC] - 4u == cpu->pc_hook_addr)
+            cpu->pc_hook(cpu->pc_hook_ctx);
+
         int step_cycles = cpu_step(cpu);
         cpu->cycles_executed += step_cycles;
         if (ic) interrupt_elapse(ic, step_cycles);

@@ -100,6 +100,8 @@ set(SOURCES
     src/apu/apu.c
     src/apu/channel.c
     src/apu/fifo.c
+    src/mp2k/mp2k_detect.c
+    src/mp2k/mp2k_mixer.c
     src/timer/timer.c
     src/interrupt/interrupt.c
     src/cartridge/cartridge.c
@@ -280,6 +282,8 @@ set(LIB_SOURCES
     src/apu/apu.c
     src/apu/channel.c
     src/apu/fifo.c
+    src/mp2k/mp2k_detect.c
+    src/mp2k/mp2k_mixer.c
     src/timer/timer.c
     src/interrupt/interrupt.c
     src/cartridge/cartridge.c
@@ -399,6 +403,9 @@ set(TEST_SOURCES
     tests/test_cheat_session.c
     tests/test_apu.c
     tests/test_audio_out.c
+    tests/test_mp2k_detect.c
+    tests/test_mp2k_mixer.c
+    tests/test_pc_hook.c
     tests/test_ppu.c
     tests/test_input.c
     tests/test_rewind.c

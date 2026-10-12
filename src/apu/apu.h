@@ -114,6 +114,12 @@ struct APU {
 
     // DMA controller (for FIFO refill triggering)
     DMAController* dma;
+
+    // Host-side, not saved. HQ music plays FIFO A/B itself, so the mix
+    // leaves them out; samples_produced lets it render exactly as many
+    // samples per frame as the APU did.
+    bool fifo_omit;
+    uint32_t samples_produced;
 };
 typedef struct APU APU;
 

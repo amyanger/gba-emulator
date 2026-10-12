@@ -20,6 +20,8 @@
 #include "game/game.h"
 #include "game/overworld.h"
 #include "headless/headless.h"
+#include "mp2k/mp2k_detect.h"
+#include "mp2k/mp2k_mixer.h"
 #ifdef ENABLE_REWIND
 #include "rewind/rewind.h"
 #endif
@@ -42,6 +44,7 @@ static GameState s_game;
 static NuzSession s_nuz;
 static bool s_nuz_on;        /* tracking runs in the window, and headless only with --nuzlocke-file */
 static OverworldFeed s_ow;
+static Mp2kMixer s_mp2k;   /* ~112 KB of buffers: static, never on the stack */
 static FollowerFeed s_fol;
 static HgssAssets s_hgss;      /* ~150 KB: the HeartGold/SoulSilver ROM's follower data */
 static uint16_t s_real_keys;   /* host keys held back from the game during a follower talk */
@@ -809,6 +812,16 @@ int main(int argc, char* argv[]) {
     fe.start_muted = prefs_get_bool(&s_prefs, "start_muted", false);
     fe.muted = start_muted || fe.start_muted;
     {
+        Mp2kDriver drv;
+        bool found = mp2k_detect(gba.cart.rom, gba.cart.rom_size, &drv);
+        if (found)
+            LOG_INFO("MP2K sound driver: SoundMain 0x%08X, mixer 0x%08X", (unsigned)drv.sound_main,
+                     (unsigned)drv.hook_addr);
+        mp2k_mixer_init(&s_mp2k, found ? &drv : NULL);
+        fe.mp2k = &s_mp2k;
+        frontend_set_hq_music(&fe, &gba, prefs_get_bool(&s_prefs, "hq_music", false), false);
+    }
+    {
         const char* ff = prefs_get(&s_prefs, "ff_speed");
         fe.ff_speed = !ff ? 3 : strcmp(ff, "max") == 0 ? 0 : (ff[0] >= '2' && ff[0] <= '4' && !ff[1]) ? (uint8_t)(ff[0] - '0') : 3;
         fe.pause_on_blur = prefs_get_bool(&s_prefs, "pause_on_blur", false);
@@ -935,6 +948,7 @@ int main(int argc, char* argv[]) {
                     frontend_toast(&fe, TOAST_OK, "State loaded", slot_detail);
                     frontend_audio_stop(&fe, &gba.apu);
                     overworld_feed_clear(&s_ow);
+                    frontend_hq_reset(&fe);
                     frontend_follower_reset(&fe, &gba);
 #ifdef ENABLE_REWIND
                     rewind_clear(&gba.rewind);   // past is no longer valid
@@ -963,6 +977,7 @@ int main(int argc, char* argv[]) {
             if (prev_rewind && !rewind_active_now) {
                 rewind_end(&gba.rewind);
                 frontend_audio_stop(&fe, &gba.apu);
+                frontend_hq_reset(&fe);
             }
             // Detect transitions INTO rewind
             if (!prev_rewind && rewind_active_now) {

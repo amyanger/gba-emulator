@@ -67,6 +67,12 @@ struct ARM7TDMI {
     bool has_bios;
     int cycles_executed;
 
+    /* Host hook: called right before the Thumb instruction at pc_hook_addr
+     * executes. Not serialized; gba_set_pc_hook installs it. */
+    void (*pc_hook)(void* ctx);
+    void* pc_hook_ctx;
+    uint32_t pc_hook_addr;
+
     /* Bus pointer (wired during gba_init) */
     Bus* bus;
 };

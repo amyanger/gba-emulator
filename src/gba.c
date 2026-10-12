@@ -167,6 +167,19 @@ void gba_set_vblank_observer(GBA* gba, GbaVblankObserver fn, void* ctx) {
     gba->vblank_observer_ctx = fn ? ctx : NULL;
 }
 
+static void gba_pc_hook_trampoline(void* ctx) {
+    GBA* gba = (GBA*)ctx;
+    gba->pc_hook(gba, gba->pc_hook_ctx);
+}
+
+void gba_set_pc_hook(GBA* gba, uint32_t addr, GbaPcHook fn, void* ctx) {
+    gba->pc_hook = fn;
+    gba->pc_hook_ctx = fn ? ctx : NULL;
+    gba->cpu.pc_hook = fn ? gba_pc_hook_trampoline : NULL;
+    gba->cpu.pc_hook_ctx = fn ? gba : NULL;
+    gba->cpu.pc_hook_addr = fn ? addr : 0;
+}
+
 void gba_set_link_peer(GBA* gba, LinkPeer* peer) {
     gba->sio.peer = peer;
 }
