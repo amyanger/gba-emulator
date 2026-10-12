@@ -114,7 +114,7 @@ Type part of a Pokemon's name and see where to get it in Emerald. Open the Searc
 - **Keys.** Up and Down pick a result, or `[` and `]` when you're not typing. PageUp, PageDown or the mouse wheel scroll the details. Enter or Esc stops typing, and Esc clears the text first if there is any.
 - **While you type.** Keyboard keys don't reach the game or any hotkey, so typing a name won't press buttons. A controller still plays. Esc never quits the emulator on this page, and a battle starting while you type doesn't switch the page away.
 - **Details.** The national dex number and a check if you've caught it, then every wild spot: Grass, Surf, Dive, Rock Smash and the Old, Good and Super Rod, each with levels and encounter chance. When floors of the same place differ, the chance is shown as a range.
-- **Special cases.** Feebas appears on Route 119 with any rod, on one of 6 hidden tiles. Wynaut on Mirage Island shows up only on days the island appears. Places that open after the Hall of Fame are listed under "After the Hall of Fame", and Shoal Cave's low tide spots are marked "Low tide".
+- **Special cases.** Feebas appears on Route 119 with any rod, on one of 6 hidden tiles. The Overworld X-Ray (F4) shows which ones. Wynaut on Mirage Island shows up only on days the island appears. Places that open after the Hall of Fame are listed under "After the Hall of Fame", and Shoal Cave's low tide spots are marked "Low tide".
 - **Not wild.** The page works back to the nearest Pokemon you can catch and lists the steps. For Gardevoir that is: evolve Kirlia at Lv 30, evolve Ralts at Lv 20, and Ralts is on Route 102. Pokemon that only hatch from eggs say so and tell you which evolved form to breed, and Azurill needs a parent holding Sea Incense. Anything else says "Not found in the wild in Emerald".
 
 ![Route 102 with "ra" typed in the Search page: Rattata, Raticate, Raichu and more narrowed down by name, with Ralts picked and its Route 102 grass spot on the right](screenshots/panel-search-typing.png)
@@ -129,7 +129,7 @@ The panel sizes itself to the screen's pixel density, so it stays crisp on stand
 
 Every name and number is read from your own ROM at runtime, and nothing from the game ships with the emulator. The panel only reads memory. It never writes to the game, makes no bus accesses, does not change timing, and leaves savestates untouched. Addresses come from the pret/pokeemerald decomp.
 
-Not shown yet: Safari Ball odds, mass outbreaks, exact Feebas tile positions, roamers, Altering Cave variants, lead ability effects (Static, Magnet Pull and similar), and Battle Pyramid and Battle Pike tables. Weather Ball matchups use its base type.
+Not shown yet: Safari Ball odds, mass outbreaks, roamers, Altering Cave variants, lead ability effects (Static, Magnet Pull and similar), and Battle Pyramid and Battle Pike tables. Weather Ball matchups use its base type.
 
 To check decoded state without a window, run headless with `--game-dump <file>` (see [Headless mode](usage.md#headless-mode)).
 
@@ -142,3 +142,16 @@ Items get names too. A small gold label shows what is inside each Poké Ball on 
 The overlay hides itself in menus, dialog, battles, cutscenes and screen fades, and comes back when you can walk again. An X-RAY badge shows while it is on, and the setting is remembered the next time you open the emulator. Like the panel, it only reads memory and never changes the game.
 
 For a picture without a window, run headless with `--overworld-out <file>` (see [Headless mode](usage.md#headless-mode)).
+
+### Feebas tiles
+
+Feebas only lives on 6 hidden spots among the 447 water tiles of Route 119, and the game picks them from a number tied to the trendy phrase in Dewford Town. On Route 119 the overlay outlines those tiles in cyan with a "Feebas" label. Fish there with any rod, and half of the bites are Feebas. When none of the tiles are on screen, a "Feebas" label with an arrow sits on the screen edge, pointing toward the nearest one.
+
+- **They can move.** The tiles change when the Dewford trend changes: a new trendy phrase, mixing records, or a new day once you enter a map. The overlay always shows the current set.
+- **Bridges.** Some sets put Feebas under the wooden bridge in the north of the route. Then the bridge tiles light up with "Feebas · bridge", and you fish at them while surfing beside the bridge.
+- **Can't fish.** A few of the game's tiles sit against rocks or the shore where you can't cast at them. They show in grey with "Feebas · can't fish" so you don't waste time there.
+- **While fishing.** The tiles stay drawn while your rod is out, so you can see you are on the right one. Labels and the rest of the overlay step aside for the message box, and tiles behind the box aren't drawn.
+
+| | | |
+|---|---|---|
+| ![A Route 119 water tile outlined in cyan with a Feebas label, four tiles north of the player](screenshots/overworld-feebas.png) | ![No Feebas tile on screen: a Feebas label with an arrow on the top edge points up and to the right](screenshots/overworld-feebas-hint.png) | ![The player fishing with the Oh! A bite! message box up, the Feebas tile still outlined and the labels hidden](screenshots/overworld-feebas-fishing.png) |
