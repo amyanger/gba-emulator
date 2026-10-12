@@ -446,6 +446,27 @@ TEST(snapshot_dump_writes_text) {
     ASSERT_TRUE(strstr(buf, "\nenemy_move 0 1 GROWL type 3 x0 status\n") != NULL);
 }
 
+TEST(snapshot_includes_mirage_and_dump_line) {
+    build_world();  /* sets the SB1/SB2 pointers and ROM tables */
+    GameState* gs = test_state();
+    fixture_put16(at(SB1 + 0x13E4), 0x1234);
+    fixture_put16(at(SB1 + 0x13E6), 0x5678);
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(gs->snap.valid);
+    ASSERT_TRUE(gs->snap.mirage.valid);
+    ASSERT_EQ_HEX(gs->snap.mirage.value, 0x12345678);
+    char buf[2048] = {0};
+    FILE* f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    ASSERT_TRUE(game_dump(&gs->snap, f));
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    ASSERT_TRUE(strstr(buf, "mirage value 12345678") != NULL);
+}
+
 void run_game_snapshot_tests(void) {
     TEST_SUITE("game_snapshot");
     RUN_TEST(snapshot_without_profile_explains);
@@ -463,4 +484,5 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_out_of_range_ids_show_unknown);
     RUN_TEST(snapshot_clamps_party_count);
     RUN_TEST(snapshot_dump_writes_text);
+    RUN_TEST(snapshot_includes_mirage_and_dump_line);
 }

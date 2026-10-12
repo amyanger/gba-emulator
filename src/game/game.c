@@ -2,7 +2,9 @@
 #include "game/battle_info.h"
 #include "game/gen3_text.h"
 #include "gba.h"
+#include "cartridge/rtc.h"
 #include <string.h>
+#include <time.h>
 
 /* SaveBlock1 / SaveBlock2 (pokeemerald include/global.h) */
 #define SB1_MAP_GROUP    0x04
@@ -427,6 +429,7 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     game_mem_read8(m, p->map_header + MAP_HEADER_MAP_TYPE, &s->map_type);
     map_name(m, p, s->map_name);
     read_party(m, p, s);
+    mirage_read(&gs->mirage, p, m, &gs->clock, sb1, sb2, &s->mirage);
 
     uint8_t enemies[2][BMON_SIZE], player[BMON_SIZE];
     bool have_player;
@@ -451,8 +454,23 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     if (s->context == GAME_CTX_BATTLE_WILD) read_catch_rows(m, p, sb1, sb2, enemies[0], flags, s);
 }
 
+/* The RTC date as the S-3511A reports it; only host-side cartridge state is read. */
+static void read_clock(const GBA* gba, MirageClock* c) {
+    struct tm t;
+    memset(c, 0, sizeof(*c));
+    if (!rtc_effective_tm(&gba->cart.rtc, &t) || t.tm_year < 100 || t.tm_year > 199) return;
+    c->valid = true;
+    c->year = (uint8_t)(t.tm_year - 100);
+    c->month = (uint8_t)(t.tm_mon + 1);
+    c->day = (uint8_t)t.tm_mday;
+    c->hour = (uint8_t)t.tm_hour;
+    c->minute = (uint8_t)t.tm_min;
+    c->second = (uint8_t)t.tm_sec;
+}
+
 void game_update(GameState* gs, const GBA* gba) {
     GameMem m = { gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size };
+    read_clock(gba, &gs->clock);
     game_update_mem(gs, &m);
 }
 
@@ -478,6 +496,16 @@ bool game_dump(const GameSnapshot* s, FILE* out) {
                       p->ivs[2], p->ivs[3], p->ivs[4], p->ivs[5], p->evs[0], p->evs[1], p->evs[2],
                       p->evs[3], p->evs[4], p->evs[5], p->hp_type, p->hp_power, p->ability,
                       p->item, p->friendship, (unsigned)p->exp_to_next, p->egg ? " egg" : "") >= 0;
+    }
+    if (s->mirage.valid) {
+        const MirageInfo* mi = &s->mirage;
+        ok &= fprintf(out, "mirage value %08X clock_set %d known %d pending %u today %d/%u %s\n",
+                      (unsigned)mi->value, mi->clock_set, mi->clock_known, mi->pending,
+                      (int)mi->today.where, mi->today.slot, mi->today.name) >= 0;
+        for (uint8_t i = 0; i < mi->forecast_count; i++)
+            ok &= fprintf(out, "mirage_next %u %d/%u %s\n", mi->forecast[i].days,
+                          (int)mi->forecast[i].where, mi->forecast[i].slot,
+                          mi->forecast[i].name) >= 0;
     }
     for (uint8_t i = 0; i < s->enemy_count; i++) {
         const GameEnemy* e = &s->enemies[i];
