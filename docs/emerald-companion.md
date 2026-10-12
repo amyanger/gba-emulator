@@ -18,8 +18,9 @@ Emerald Companion is a side panel that shows live info from your Pokemon Emerald
 | F10 | Cycle the page: Auto, Party, Route, Nuzlocke. Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
 | [ and ] | Select the previous or next Pokemon on the Party page, or switch views on the Nuzlocke page |
 | N | Start a Nuzlocke run, on the Nuzlocke page |
+| J, twice | Move the clock to the next Mirage Island day, on the Route page |
 
-On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is set to use F1, F2 and so on as standard function keys. `[`, `]` and `N` only work on their pages, and only when they are not bound to a GBA button in a custom keymap.
+On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is set to use F1, F2 and so on as standard function keys. `[`, `]`, `N` and `J` only work on their pages, and only when they are not bound to a GBA button in a custom keymap.
 
 ## Battle
 
@@ -40,6 +41,12 @@ Each Pokemon's nature, ability, held item, Hidden Power type and power, friendsh
 The name of the route, town or city you're in, read from the game's region map, and its wild encounter table with level ranges and odds. Pokemon you've caught are marked with a check.
 
 ![Route page listing Route 101's wild Pokemon](screenshots/panel-route.png)
+
+### Mirage Island
+
+Mirage Island shows up on Route 130 on days when the low half of a party Pokemon's personality value matches a random value the game rolls once a day. The card at the bottom of the Route page tells you whether it's up today and which Pokemon raises it. If the match is in your PC, it names the box, so you can put that Pokemon in your party. It also lists the next three days one of your Pokemon will raise it, counting your whole PC.
+
+Press J twice within three seconds to move the cartridge clock to the first of those days. Only the clock moves. The game catches up the next time you go through a door (not inside a Pokemon Center), so have the named Pokemon in your party when you get to Route 130. Berries, Shoal Cave tides and the game's other daily events move forward too, and there is no way to move the clock back from here.
 
 ## Nuzlocke
 

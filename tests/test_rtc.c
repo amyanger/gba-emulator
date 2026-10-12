@@ -296,6 +296,25 @@ TEST(rtc_sav_trailer_roundtrip) {
     unlink(path);
 }
 
+/* A save with a trailer is a chip whose battery kept it running: 24-hour mode, POWER
+ * clear. Emerald's SiiRtcProbe force-resets a chip in 12-hour mode, and the reset
+ * zeroes the offset, so the clock would jump back on every launch. */
+TEST(rtc_sav_trailer_survives_game_probe) {
+    const char* path = "/tmp/gba_rtc_probe_test.sav";
+    unlink(path);
+
+    Cartridge a; prep_cart_for_save(&a, path);
+    a.rtc.offset_secs = 2545LL * 86400;
+    cartridge_save_to_file(&a);
+
+    Cartridge b; prep_cart_for_save(&b, path);
+    cartridge_load_save_file(&b);
+    unlink(path);
+    ASSERT_EQ(b.rtc.offset_secs, 2545LL * 86400);
+    ASSERT_TRUE(b.rtc.status_reg & 0x40);
+    ASSERT_TRUE(!(b.rtc.status_reg & 0x80));
+}
+
 TEST(rtc_sav_legacy_no_trailer) {
     const char* path = "/tmp/gba_rtc_legacy_test.sav";
     unlink(path);
@@ -415,6 +434,60 @@ TEST(eeprom_writes_dispatch_through_bus_write16) {
     gba_destroy(&gba);
 }
 
+static time_t s_fixed_now;
+static time_t fixed_time(time_t* t) {
+    if (t) *t = s_fixed_now;
+    return s_fixed_now;
+}
+
+static time_t local_time_at(int y, int mon, int d, int h) {
+    struct tm t = {0};
+    t.tm_year = y - 1900; t.tm_mon = mon - 1; t.tm_mday = d; t.tm_hour = h; t.tm_isdst = -1;
+    return mktime(&t);
+}
+
+TEST(rtc_advance_days_keeps_wall_time) {
+    Cartridge c = make_cart();
+    struct tm t;
+    s_fixed_now = local_time_at(2026, 3, 1, 12);
+    rtc_set_time_source(fixed_time);
+    /* 212 days after 2026-03-01 is 2026-09-29; in most zones this crosses a DST change. */
+    ASSERT_TRUE(rtc_advance_days(&c.rtc, 212));
+    ASSERT_TRUE(rtc_effective_tm(&c.rtc, &t));
+    rtc_set_time_source(NULL);
+    ASSERT_EQ(t.tm_year, 126);
+    ASSERT_EQ(t.tm_mon, 8);
+    ASSERT_EQ(t.tm_mday, 29);
+    ASSERT_EQ(t.tm_hour, 12);
+}
+
+TEST(rtc_advance_days_crosses_year) {
+    Cartridge c = make_cart();
+    struct tm t;
+    s_fixed_now = local_time_at(2026, 12, 31, 23);
+    rtc_set_time_source(fixed_time);
+    ASSERT_TRUE(rtc_advance_days(&c.rtc, 1));
+    ASSERT_TRUE(rtc_effective_tm(&c.rtc, &t));
+    rtc_set_time_source(NULL);
+    ASSERT_EQ(t.tm_year, 127);
+    ASSERT_EQ(t.tm_mon, 0);
+    ASSERT_EQ(t.tm_mday, 1);
+    ASSERT_EQ(t.tm_hour, 23);
+}
+
+TEST(rtc_advance_days_stacks_on_existing_offset) {
+    Cartridge c = make_cart();
+    struct tm t;
+    s_fixed_now = local_time_at(2026, 1, 10, 9);
+    rtc_set_time_source(fixed_time);
+    c.rtc.offset_secs = 5 * 86400; /* game already set the clock 5 days ahead */
+    ASSERT_TRUE(rtc_advance_days(&c.rtc, 3));
+    ASSERT_TRUE(rtc_effective_tm(&c.rtc, &t));
+    rtc_set_time_source(NULL);
+    ASSERT_EQ(t.tm_mday, 18);
+    ASSERT_EQ(t.tm_hour, 9);
+}
+
 void run_rtc_tests(void) {
     printf("\nRTC tests:\n");
     RUN_TEST(gpio_power_on_defaults);
@@ -430,9 +503,13 @@ void run_rtc_tests(void) {
     RUN_TEST(rtc_e2e_datetime_read_via_cartridge);
     RUN_TEST(rtc_sav_trailer_roundtrip);
     RUN_TEST(rtc_sav_legacy_no_trailer);
+    RUN_TEST(rtc_sav_trailer_survives_game_probe);
     RUN_TEST(rtc_savestate_midtransaction);
     RUN_TEST(gpio_writes_dispatch_through_bus_write16);
     RUN_TEST(gpio_bus_write32_hits_both_registers);
     RUN_TEST(gpio_byte_writes_to_rom_bus_ignored);
     RUN_TEST(eeprom_writes_dispatch_through_bus_write16);
+    RUN_TEST(rtc_advance_days_keeps_wall_time);
+    RUN_TEST(rtc_advance_days_crosses_year);
+    RUN_TEST(rtc_advance_days_stacks_on_existing_offset);
 }

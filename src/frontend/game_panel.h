@@ -48,4 +48,19 @@ typedef struct {
 } RouteLayout;
 void game_panel_route_layout(const GameSnapshot* s, RouteLayout* out);
 
+typedef enum {
+    MIRAGE_KEY_IGNORE,     /* not in the overworld or no Mirage data */
+    MIRAGE_KEY_NOT_SET,    /* game clock not set yet */
+    MIRAGE_KEY_ALREADY_UP, /* a party Pokemon matches today */
+    MIRAGE_KEY_NO_MATCH,   /* nothing to jump to */
+    MIRAGE_KEY_ARM,        /* first press: confirm with a second one */
+    MIRAGE_KEY_JUMP        /* second press within 3 s: jump forecast[0].days */
+} MirageKey;
+
+typedef struct { uint32_t armed_ms; uint16_t days; } MirageArm;
+
+/* J on the Route page. Arms on the first press; a second one within 3 s for the same
+ * target day returns MIRAGE_KEY_JUMP and disarms. */
+MirageKey game_panel_mirage_key(const GameSnapshot* s, uint32_t now_ms, MirageArm* arm);
+
 #endif // GAME_PANEL_H

@@ -125,6 +125,7 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 | F10 | Cycle the Emerald Companion page: Auto, Party, Route, Nuzlocke (Auto shows the battle page during battles; a battle switches to Auto and the old page returns afterwards) |
 | [ and ] | Select the previous or next Pokemon on the Party page, or switch Nuzlocke views (unless bound to a GBA button) |
 | N | Start a Nuzlocke run, on the Nuzlocke page (unless bound to a GBA button) |
+| J, twice | Move the clock to the next Mirage Island day, on the Route page (unless bound to a GBA button) |
 | F5 | Save state to current slot |
 | F6 | Edit label of current save-state slot |
 | F7 | Open save-state slot picker |

@@ -19,6 +19,11 @@
 #define CONTENT_BOTTOM 476.0f   /* bottom of the page clip */
 #define ROUTE_LIST_Y   78.0f    /* below the tabs (end at 42) and the map title */
 #define ROUTE_LIST_END 452.0f   /* above the footer */
+#define MIRAGE_ROW_H   17.0f
+#define MIRAGE_CARD_H  (SECTION_ADV + 5 * MIRAGE_ROW_H)  /* title, today, 3 forecast rows, hint */
+#define MIRAGE_Y       (ROUTE_LIST_END - MIRAGE_CARD_H)
+#define MIRAGE_GAP     10.0f
+#define MIRAGE_ARM_MS  3000u
 
 #define TIMES "\xC3\x97"      /* × */
 #define MINUS "\xE2\x88\x92"  /* − */
@@ -583,10 +588,15 @@ static void route_heights(const GameSnapshot* s, RouteLayout* l) {
     }
 }
 
+/* The encounter list ends higher when the Mirage card sits under it. */
+static float route_list_end(const GameSnapshot* s) {
+    return s->mirage.valid ? MIRAGE_Y - MIRAGE_GAP : ROUTE_LIST_END;
+}
+
 void game_panel_route_layout(const GameSnapshot* s, RouteLayout* out) {
     static const float pitch[2][3] = {{SECTION_ADV, 19.0f, 8.0f}, {16.0f, 16.0f, 4.0f}};
     memset(out, 0, sizeof(*out));
-    out->avail = ROUTE_LIST_END - ROUTE_LIST_Y;
+    out->avail = route_list_end(s) - ROUTE_LIST_Y;
     if (!s->has_encounters) return;
     /* Roomy then tight in one column, then the same with rods in a second column. */
     for (int two = 0; two < 2; two++) {
@@ -625,6 +635,80 @@ void game_panel_route_layout(const GameSnapshot* s, RouteLayout* out) {
     }
 }
 
+static void mirage_where(const MirageHit* h, char* out, size_t size) {
+    if (h->where == MIRAGE_PARTY)
+        snprintf(out, size, "party");
+    else
+        snprintf(out, size, "Box %u", h->slot);
+}
+
+static void draw_mirage(UiCanvas* c, const MirageInfo* mi, float top) {
+    char buf[80], where[12];
+    float y = top, w = RIGHT - LEFT;
+    section(c, LEFT, y, w, "MIRAGE ISLAND");
+    y += SECTION_ADV;
+    if (!mi->clock_set) {
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT, y, w, UI_ALIGN_LEFT, UI_MUTED,
+                "Can appear once the game's clock is set");
+        return;
+    }
+    Name n = title(mi->today.name);
+    mirage_where(&mi->today, where, sizeof(where));
+    if (mi->today.where == MIRAGE_PARTY) {
+        snprintf(buf, sizeof(buf), "Up today: %s (%s)", n.s, where);
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, LEFT, y, w, UI_ALIGN_LEFT, UI_GOOD, buf);
+    } else if (mi->today.where == MIRAGE_BOX) {
+        snprintf(buf, sizeof(buf), "Not up. Put %s (%s) in your party for today", n.s, where);
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT, y, w, UI_ALIGN_LEFT, UI_MID, buf);
+    } else {
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT, y, w, UI_ALIGN_LEFT, UI_MUTED,
+                "Not up today");
+    }
+    y += MIRAGE_ROW_H;
+    for (uint8_t i = 0; i < mi->forecast_count; i++) {
+        const MirageHit* h = &mi->forecast[i];
+        Name fn = title(h->name);
+        snprintf(buf, sizeof(buf), "In %u day%s", h->days, h->days == 1 ? "" : "s");
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, LEFT, y, 100.0f, UI_ALIGN_LEFT, UI_MUTED, buf);
+        mirage_where(h, where, sizeof(where));
+        snprintf(buf, sizeof(buf), "%s (%s)", fn.s, where);
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, LEFT + 100.0f, y, w - 100.0f, UI_ALIGN_LEFT,
+                UI_TEXT, buf);
+        y += MIRAGE_ROW_H;
+    }
+    if (mi->forecast_count == 0)
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, LEFT, y, w, UI_ALIGN_LEFT, UI_MUTED,
+                mi->clock_known ? "None of your Pok\xC3\xA9mon match before 2099"
+                                : "No forecast without the cartridge clock");
+    const char* hint = NULL;
+    if (mi->pending) {
+        snprintf(buf, sizeof(buf), "The next door you go through applies %u day%s", mi->pending,
+                 mi->pending == 1 ? "" : "s");
+        hint = buf;
+    } else if (mi->forecast_count && mi->today.where != MIRAGE_PARTY) {
+        hint = "Press J twice to jump the clock to the first day";
+    }
+    if (hint)
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, top + SECTION_ADV + 4 * MIRAGE_ROW_H, w,
+                UI_ALIGN_LEFT, UI_FAINT, hint);
+}
+
+MirageKey game_panel_mirage_key(const GameSnapshot* s, uint32_t now_ms, MirageArm* arm) {
+    const MirageInfo* mi = &s->mirage;
+    if (!s->valid || s->context != GAME_CTX_OVERWORLD || !mi->valid) return MIRAGE_KEY_IGNORE;
+    if (!mi->clock_set) return MIRAGE_KEY_NOT_SET;
+    if (mi->today.where == MIRAGE_PARTY) return MIRAGE_KEY_ALREADY_UP;
+    if (mi->forecast_count == 0) return MIRAGE_KEY_NO_MATCH;
+    uint16_t days = mi->forecast[0].days;
+    if (arm->armed_ms != 0 && now_ms - arm->armed_ms <= MIRAGE_ARM_MS && arm->days == days) {
+        arm->armed_ms = 0;
+        return MIRAGE_KEY_JUMP;
+    }
+    arm->armed_ms = now_ms ? now_ms : 1;
+    arm->days = days;
+    return MIRAGE_KEY_ARM;
+}
+
 static void draw_route(UiCanvas* c, const GameSnapshot* s, float top) {
     char buf[32];
     float y = top + 4.0f;
@@ -637,7 +721,7 @@ static void draw_route(UiCanvas* c, const GameSnapshot* s, float top) {
     /* The layout keeps whole rows above the footer; the clip is only a backstop. */
     RouteLayout l;
     game_panel_route_layout(s, &l);
-    ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, ROUTE_LIST_END - top});
+    ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, route_list_end(s) - top});
     const float cx[2] = {LEFT, COL2_X}, cw = l.two_columns ? COL_W : RIGHT - LEFT;
     float cy[2] = {ROUTE_LIST_Y, ROUTE_LIST_Y};
     bool any[2] = {false, false};
@@ -665,6 +749,7 @@ static void draw_route(UiCanvas* c, const GameSnapshot* s, float top) {
                 "No wild Pok\xC3\xA9mon here");
 
     ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, PANEL_H - top - 4.0f});
+    if (s->mirage.valid) draw_mirage(c, &s->mirage, MIRAGE_Y);
     ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, 456.0f, RIGHT - LEFT, UI_ALIGN_LEFT, UI_FAINT,
             "\xE2\x9C\x93 caught. Not shown: outbreaks, Feebas tiles, roamers, Altering Cave, "
             "lead abilities, Pyramid/Pike.");

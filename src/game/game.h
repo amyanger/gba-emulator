@@ -6,6 +6,7 @@
 #include "game/emerald_profile.h"
 #include "game/pokemon.h"
 #include "game/encounters.h"
+#include "game/mirage.h"
 
 typedef struct GBA GBA;
 
@@ -91,12 +92,15 @@ typedef struct {
     bool has_encounters;
     uint8_t enc_count[ENC_METHOD_COUNT];
     GameEncRow enc[ENC_METHOD_COUNT][12];
+    MirageInfo mirage;
 } GameSnapshot;
 
 typedef struct {
     const GameProfile* profile;
     GameSupport support;
     GameSnapshot snap;
+    MirageCache mirage;  /* owned Pokemon and last forecast, kept between snapshots */
+    MirageClock clock;   /* set by game_update from the cartridge RTC */
 } GameState;
 
 /* Pick the profile for this ROM (NULL when unsupported). */
