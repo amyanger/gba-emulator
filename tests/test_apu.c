@@ -183,6 +183,42 @@ TEST(psg_mixes_at_quarter_of_output_range) {
     free(gba);
 }
 
+TEST(fifo_omit_silences_fifos_and_counts_samples) {
+    GBA* gba = make_gba();
+    APU* apu = &gba->apu;
+
+    apu->soundcnt_x = 0x80;
+    apu->soundcnt_l = 0;
+    apu->soundcnt_h = (uint16_t)((1u << 2) | (1u << 9));   /* FIFO A 100% left */
+    apu->fifo_a_latch = -32;
+    apu->fifo_omit = true;
+
+    uint32_t before = apu->write_pos;
+    uint32_t counted = apu->samples_produced;
+    apu_tick(apu, (int)(apu->sample_period * 8));
+
+    ASSERT_EQ(apu->samples_produced - counted, 8u);
+    for (uint32_t i = 0; i < 16; i++)
+        ASSERT_EQ(apu->sample_buffer[(before * 2 + i) % (SAMPLE_BUFFER_SIZE * 2)], 0);
+
+    free(gba);
+}
+
+TEST(master_disabled_samples_are_counted) {
+    /* The silent master-off path pushes samples too, so it must count
+     * them the same way as the mixed path. */
+    GBA* gba = make_gba();
+    APU* apu = &gba->apu;
+
+    apu->soundcnt_x = 0;
+    uint32_t counted = apu->samples_produced;
+    apu_tick(apu, (int)(apu->sample_period * 8));
+
+    ASSERT_EQ(apu->samples_produced - counted, 8u);
+
+    free(gba);
+}
+
 void run_apu_tests(void) {
     TEST_SUITE("apu");
     RUN_TEST(fifo_full_write_drops_incoming_word);
@@ -192,4 +228,6 @@ void run_apu_tests(void) {
     RUN_TEST(fifo_negative_samples_mix_correctly);
     RUN_TEST(default_bias_gives_symmetric_fifo_swing);
     RUN_TEST(psg_mixes_at_quarter_of_output_range);
+    RUN_TEST(fifo_omit_silences_fifos_and_counts_samples);
+    RUN_TEST(master_disabled_samples_are_counted);
 }

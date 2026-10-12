@@ -29,6 +29,7 @@ typedef struct LinkPeer LinkPeer;
  * Read-only by contract (const). Not emulated state: never saved. */
 struct GBA;
 typedef void (*GbaVblankObserver)(const struct GBA* gba, void* ctx);
+typedef void (*GbaPcHook)(const struct GBA* gba, void* ctx);
 
 struct GBA {
     ARM7TDMI cpu;
@@ -55,6 +56,8 @@ struct GBA {
     bool running;
     GbaVblankObserver vblank_observer;   /* NULL = none */
     void* vblank_observer_ctx;
+    GbaPcHook pc_hook;                   /* NULL = none; not saved */
+    void* pc_hook_ctx;
 
 #ifdef ENABLE_XRAY
     XRayState* xray;
@@ -84,6 +87,10 @@ void gba_run_cycles(GBA* gba, int cycles);
 
 // Install or clear (fn = NULL) the line-160 observer.
 void gba_set_vblank_observer(GBA* gba, GbaVblankObserver fn, void* ctx);
+
+// Install or clear (fn = NULL) a hook that runs before the Thumb
+// instruction at addr executes. Host-side only: never saved.
+void gba_set_pc_hook(GBA* gba, uint32_t addr, GbaPcHook fn, void* ctx);
 
 // Advance the system by one full scanline (1232 cycles), running
 // the orchestrator's per-line state machine: HDraw cycles, HBlank

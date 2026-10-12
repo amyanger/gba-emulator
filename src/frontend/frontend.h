@@ -14,6 +14,7 @@
 #include "frontend/video_filter.h"
 #include "frontend/follower_draw.h"
 #include "game/overworld.h"
+#include "mp2k/mp2k_mixer.h"
 
 // Forward declaration
 typedef struct GBA GBA;
@@ -82,6 +83,11 @@ typedef struct Frontend {
     uint32_t audio_target_bytes;  /* frame-sync queue target: 3x the device pull size */
     AudioOut audio_out;           /* DC blocker + resampler from 32768 Hz to the device rate */
     bool audio_stopped;           /* fade-out queued; the next push fades back in */
+    Mp2kMixer* mp2k;              /* set by main; HQ music renderer */
+    bool hq_music;                /* Settings > Audio switch / H */
+    bool hq_hooked;               /* switch on and the ROM has an MP2K driver */
+    uint32_t hq_seen_hooks;       /* mp2k->hooks at the last check */
+    uint8_t hq_idle;              /* frames since the hook last fired, saturating */
     SDL_GameController* controller;
 
     int scale;
@@ -181,6 +187,11 @@ void frontend_follower_reset(Frontend* fe, GBA* gba);
 void frontend_set_video(Frontend* fe, VideoFilter filter, bool color_correct);
 /* Sets the volume (0-100) and start-muted default and saves them to prefs. */
 void frontend_set_audio(Frontend* fe, int32_t volume, bool start_muted);
+/* HQ music: installs or removes the mixer hook; save writes hq_music to prefs. */
+void frontend_set_hq_music(Frontend* fe, GBA* gba, bool on, bool save);
+void frontend_toggle_hq_music(Frontend* fe, GBA* gba);
+/* Savestate load and rewind: drop HQ voices and pick up live notes again. */
+void frontend_hq_reset(Frontend* fe);
 /* Sets the fast-forward speed (2, 3, 4, 0 = Max) and pause-on-blur, and saves them to prefs. */
 void frontend_set_general(Frontend* fe, uint8_t ff_speed, bool pause_on_blur);
 bool frontend_is_paused(const Frontend* fe);

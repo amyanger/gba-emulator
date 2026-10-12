@@ -534,6 +534,38 @@ void frontend_set_audio(Frontend* fe, int32_t volume, bool start_muted) {
     }
 }
 
+void frontend_set_hq_music(Frontend* fe, GBA* gba, bool on, bool save) {
+    fe->hq_music = on;
+    fe->hq_hooked = on && fe->mp2k && fe->mp2k->detected;
+    if (fe->hq_hooked) {
+        mp2k_mixer_reset(fe->mp2k);
+        gba_set_pc_hook(gba, fe->mp2k->drv.hook_addr, mp2k_mixer_on_hook, fe->mp2k);
+        fe->hq_seen_hooks = fe->mp2k->hooks;
+    } else {
+        gba_set_pc_hook(gba, 0, NULL, NULL);
+    }
+    fe->hq_idle = 255;   /* engaged once the hook fires */
+    if (save && fe->prefs) {
+        prefs_set_bool(fe->prefs, "hq_music", on);
+        if (!prefs_save(fe->prefs)) LOG_WARN("Couldn't save preferences to %s", fe->prefs->path);
+    }
+}
+
+void frontend_toggle_hq_music(Frontend* fe, GBA* gba) {
+    frontend_set_hq_music(fe, gba, !fe->hq_music, true);
+    if (!fe->hq_music)
+        frontend_toast_keyed(fe, "hqmusic", TOAST_INFO, "HQ music off", NULL);
+    else if (fe->hq_hooked)
+        frontend_toast_keyed(fe, "hqmusic", TOAST_INFO, "HQ music on", NULL);
+    else
+        frontend_toast_keyed(fe, "hqmusic", TOAST_INFO, "HQ music not available for this game",
+                             "It needs the standard MP2K sound driver");
+}
+
+void frontend_hq_reset(Frontend* fe) {
+    if (fe->hq_hooked) mp2k_mixer_reset(fe->mp2k);
+}
+
 void frontend_set_general(Frontend* fe, uint8_t ff_speed, bool pause_on_blur) {
     fe->ff_speed = (ff_speed >= 2 && ff_speed <= 4) ? ff_speed : 0;
     fe->pause_on_blur = pause_on_blur;
@@ -870,6 +902,11 @@ void frontend_update_settings(Frontend* fe, GBA* gba) {
         fe->settings.video.color_correct = fe->color_correct;
         fe->settings.audio.volume = fe->volume;
         fe->settings.audio.start_muted = fe->start_muted;
+        fe->settings.audio.hq_music = fe->hq_music;
+        fe->settings.audio.hq_status = !fe->hq_music      ? SETTINGS_HQ_OFF
+                                       : !fe->hq_hooked   ? SETTINGS_HQ_UNAVAILABLE
+                                       : fe->hq_idle < 4  ? SETTINGS_HQ_ACTIVE
+                                                          : SETTINGS_HQ_WAITING;
         fe->settings.general.ff_speed = fe->ff_speed;
         fe->settings.general.pause_on_blur = fe->pause_on_blur;
         fe->settings.controls.pad_connected = fe->controller != NULL;
@@ -891,6 +928,8 @@ void frontend_update_settings(Frontend* fe, GBA* gba) {
         if (fe->settings.audio.changed) {
             fe->settings.audio.changed = false;
             frontend_set_audio(fe, fe->settings.audio.volume, fe->settings.audio.start_muted);
+            if (fe->settings.audio.hq_music != fe->hq_music)
+                frontend_set_hq_music(fe, gba, fe->settings.audio.hq_music, true);
             settle = true;
         }
         if (fe->settings.general.changed) {
@@ -1030,6 +1069,8 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 frontend_toggle_follower(fe, gba);
             if (event.key.keysym.scancode == SDL_SCANCODE_F4 && !event.key.repeat)
                 frontend_toggle_overworld(fe, gba);
+            if (event.key.keysym.scancode == SDL_SCANCODE_H && !event.key.repeat)
+                frontend_toggle_hq_music(fe, gba);
 
             if (event.key.keysym.scancode == SDL_SCANCODE_F9 && !event.key.repeat) {
                 fe->panel_visible = !fe->panel_visible;
@@ -1295,6 +1336,7 @@ void frontend_audio_init(Frontend* fe) {
 #define AUDIO_CHUNK_FRAMES 2048
 static int16_t s_audio_chunk[AUDIO_CHUNK_FRAMES * 2];
 static int16_t s_scaled[SAMPLE_BUFFER_SIZE * 2];   /* input samples scaled by the volume */
+static int16_t s_hq[SAMPLE_BUFFER_SIZE * 2];        /* APU samples plus HQ music */
 static int16_t s_cry_chunk[AUDIO_CHUNK_FRAMES * 2];   /* the follower's cry before the volume */
 
 /* Adds the follower's cry to n output frames at the user's volume. */
@@ -1310,7 +1352,23 @@ static void frontend_mix_cry(Frontend* fe, int16_t* out, uint32_t n) {
     }
 }
 
+/* HQ music stays engaged while its hook keeps firing; when the game stops
+ * calling its mixer, FIFO A/B play again within 4 frames. */
+static bool frontend_hq_engaged(Frontend* fe) {
+    if (!fe->hq_hooked) return false;
+    if (fe->mp2k->hooks != fe->hq_seen_hooks) {
+        fe->hq_seen_hooks = fe->mp2k->hooks;
+        fe->hq_idle = 0;
+    } else if (fe->hq_idle < 255) {
+        fe->hq_idle++;
+    }
+    return fe->hq_idle < 4;
+}
+
 void frontend_audio_stop(Frontend* fe, APU* apu) {
+    /* Drop as many HQ frames as APU frames so the two stay in step. */
+    if (fe->hq_hooked)
+        mp2k_mixer_skip(fe->mp2k, (apu->write_pos - apu->read_pos + SAMPLE_BUFFER_SIZE) % SAMPLE_BUFFER_SIZE);
     apu->read_pos = apu->write_pos;
     if (fe->audio_device == 0 || fe->audio_stopped) return;
     /* Appended after what is already queued, so the ramp starts exactly where
@@ -1328,6 +1386,13 @@ void frontend_push_audio(Frontend* fe, APU* apu) {
         frontend_audio_stop(fe, apu);
         return;
     }
+    bool engaged = frontend_hq_engaged(fe);
+    if (engaged != apu->fifo_omit) {
+        /* Switch sources behind a fade: this frame was mixed the old way. */
+        apu->fifo_omit = engaged;
+        frontend_audio_stop(fe, apu);
+        return;
+    }
     fe->audio_stopped = false;
 
     uint32_t max_in = (uint32_t)((AUDIO_CHUNK_FRAMES - 2) * fe->audio_out.step);
@@ -1338,6 +1403,16 @@ void frontend_push_audio(Frontend* fe, APU* apu) {
         uint32_t count = end - apu->read_pos;
         if (count > max_in) count = max_in;
         const int16_t* in = &apu->sample_buffer[apu->read_pos * 2];
+        if (fe->hq_hooked) {
+            mp2k_mixer_pop(fe->mp2k, s_hq, count);   /* always, to stay in step */
+            if (engaged) {
+                for (uint32_t i = 0; i < count * 2; i++) {
+                    int32_t v = in[i] + s_hq[i];
+                    s_hq[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+                }
+                in = s_hq;
+            }
+        }
         if (fe->volume < 100) {
             settings_audio_scale(s_scaled, in, count * 2, fe->volume);
             in = s_scaled;

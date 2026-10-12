@@ -35,6 +35,7 @@ The apps aren't signed with a paid certificate, so macOS and Windows ask you to 
 - **[Cheats](docs/usage.md#cheats)**: paste CodeBreaker, GameShark or Action Replay codes as found online. Your save is backed up before any cheat runs.
 - **[Link cable](docs/usage.md#link-cable)**: two windows on the same machine can trade and battle.
 - **[Screen filters](docs/usage.md#screen-filters)**: smooth out jagged pixel edges and match the colors of a real GBA screen.
+- **[HQ music](docs/hq-music.md)** (H): game music re-mixed in high quality for games that use the standard MP2K sound driver.
 - **Fast-forward**, frame advance, screenshots and fullscreen.
 
 Emerald Companion, Overworld X-Ray and Following Pokemon only work with the original, unmodified Pokemon Emerald (US/English) ROM. Every other game still runs normally.

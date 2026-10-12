@@ -53,6 +53,7 @@ const char* settings_controls_reserved(int32_t sc) {
     case SDL_SCANCODE_BACKSLASH: return "\\ is frame advance";
     case SDL_SCANCODE_SPACE:     return "Space is pause";
     case SDL_SCANCODE_M:         return "M is mute";
+    case SDL_SCANCODE_H:         return "H switches HQ music";
     default:                     return NULL;
     }
 }

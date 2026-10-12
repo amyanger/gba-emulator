@@ -63,6 +63,10 @@ void apu_on_timer_overflow(APU* apu, int timer_id) {
 /* Append one stereo sample pair to the ring buffer (drops when full;
  * a 1-slot gap distinguishes full from empty). */
 static void apu_push_sample(APU* apu, int16_t left, int16_t right) {
+    /* Counted before the full check: every generated sample advances the
+     * APU clock, including any the ring drops. Both push paths go here. */
+    apu->samples_produced++;
+
     uint32_t pos = apu->write_pos;
     uint32_t next_pos = (pos + 1) % SAMPLE_BUFFER_SIZE;
     if (next_pos == apu->read_pos) {
@@ -160,10 +164,12 @@ static void apu_mix_sample(APU* apu) {
     fifo_b *= BIT(cnt_h, 3) ? 4 : 2;
 
     /* FIFO routing */
-    if (BIT(cnt_h, 9))  left += fifo_a;   /* FIFO A to left */
-    if (BIT(cnt_h, 8))  right += fifo_a;  /* FIFO A to right */
-    if (BIT(cnt_h, 13)) left += fifo_b;   /* FIFO B to left */
-    if (BIT(cnt_h, 12)) right += fifo_b;  /* FIFO B to right */
+    if (!apu->fifo_omit) {
+        if (BIT(cnt_h, 9))  left += fifo_a;   /* FIFO A to left */
+        if (BIT(cnt_h, 8))  right += fifo_a;  /* FIFO A to right */
+        if (BIT(cnt_h, 13)) left += fifo_b;   /* FIFO B to left */
+        if (BIT(cnt_h, 12)) right += fifo_b;  /* FIFO B to right */
+    }
 
     /* --- Apply SOUNDBIAS and clamp ---
      * GBATEK: bits 1-9 hold the bias in place (bit 0 reads as 0), so the

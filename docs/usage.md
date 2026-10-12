@@ -135,6 +135,7 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 | `\` | Frame advance — auto-pauses if running; ignored during fast-forward / rewind |
 | Backspace (hold) | Rewind (60s window, audio muted) |
 | M | Toggle audio mute |
+| H | Toggle HQ music: replays game music in high quality (games using the MP2K sound driver) |
 | Space | Pause / resume emulation |
 | Ctrl+, (Cmd+, on macOS) | Open Settings |
 | F12 | Screenshot (saved next to ROM) |

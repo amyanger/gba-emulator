@@ -51,9 +51,13 @@ typedef struct {
     bool changed;
 } SettingsVideoPage;
 
+typedef enum { SETTINGS_HQ_OFF, SETTINGS_HQ_ACTIVE, SETTINGS_HQ_WAITING, SETTINGS_HQ_UNAVAILABLE } SettingsHqStatus;
+
 typedef struct {
     int32_t volume;   /* 0-100 */
     bool start_muted;
+    bool hq_music;
+    uint8_t hq_status;   /* SettingsHqStatus, shown under the switch */
     bool changed;
 } SettingsAudioPage;
 
@@ -144,10 +148,11 @@ static inline uint32_t settings_id_ff(uint32_t i) { return ui_id("general-ff", i
 #define SETTINGS_ID_HGSS_CHOOSE ui_id("general-hgss", 0)
 #define SETTINGS_ID_FOLLOWER    ui_id("general-follower", 0)
 
-/* The Audio page: volume and start muted. */
+/* The Audio page: volume, start muted and HQ music. */
 void settings_audio_draw(UiCanvas* c, UiInput* in, SettingsAudioPage* p, UiRect content);
 #define SETTINGS_ID_VOLUME      ui_id("audio-volume", 0)
 #define SETTINGS_ID_START_MUTED ui_id("audio-start-muted", 0)
+#define SETTINGS_ID_HQ_MUSIC    ui_id("audio-hq-music", 0)
 /* dst[i] = src[i] * volume / 100 for count int16 samples. */
 void settings_audio_scale(int16_t* dst, const int16_t* src, uint32_t count, int32_t volume);
 

@@ -11,6 +11,8 @@ void settings_audio_scale(int16_t* dst, const int16_t* src, uint32_t count, int3
     for (uint32_t i = 0; i < count; i++) dst[i] = (int16_t)((int32_t)src[i] * volume / 100);
 }
 
+static const char* const k_hq_status[] = {"", "Active", "Waiting for music", "Not available for this game"};
+
 void settings_audio_draw(UiCanvas* c, UiInput* in, SettingsAudioPage* p, UiRect r) {
     ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, r.x, r.y, r.w - 40.0f, UI_ALIGN_LEFT, UI_TEXT, "Audio");
     ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, r.x, r.y + 26.0f, r.w, UI_ALIGN_LEFT, UI_MUTED,
@@ -38,4 +40,18 @@ void settings_audio_draw(UiCanvas* c, UiInput* in, SettingsAudioPage* p, UiRect 
             "Open games with sound off.");
     ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, r.x + 46.0f, y + 18.0f, r.w - 46.0f, UI_ALIGN_LEFT, UI_MUTED,
             "M still turns sound on and off while you play.");
+
+    y += 18.0f + 30.0f;
+    ui_hline(c, r.x, y, r.w, UI_DIVIDER);
+    y += 16.0f;
+    UiRect hrow = {r.x, y, r.w, TOGGLE_H};
+    if (ui_toggle(c, in, SETTINGS_ID_HQ_MUSIC, hrow, &p->hq_music, true)) p->changed = true;
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, r.x + 46.0f, y + TOGGLE_H / 2 - ui_text_cap_middle(c, UI_FONT_REGULAR, UI_SIZE_BODY),
+            r.w - 46.0f, UI_ALIGN_LEFT, UI_TEXT, "HQ music");
+    y += TOGGLE_H + 8.0f;
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, r.x + 46.0f, y, r.w - 46.0f, UI_ALIGN_LEFT, UI_MUTED,
+            "Plays game music in high quality. Press H to switch while you play.");
+    if (p->hq_music && p->hq_status < sizeof(k_hq_status) / sizeof(k_hq_status[0]))
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, r.x + 46.0f, y + 18.0f, r.w - 46.0f, UI_ALIGN_LEFT, UI_DIM,
+                k_hq_status[p->hq_status]);
 }
