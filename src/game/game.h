@@ -8,6 +8,7 @@
 #include "game/encounters.h"
 #include "game/mirage.h"
 #include "game/berry.h"
+#include "game/species_search.h"
 
 typedef struct GBA GBA;
 
@@ -95,6 +96,7 @@ typedef struct {
     GameEncRow enc[ENC_METHOD_COUNT][12];
     MirageInfo mirage;
     BerryView berries;
+    uint8_t dex_caught[52]; /* bit (national-1): owned per FLAG_GET_CAUGHT, zero when !valid */
 } GameSnapshot;
 
 typedef struct {
@@ -104,7 +106,11 @@ typedef struct {
     MirageCache mirage;  /* owned Pokemon and last forecast, kept between snapshots */
     MirageClock clock;   /* set by game_update from the cartridge RTC */
     BerryPlaces places;  /* berry tree places, built from the ROM by game_init */
+    SpeciesIndex search; /* species search index, built from the ROM by game_init */
 } GameState;
+
+/* Item name from the ROM's item table ("--" for 0, "???" when out of range). */
+void game_item_name(const GameMem* m, const GameProfile* p, uint16_t item, char* out);
 
 /* Pick the profile for this ROM (NULL when unsupported). */
 void game_init(GameState* gs, const uint8_t* rom, uint32_t rom_size);

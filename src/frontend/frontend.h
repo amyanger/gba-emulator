@@ -48,6 +48,15 @@ typedef struct Frontend {
     bool berry_alerts;            /* berry toasts; B on the Berries page, prefs berry_alerts */
     BerryAlerts berry_watch;      /* reset on state load and rewind */
     NuzSession* nuz;              /* set by main; N starts a run on the Nuzlocke page */
+    /* Search page: query, focus and selection. While focused, typing goes to the box. */
+    SearchView search;
+    SearchFocusGuard search_guard;
+    bool search_ok;               /* set by main: the ROM has a species index */
+    uint32_t last_search_version; /* what the panel buffer shows */
+    float search_wheel_acc;       /* fractional trackpad travel */
+    int search_wheel_region;      /* region the accumulator belongs to */
+    uint32_t search_caret_ms;     /* caret visible for UI_CARET_MS after this, then blinks */
+    uint32_t last_caret_phase;
     LayoutPlan plan;
     PxRect game_rect, panel_rect; /* drawable pixels */
 
@@ -209,5 +218,9 @@ void frontend_settings_open(Frontend* fe, GBA* gba);
 void frontend_settings_close(Frontend* fe, GBA* gba);
 /* Redraws Settings when input arrived and closes it when it asked to; call before presenting. */
 void frontend_update_settings(Frontend* fe, GBA* gba);
+/* Drops Search box focus (query kept) and stops text input. */
+void frontend_search_unfocus(Frontend* fe);
+/* The Search page is what the panel shows right now. */
+bool frontend_search_shown(const Frontend* fe);
 
 #endif // FRONTEND_H

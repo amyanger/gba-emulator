@@ -93,8 +93,54 @@ TEST(encounters_skip_out_of_range_species) {
     ASSERT_EQ(out[ENC_LAND].entries[0].species, 11);
 }
 
+TEST(header_slots_reads_raw_slots) {
+    build_rom();
+    put_mon(0x300, 4, 6, 5);
+    put_mon(0x304, 4, 6, 5);
+    put_mon(0x308, 7, 9, 6);
+    put_mon(0x30C, 7, 9, 0);       /* empty species is dropped */
+    GameMem m = rom_mem();
+    EncSlot out[12];
+    uint8_t group = 99, num = 99;
+    ASSERT_EQ(encounters_header_slots(&m, 0x08000100, 0, 412, ENC_LAND, &group, &num, out), 11);
+    ASSERT_EQ(group, 0);
+    ASSERT_EQ(num, 16);
+    ASSERT_EQ(out[0].species, 5);
+    ASSERT_EQ(out[0].min_level, 4);
+    ASSERT_EQ(out[0].max_level, 6);
+    ASSERT_EQ(out[0].percent, 20);
+    ASSERT_EQ(out[1].species, 5);   /* same species stays a separate slot */
+    ASSERT_EQ(out[2].species, 6);
+    ASSERT_EQ(out[2].percent, 10);
+    ASSERT_EQ(encounters_header_slots(&m, 0x08000100, 0, 412, ENC_GOOD_ROD, &group, &num, out), 3);
+    ASSERT_EQ(out[0].species, 22);
+    ASSERT_EQ(out[0].percent, 60);
+    ASSERT_EQ(encounters_header_slots(&m, 0x08000100, 0, 412, ENC_WATER, &group, &num, out), 0);
+    ASSERT_EQ(encounters_header_slots(&m, 0x08000100, 1, 412, ENC_LAND, &group, &num, out), 0);
+    ASSERT_EQ(num, 2);
+    ASSERT_EQ(encounters_header_slots(&m, 0x08000100, 2, 412, ENC_LAND, &group, &num, out), -1);
+}
+
+TEST(find_matches_old_behavior) {
+    build_rom();
+    put_mon(0x300, 2, 2, 0xFFFF);
+    GameMem m = rom_mem();
+    EncounterList out[ENC_METHOD_COUNT];
+    ASSERT_TRUE(encounters_find(&m, 0x08000100, 200, 412, 0, 16, out));
+    ASSERT_EQ(out[ENC_LAND].count, 3);
+    ASSERT_EQ(out[ENC_LAND].entries[0].species, 11);
+    ASSERT_EQ(out[ENC_LAND].entries[0].percent, 20);
+    ASSERT_EQ(out[ENC_SUPER_ROD].count, 5);
+    ASSERT_EQ(out[ENC_SUPER_ROD].entries[0].percent, 40);
+    ASSERT_TRUE(encounters_find(&m, 0x08000100, 200, 412, 1, 2, out));
+    ASSERT_EQ(out[ENC_LAND].count, 0);
+    ASSERT_TRUE(!encounters_find(&m, 0x08000100, 200, 412, 9, 9, out));
+}
+
 void run_game_encounters_tests(void) {
     TEST_SUITE("game_encounters");
+    RUN_TEST(header_slots_reads_raw_slots);
+    RUN_TEST(find_matches_old_behavior);
     RUN_TEST(encounters_merge_land_slots_by_species);
     RUN_TEST(encounters_split_fishing_by_rod);
     RUN_TEST(encounters_missing_map_and_terminator);

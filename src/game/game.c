@@ -97,7 +97,7 @@ static void ability_name(const GameMem* m, const GameProfile* p, uint8_t a, char
 static void type_name(const GameMem* m, const GameProfile* p, uint8_t t, char* out) {
     table_name(m, p->type_names, p->type_count, TYPE_NAME_STRIDE, TYPE_NAME_STRIDE, t, out);
 }
-static void item_name(const GameMem* m, const GameProfile* p, uint16_t item, char* out) {
+void game_item_name(const GameMem* m, const GameProfile* p, uint16_t item, char* out) {
     if (item == 0) {
         game_strcpy(out, GAME_NAME_LEN, "--");
         return;
@@ -149,14 +149,21 @@ static bool dex_bit(const GameMem* m, uint32_t base, uint16_t national) {
     return (byte >> ((national - 1u) % 8)) & 1;
 }
 
+/* National dex number of a species, 0 when out of range or unreadable. */
+static uint16_t species_national(const GameMem* m, const GameProfile* p, uint16_t species) {
+    uint16_t national;
+    if (species == 0 || species >= p->species_count) return 0;
+    if (!game_mem_read16(m, p->species_to_national + (species - 1u) * 2, &national) ||
+        national > 52 * 8)
+        return 0;
+    return national;
+}
+
 /* Mirrors GetSetPokedexFlag(FLAG_GET_CAUGHT) without its write-back. */
 static bool dex_caught(const GameMem* m, const GameProfile* p, uint32_t sb1, uint32_t sb2,
                        uint16_t species) {
-    uint16_t national;
-    if (species == 0 || species >= p->species_count) return false;
-    if (!game_mem_read16(m, p->species_to_national + (species - 1u) * 2, &national) ||
-        national == 0 || national > 52 * 8)
-        return false;
+    uint16_t national = species_national(m, p, species);
+    if (national == 0) return false;
     return dex_bit(m, sb2 + SB2_DEX_OWNED, national) && dex_bit(m, sb2 + SB2_DEX_SEEN, national) &&
            dex_bit(m, sb1 + SB1_DEX_SEEN1, national) && dex_bit(m, sb1 + SB1_DEX_SEEN2, national);
 }
@@ -194,7 +201,7 @@ static void fill_party_mon(const GameMem* m, const GameProfile* p, const MonData
     type_name(m, p, pokemon_hidden_power_type(d->ivs), out->hp_type);
     out->hp_power = pokemon_hidden_power_power(d->ivs);
     out->friendship = d->friendship;
-    item_name(m, p, d->held_item, out->item);
+    game_item_name(m, p, d->held_item, out->item);
     out->gender = MON_GENDER_NONE;
     if (species_info(m, p, d->species, info)) {
         out->gender = pokemon_gender(info[SI_GENDER_RATIO], d->personality);
@@ -317,7 +324,7 @@ static void fill_enemy(const GameMem* m, const GameProfile* p, const uint8_t* mo
     e->hp = rd16(mon + BMON_HP);
     e->max_hp = rd16(mon + BMON_MAX_HP);
     ability_name(m, p, ability, e->ability);
-    item_name(m, p, rd16(mon + BMON_ITEM), e->item);
+    game_item_name(m, p, rd16(mon + BMON_ITEM), e->item);
     e->status1 = rd32(mon + BMON_STATUS1);
     type_name(m, p, t1, e->type1);
     if (t2 != t1) type_name(m, p, t2, e->type2);
@@ -372,7 +379,7 @@ static void read_catch_rows(const GameMem* m, const GameProfile* p, uint32_t sb1
         qty ^= (uint16_t)key;
         if (id < BALL_MASTER || id > BALL_PREMIER || qty == 0) continue;
         GameCatchRow* r = &s->catch_rows[s->catch_count++];
-        item_name(m, p, id, r->ball);
+        game_item_name(m, p, id, r->ball);
         r->quantity = qty;
         in.ball = (uint8_t)id;
         r->permille = (int16_t)battle_catch_permille(&in);
@@ -404,6 +411,7 @@ void game_init(GameState* gs, const uint8_t* rom, uint32_t rom_size) {
     gs->profile = game_profile_detect(rom, rom_size, &gs->support);
     GameMem m = { NULL, NULL, rom, rom_size };
     berry_places_build(&gs->places, gs->profile, &m);
+    species_index_build(&gs->search, gs->profile, &m);
 }
 
 void game_update_mem(GameState* gs, const GameMem* m) {
@@ -426,6 +434,11 @@ void game_update_mem(GameState* gs, const GameMem* m) {
         return;
     }
     s->valid = true;
+    for (uint16_t sp = 1; sp < p->species_count; sp++) {
+        uint16_t national = species_national(m, p, sp);
+        if (national != 0 && dex_caught(m, p, sb1, sb2, sp))
+            s->dex_caught[(national - 1u) / 8] |= (uint8_t)(1u << ((national - 1u) % 8));
+    }
     game_mem_read8(m, sb1 + SB1_MAP_GROUP, &s->map_group);
     game_mem_read8(m, sb1 + SB1_MAP_NUM, &s->map_num);
     game_mem_read8(m, p->map_header + MAP_HEADER_MAP_TYPE, &s->map_type);

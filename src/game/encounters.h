@@ -24,6 +24,18 @@ typedef struct {
     EncounterEntry entries[12];
 } EncounterList;
 
+typedef struct {
+    uint16_t species;
+    uint8_t min_level, max_level, percent;
+} EncSlot;
+
+/* Raw slots of wild header `index` for one method (no merging). Returns slot count
+ * written (0 when the method has no table), or -1 at/after the terminator or on a bad read.
+ * group and num receive the header's map. Empty and out-of-range species are skipped. */
+int encounters_header_slots(const GameMem* mem, uint32_t headers, uint16_t index,
+                            uint16_t species_count, EncMethod method,
+                            uint8_t* group, uint8_t* num, EncSlot out[12]);
+
 /* Look up the wild encounter header for a map in the ROM's
  * gWildMonHeaders and merge slots of the same species within each method.
  * Returns false when the map has no header. */

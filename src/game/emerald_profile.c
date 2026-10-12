@@ -59,6 +59,19 @@ const GameProfile g_emerald_profile = {
     .trainer_class_names = 0x0830FCD4, .trainer_class_count = 66,
     .map_groups = 0x08486578, .map_group_count = 34,
 
+    /* Species search: map ids from pret data/maps/map_groups.json, MAPSEC ids from
+     * src/data/region_map/region_map_sections.json, sWildFeebas in src/wild_encounter.c,
+     * incense pairs from src/daycare.c AlterEggSpeciesWithIncenseItem. */
+    .wild_feebas = 0x08553A78,
+    .feebas_map_group = 0, .feebas_map_num = 34,
+    .mirage_map_group = 0, .mirage_map_num = 45,
+    .mirage_mapsec = 71,
+    .dive_map = {{0, 50}, {0, 51}},
+    .dive_surface_mapsec = {39, 41},
+    .postgame_map = {{26, 12}, {26, 13}, {24, 98}, {24, 99}, {24, 100}},
+    .low_tide_mapsec = 67,
+    .incense_baby = {350, 360}, .incense_item = {220, 221},
+
     .player_avatar = 0x02037590,
     .camera = 0x02037334,
     .palette_fade = 0x02037FD4,

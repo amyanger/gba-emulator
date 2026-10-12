@@ -47,6 +47,10 @@ static OverworldFeed s_ow;
 static Mp2kMixer s_mp2k;   /* ~112 KB of buffers: static, never on the stack */
 static FollowerFeed s_fol;
 static HgssAssets s_hgss;      /* ~150 KB: the HeartGold/SoulSilver ROM's follower data */
+/* Search page results and the selected species' detail, rebuilt when the view's version moves. */
+static uint16_t s_search_results[SPECIES_MAX];
+static SpeciesDetail s_search_detail;
+static uint32_t s_search_built_version = UINT32_MAX;   /* nothing built yet */
 static uint16_t s_real_keys;   /* host keys held back from the game during a follower talk */
 static uint16_t s_talk_keys;   /* keys held when a talk ended: hidden from the game until released */
 static Prefs s_prefs;
@@ -122,6 +126,22 @@ static void settings_toast(void* user, ToastKind kind, const char* title, const 
     frontend_toast((Frontend*)user, kind, title, detail);
 }
 
+/* Runs the query and the selected species' detail again after the Search view changed.
+ * Both come from the ROM only; caught marks are drawn from the snapshot. */
+static void search_rebuild(Frontend* fe, GBA* gba) {
+    SearchView* v = &fe->search;
+    if (!s_game.search.ok || v->version == s_search_built_version) return;
+    search_view_set_results(v, species_search_query(&s_game.search, v->query, s_search_results));
+    if (v->result_count > 0) {
+        GameMem rom = {NULL, NULL, gba->cart.rom, gba->cart.rom_size};
+        species_search_detail(&s_game.search, s_game.profile, &rom, s_search_results[v->sel], &s_search_detail);
+        uint16_t visible = 0;
+        uint16_t lines = game_panel_search_detail_lines(&s_search_detail, &visible);
+        search_view_set_detail_lines(v, lines, visible);
+    }
+    s_search_built_version = v->version;
+}
+
 /* Present one frame: clear overlay, render HUD layers, then blit to screen. */
 static void render_with_overlay(Frontend* fe, GBA* gba) {
     frontend_overlay_clear(fe);
@@ -129,19 +149,32 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
     slot_picker_render(fe);
     if (fe->panel_visible && fe->panel_buffer) {
         game_update(&s_game, gba);
-        /* Tracked only while visible: the next update after F9 still sees the change. */
+        /* Tracked only while visible: the next update after F9 still sees the change.
+         * While the player types a search, a battle does not take the page away. */
+        fe->panel_follow.hold = fe->search.focused;
         fe->panel_page = (uint8_t)game_panel_follow_battle((GamePage)fe->panel_page,
                                                            s_game.snap.context, &fe->panel_follow);
+        search_rebuild(fe, gba);
+        /* Caret blink: only while typing on the shown Search page. */
+        uint32_t caret_phase = 0;
+        if (fe->search.focused && frontend_search_shown(fe))
+            caret_phase = (SDL_GetTicks() - fe->search_caret_ms) / UI_CARET_MS;
         /* Redraw only when something on the panel can have changed. */
         if (fe->panel_dirty || fe->last_page != fe->panel_page || fe->last_sel != fe->panel_sel ||
             fe->last_nuz_sub != fe->nuz_sub || fe->last_nuz_version != s_nuz.view_version ||
             fe->last_berry_sel != fe->berry_sel || fe->last_berry_alerts != fe->berry_alerts ||
+            fe->last_search_version != fe->search.version || fe->last_caret_phase != caret_phase ||
             memcmp(&fe->last_snap, &s_game.snap, sizeof(s_game.snap)) != 0) {
             UiCanvas canvas;
             ui_canvas_init(&canvas, fe->panel_buffer, fe->panel_px_w, fe->panel_px_h,
                            fe->panel_density);
+            GamePanelSearch search = {&fe->search, &s_game.search, s_search_results,
+                                      fe->search.result_count > 0 ? &s_search_detail : NULL,
+                                      caret_phase % 2 == 0};
             game_panel_draw(&canvas, &s_game.snap, (GamePage)fe->panel_page, fe->panel_sel,
-                            &s_nuz.view, fe->nuz_sub, fe->berry_sel, fe->berry_alerts);
+                            &s_nuz.view, fe->nuz_sub, fe->berry_sel, fe->berry_alerts, &search);
+            fe->last_search_version = fe->search.version;
+            fe->last_caret_phase = caret_phase;
             fe->last_nuz_sub = fe->nuz_sub;
             fe->last_berry_sel = fe->berry_sel;
             fe->last_berry_alerts = fe->berry_alerts;
@@ -178,8 +211,10 @@ static void print_usage(const char* prog) {
     printf("  --game-dump <file>     Headless: write decoded Emerald state after the run\n");
     printf("  --panel-out <file>     Headless: render the Emerald Companion panel to a PNG after the run\n");
     printf("  --panel-density <f>    Headless: panel pixels per point, 0.5 to 4.0 (default: 1.0)\n");
-    printf("  --panel-page <p>       Headless: panel page, auto|party|route|nuzlocke|berries (default: auto)\n");
-    printf("  --panel-select <n>     Headless: party slot, or Nuzlocke view 0-2 (routes, team, graveyard)\n");
+    printf("  --panel-page <p>       Headless: panel page, auto|party|route|nuzlocke|berries|search (default: auto)\n");
+    printf("  --panel-search <q>     Headless: Search page with this query typed in (implies --panel-page search)\n");
+    printf("  --panel-select <n>     Headless: party slot, Nuzlocke view 0-2 (routes, team, graveyard),\n");
+    printf("                         or the selected Search result (0 is the first)\n");
     printf("  --nuzlocke-file <f>    Headless: track a Nuzlocke run in this file, starting one if it has none\n");
     printf("  --library-folder <dir> Game folder for the library, used when none has been chosen yet\n");
     printf("  --library-out <file>   Render the library for --library-folder to a PNG and exit (no ROM)\n");
@@ -229,6 +264,7 @@ int main(int argc, char* argv[]) {
     const char* panel_page_arg = NULL;
     const char* panel_density_arg = NULL;
     const char* panel_select_arg = NULL;
+    const char* panel_search_arg = NULL;
     const char* xray_out_path = NULL;
     const char* overworld_out_path = NULL;
     const char* video_filter_arg = NULL;
@@ -306,6 +342,8 @@ int main(int argc, char* argv[]) {
             follower_hgss_path = argv[++i];
         } else if (strcmp(argv[i], "--panel-select") == 0 && i + 1 < argc) {
             panel_select_arg = argv[++i];
+        } else if (strcmp(argv[i], "--panel-search") == 0 && i + 1 < argc) {
+            panel_search_arg = argv[++i];
         } else {
             /* Also catches value-taking options with the value missing:
              * they fail the i + 1 < argc guard and fall through here. */
@@ -330,8 +368,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if ((panel_out_path || panel_density_arg || panel_page_arg || panel_select_arg) && !headless) {
-        LOG_ERROR("--panel-out, --panel-density, --panel-page and --panel-select require --headless");
+    if ((panel_out_path || panel_density_arg || panel_page_arg || panel_select_arg || panel_search_arg) &&
+        !headless) {
+        LOG_ERROR("--panel-out, --panel-density, --panel-page, --panel-select and --panel-search require "
+                  "--headless");
         return 1;
     }
     if (nuzlocke_file && !headless) {
@@ -390,21 +430,35 @@ int main(int argc, char* argv[]) {
             panel_page = GAME_PAGE_NUZLOCKE;
         } else if (strcmp(panel_page_arg, "berries") == 0) {
             panel_page = GAME_PAGE_BERRIES;
+        } else if (strcmp(panel_page_arg, "search") == 0) {
+            panel_page = GAME_PAGE_SEARCH;
         } else if (strcmp(panel_page_arg, "auto") != 0) {
-            LOG_ERROR("--panel-page must be auto, party, route, nuzlocke or berries (got %s)", panel_page_arg);
+            LOG_ERROR("--panel-page must be auto, party, route, nuzlocke, berries or search (got %s)",
+                      panel_page_arg);
             return 1;
         }
     }
+    if (panel_search_arg) {
+        if (panel_page_arg && panel_page != GAME_PAGE_SEARCH) {
+            LOG_ERROR("--panel-search needs --panel-page search (got %s)", panel_page_arg);
+            return 1;
+        }
+        panel_page = GAME_PAGE_SEARCH;
+    }
 
+    /* Search results are checked against the result count after the run. */
     uint8_t panel_select = 0;
+    uint16_t search_select = 0;
     if (panel_select_arg) {
         char* end = NULL;
         long v = strtol(panel_select_arg, &end, 10);
-        if (end == panel_select_arg || *end != '\0' || v < 0 || v > 5) {
-            LOG_ERROR("--panel-select must be between 0 and 5 (got %s)", panel_select_arg);
+        long max = panel_page == GAME_PAGE_SEARCH ? SPECIES_MAX - 1 : 5;
+        if (end == panel_select_arg || *end != '\0' || v < 0 || v > max) {
+            LOG_ERROR("--panel-select must be between 0 and %ld (got %s)", max, panel_select_arg);
             return 1;
         }
-        panel_select = (uint8_t)v;
+        if (panel_page == GAME_PAGE_SEARCH) search_select = (uint16_t)v;
+        else panel_select = (uint8_t)v;
     }
 
     if (headless && (link_master_path || link_client_path)) {
@@ -720,12 +774,39 @@ int main(int argc, char* argv[]) {
                 LOG_ERROR("Out of memory rendering --panel-out");
                 rc = 1;
             } else {
+                /* The Search page as if the query had been typed in, focused, caret on. */
+                static SearchView search_view;
+                static uint16_t search_results[SPECIES_MAX];
+                static SpeciesDetail search_detail;
+                GamePanelSearch search = {&search_view, &dump_state.search, search_results, NULL, true};
+                search_view_init(&search_view);
+                search_view_text(&search_view, panel_search_arg ? panel_search_arg : "");
+                search_view_set_focus(&search_view, true);
+                uint16_t n = 0;
+                if (panel_page == GAME_PAGE_SEARCH && dump_state.search.ok)
+                    n = species_search_query(&dump_state.search, search_view.query, search_results);
+                if (search_select > 0 && search_select >= n) {
+                    LOG_ERROR("--panel-select must be below the %u search results (got %u)", (unsigned)n,
+                              (unsigned)search_select);
+                    rc = 1;
+                }
+                search_view.sel = search_select;
+                search_view_set_results(&search_view, n);
+                if (n > 0) {
+                    GameMem rom = {NULL, NULL, gba.cart.rom, gba.cart.rom_size};
+                    species_search_detail(&dump_state.search, dump_state.profile, &rom,
+                                          search_results[search_view.sel], &search_detail);
+                    search.detail = &search_detail;
+                    uint16_t visible = 0;
+                    uint16_t lines = game_panel_search_detail_lines(&search_detail, &visible);
+                    search_view_set_detail_lines(&search_view, lines, visible);
+                }
                 UiCanvas canvas;
                 ui_canvas_init(&canvas, px, w, h, panel_density);
                 game_panel_draw(&canvas, &dump_state.snap, panel_page, panel_select,
                                 nuzlocke_file ? &s_nuz.view : NULL, (uint8_t)(panel_select % NUZ_SUB_COUNT),
-                                panel_select, true);
-                if (!screenshot_save_argb(px, w, h, panel_out_path)) {
+                                panel_select, true, &search);
+                if (rc == 0 && !screenshot_save_argb(px, w, h, panel_out_path)) {
                     LOG_ERROR("Failed to write --panel-out file: %s", panel_out_path);
                     rc = 1;
                 }
@@ -817,6 +898,7 @@ int main(int argc, char* argv[]) {
     fe.prefs = &s_prefs;
     fe.ow_feed = s_game.profile ? &s_ow : NULL;
     fe.nuz = &s_nuz;
+    fe.search_ok = s_game.search.ok;
     VideoFilter pref_filter = VIDEO_FILTER_SHARP;
     video_filter_from_name(prefs_get(&s_prefs, "video_filter"), &pref_filter);
     fe.video_filter = video_filter_arg ? video_filter : pref_filter;

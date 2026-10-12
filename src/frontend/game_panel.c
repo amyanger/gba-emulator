@@ -45,6 +45,10 @@ GamePage game_panel_follow_battle(GamePage page, GameContext ctx, PanelBattleFol
     bool battle = ctx == GAME_CTX_BATTLE_WILD || ctx == GAME_CTX_BATTLE_TRAINER;
     if (battle == f->in_battle) return page;
     f->in_battle = battle;
+    if (f->hold) {
+        f->restore = false;
+        return page;
+    }
     if (battle) {
         f->saved_page = (uint8_t)page;
         f->restore = page != GAME_PAGE_AUTO;
@@ -1376,6 +1380,294 @@ static void draw_berries(UiCanvas* c, const BerryView* v, uint8_t sel, bool aler
     ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, BERRY_FOOT_Y, w, UI_ALIGN_LEFT, UI_FAINT, buf);
 }
 
+/* ---- Search page ---- */
+
+#define SEARCH_BODY_Y  78.0f   /* detail body, level with the first result row */
+#define SEARCH_LINE_H  18.0f
+#define SEARCH_LINES_MAX (16 + 4 * SPECIES_ROWS_MAX)  /* gap, heading, row, note per row, plus text */
+
+typedef enum {
+    SL_HOW_TO, SL_STEP, SL_CAUGHT_AT, SL_HATCH, SL_HATCH_2, SL_INCENSE, SL_NOT_WILD,
+    SL_HEADING, SL_ROW, SL_NOTE, SL_MORE_PLACES, SL_GAP, SL_CHAIN_MORE
+} SearchLineKind;
+
+typedef struct { uint8_t kind, ref; } SearchLine;  /* ref: step or row index */
+
+/* The detail body as one line per slot; drawing and the line count both come from here. */
+static uint16_t search_lines(const SpeciesDetail* d, SearchLine* out) {
+    uint16_t n = 0;
+#define ADD_LINE(k, r) do { if (n < SEARCH_LINES_MAX) out[n++] = (SearchLine){(uint8_t)(k), (uint8_t)(r)}; } while (0)
+    uint8_t steps = d->step_count > 3 ? 3 : d->step_count;
+    switch (d->kind) {
+    case SPECIES_EVOLVE:
+    case SPECIES_EVOLVE_NOT_WILD:
+        ADD_LINE(SL_HOW_TO, 0);
+        for (uint8_t i = 0; i < steps; i++) ADD_LINE(SL_STEP, i);
+        if (d->steps_truncated) ADD_LINE(SL_CHAIN_MORE, 0);
+        ADD_LINE(d->kind == SPECIES_EVOLVE ? SL_CAUGHT_AT : SL_NOT_WILD, 0);
+        break;
+    case SPECIES_BREED:
+        ADD_LINE(SL_HATCH, 0);
+        ADD_LINE(SL_HATCH_2, 0);
+        if (d->incense[0]) ADD_LINE(SL_INCENSE, 0);
+        break;
+    case SPECIES_NOT_WILD:
+        ADD_LINE(SL_NOT_WILD, 0);
+        break;
+    case SPECIES_WILD:
+        break;
+    }
+    if (d->kind == SPECIES_WILD || d->kind == SPECIES_EVOLVE || d->kind == SPECIES_BREED) {
+        uint16_t rows = d->row_count > SPECIES_ROWS_MAX ? SPECIES_ROWS_MAX : d->row_count;
+        for (uint16_t i = 0; i < rows; i++) {
+            if (i == 0 || d->rows[i].method != d->rows[i - 1].method) {
+                /* A blank line separates sections, except right under "X can be caught at". */
+                if (n > 0 && out[n - 1].kind != SL_CAUGHT_AT) ADD_LINE(SL_GAP, 0);
+                ADD_LINE(SL_HEADING, i);
+            }
+            ADD_LINE(SL_ROW, i);
+            if (d->rows[i].flags) ADD_LINE(SL_NOTE, i);
+        }
+        if (d->row_total > rows) ADD_LINE(SL_MORE_PLACES, 0);
+    }
+#undef ADD_LINE
+    return n;
+}
+
+uint16_t game_panel_search_detail_lines(const SpeciesDetail* d, uint16_t* visible) {
+    static SearchLine lines[SEARCH_LINES_MAX];
+    uint16_t n = d ? search_lines(d, lines) : 0;
+    uint16_t fit = (uint16_t)((CONTENT_BOTTOM - SEARCH_BODY_Y) / SEARCH_LINE_H);
+    *visible = n <= fit ? n : (uint16_t)(fit - 1);
+    return n;
+}
+
+static Name search_name(const SpeciesIndex* ix, uint16_t species) {
+    return title(species < SPECIES_MAX ? ix->name[species] : "?");
+}
+
+static bool search_caught(const GameSnapshot* snap, uint16_t national) {
+    if (national == 0 || national > sizeof(snap->dex_caught) * 8) return false;
+    return (snap->dex_caught[(national - 1u) / 8] >> ((national - 1u) % 8)) & 1;
+}
+
+static const char* search_method_name(uint8_t method) {
+    if (method == SROW_DIVE) return "Dive";
+    if (method == SROW_ANY_ROD) return "Any Rod";
+    return game_method_name((EncMethod)method);
+}
+
+static void search_evo_text(const SpeciesStep* st, char* out, size_t size) {
+    Name item = title(st->item);
+    switch (st->method) {
+    case 1: snprintf(out, size, "High friendship"); break;
+    case 2: snprintf(out, size, "High friendship (day)"); break;
+    case 3: snprintf(out, size, "High friendship (night)"); break;
+    case 4: case 11: case 12: case 13: snprintf(out, size, "Lv %u", st->param); break;
+    case 5: snprintf(out, size, "Trade"); break;
+    case 6: snprintf(out, size, "Trade holding %s", item.s); break;
+    case 7: snprintf(out, size, "Use %s", item.s); break;
+    case 8: snprintf(out, size, "Lv %u, Attack > Defense", st->param); break;
+    case 9: snprintf(out, size, "Lv %u, Attack = Defense", st->param); break;
+    case 10: snprintf(out, size, "Lv %u, Attack < Defense", st->param); break;
+    case 14: snprintf(out, size, "Lv %u with a free party slot", st->param); break;
+    case 15: snprintf(out, size, "High Beauty (Pokeblocks)"); break;
+    default: snprintf(out, size, "Special condition"); break;
+    }
+}
+
+static void search_row_line(UiCanvas* c, float x, float y, float w, const SpeciesRow* r) {
+    char lv[24], pct[16], place[SPECIES_MAP_NAME_LEN + 8];
+    if (r->min_level == r->max_level) snprintf(lv, sizeof(lv), "Lv %u" MDOT, r->min_level);
+    else snprintf(lv, sizeof(lv), "Lv %u-%u" MDOT, r->min_level, r->max_level);
+    if (r->pct_lo == r->pct_hi) snprintf(pct, sizeof(pct), "%u%%", r->pct_lo);
+    else snprintf(pct, sizeof(pct), "%u" NDASH "%u%%", r->pct_lo, r->pct_hi);
+    float pw = ui_text(c, UI_FONT_REGULAR, KV_SIZE, x + w, y, 0, UI_ALIGN_RIGHT, UI_TEXT, pct);
+    float lw = ui_text(c, UI_FONT_REGULAR, KV_SIZE, x + w - pw, y, 0, UI_ALIGN_RIGHT, UI_MUTED, lv);
+    game_panel_title_case(r->place, place, sizeof(place));
+    float room = w - pw - lw - 8.0f;
+    if (room > 0) ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, room, UI_ALIGN_LEFT, UI_TEXT, place);
+}
+
+static void search_note_line(UiCanvas* c, float x, float y, float w, uint8_t flags) {
+    static const struct { uint8_t flag; const char* text; } notes[] = {
+        {SROW_MIRAGE, "Mirage Island, only on days it appears"},
+        {SROW_FEEBAS_TILES, "Any rod, 6 hidden tiles"},
+        {SROW_POSTGAME, "After the Hall of Fame"},
+        {SROW_LOW_TIDE, "Low tide"},
+    };
+    char buf[128];
+    size_t n = 0;
+    buf[0] = '\0';
+    for (size_t i = 0; i < sizeof(notes) / sizeof(notes[0]); i++) {
+        if (!(flags & notes[i].flag)) continue;
+        int k = snprintf(buf + n, sizeof(buf) - n, "%s%s", n ? MDOT : "", notes[i].text);
+        if (k < 0 || (size_t)k >= sizeof(buf) - n) break;
+        n += (size_t)k;
+    }
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, x + 10.0f, y, w - 10.0f, UI_ALIGN_LEFT, UI_MUTED, buf);
+}
+
+static void search_detail_line(UiCanvas* c, const SpeciesIndex* ix, const SpeciesDetail* d,
+                               SearchLine line, float y) {
+    const float x = COL2_X, w = RIGHT - COL2_X;
+    char buf[96], how[64];
+    Name n;
+    switch ((SearchLineKind)line.kind) {
+    case SL_HOW_TO:
+        section(c, x, y + 4.0f, w, "HOW TO GET");
+        return;
+    case SL_STEP: {
+        const SpeciesStep* st = &d->steps[line.ref];
+        n = search_name(ix, st->from);
+        search_evo_text(st, how, sizeof(how));
+        snprintf(buf, sizeof(buf), "Evolve %s: %s", n.s, how);
+        break;
+    }
+    case SL_CAUGHT_AT:
+        n = search_name(ix, d->rows_species);
+        snprintf(buf, sizeof(buf), "%s can be caught at", n.s);
+        break;
+    case SL_CHAIN_MORE:
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, w, UI_ALIGN_LEFT, UI_MUTED, "Chain continues");
+        return;
+    case SL_HATCH:
+        n = search_name(ix, d->rows_species);
+        snprintf(buf, sizeof(buf), "Hatches from an egg: breed %s", n.s);
+        break;
+    case SL_HATCH_2:
+        snprintf(buf, sizeof(buf), "or its evolution");
+        break;
+    case SL_INCENSE:
+        n = title(d->incense);
+        snprintf(buf, sizeof(buf), "Hold %s on a parent", n.s);
+        break;
+    case SL_NOT_WILD:
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, w, UI_ALIGN_LEFT, UI_MUTED,
+                "Not found in the wild in Emerald");
+        return;
+    case SL_HEADING: {
+        char upper[16];
+        upper_copy(upper, sizeof(upper), search_method_name(d->rows[line.ref].method));
+        section(c, x, y + 4.0f, w, upper);
+        return;
+    }
+    case SL_ROW:
+        search_row_line(c, x, y, w, &d->rows[line.ref]);
+        return;
+    case SL_NOTE:
+        search_note_line(c, x, y, w, d->rows[line.ref].flags);
+        return;
+    case SL_MORE_PLACES:
+        snprintf(buf, sizeof(buf), "+%u more places", (unsigned)(d->row_total - d->row_count));
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, w, UI_ALIGN_LEFT, UI_MUTED, buf);
+        return;
+    case SL_GAP:
+        return;
+    }
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, w, UI_ALIGN_LEFT, UI_TEXT, buf);
+}
+
+static void search_detail(UiCanvas* c, const GameSnapshot* snap, const GamePanelSearch* s, float top) {
+    static SearchLine lines[SEARCH_LINES_MAX];
+    const SpeciesIndex* ix = s->index;
+    const SpeciesDetail* d = s->detail;
+    char buf[16];
+    float y = top + 4.0f;
+    Name n = search_name(ix, d->species);
+    float name_w = ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, COL2_X, y, 170.0f, UI_ALIGN_LEFT,
+                           UI_TEXT, n.s);
+    uint16_t national = d->species < SPECIES_MAX ? ix->national[d->species] : 0;
+    uint8_t mark = d->species < SPECIES_MAX ? ix->gender_mark[d->species] : 0;
+    MonGender g = mark == 1 ? MON_GENDER_FEMALE : mark == 2 ? MON_GENDER_MALE : MON_GENDER_NONE;
+    snprintf(buf, sizeof(buf), "#%03u", national);
+    title_meta(c, COL2_X + name_w + 8.0f, y, RIGHT - 20.0f, "", g, buf);
+    if (search_caught(snap, national))
+        ui_check(c, RIGHT - 14.0f, y + 3.0f, 14.0f, UI_GOOD);
+
+    uint16_t visible = 0;
+    uint16_t total = game_panel_search_detail_lines(d, &visible);
+    search_lines(d, lines);
+    uint16_t first = s->view->detail_top;
+    if (first > total - visible) first = (uint16_t)(total - visible);
+    for (uint16_t i = 0; i < visible; i++)
+        search_detail_line(c, ix, d, lines[first + i], SEARCH_BODY_Y + i * SEARCH_LINE_H);
+    uint16_t below = (uint16_t)(total - first - visible);
+    if (below) {
+        char more[24];
+        snprintf(more, sizeof(more), "%u more below", (unsigned)below);
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, COL2_X, SEARCH_BODY_Y + visible * SEARCH_LINE_H + 2.0f,
+                RIGHT - COL2_X, UI_ALIGN_LEFT, UI_FAINT, more);
+    }
+}
+
+static void search_list(UiCanvas* c, const GameSnapshot* snap, const GamePanelSearch* s,
+                        const SearchLayout* l) {
+    const SearchView* v = s->view;
+    const SpeciesIndex* ix = s->index;
+    UiRect box = {l->box_x, l->box_y, l->box_w, l->box_h};
+    if (v->focused) {
+        ui_fill_round_rect(c, box, UI_RADIUS, UI_ACCENT);
+        ui_fill_round_rect(c, (UiRect){box.x + 1.0f, box.y + 1.0f, box.w - 2.0f, box.h - 2.0f},
+                           UI_RADIUS - 1.0f, UI_SURFACE);
+    } else {
+        ui_fill_round_rect(c, box, UI_RADIUS, UI_SURFACE);
+    }
+    float tx = box.x + 10.0f, ty = box.y + box.h / 2 - ui_text_cap_middle(c, UI_FONT_REGULAR, UI_SIZE_BODY);
+    float qw = 0;
+    if (v->query[0])
+        qw = ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, tx, ty, box.w - 24.0f, UI_ALIGN_LEFT, UI_TEXT,
+                     v->query);
+    else  /* nudged right so the caret sits before it, not on its first letter */
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, tx + 4.0f, ty, box.w - 28.0f, UI_ALIGN_LEFT, UI_FAINT,
+                "Type a Pokemon name");
+    if (s->caret_on && v->focused)
+        ui_fill_rect(c, (UiRect){tx + qw + (qw > 0 ? 1.0f : 0.0f), box.y + 7.0f, 1.5f, box.h - 14.0f},
+                     UI_TEXT);
+
+    uint16_t count = v->result_count;
+    if (count == 0) {
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, l->list_x + 8.0f, l->list_y + 4.0f, l->list_w - 16.0f,
+                UI_ALIGN_LEFT, UI_MUTED, "No matches");
+        return;
+    }
+    uint16_t first = v->list_top >= count ? (uint16_t)(count - 1) : v->list_top;
+    char num[8];
+    for (uint16_t r = 0; r < l->list_rows && first + r < count; r++) {
+        uint16_t i = (uint16_t)(first + r), sp = s->results[i];
+        float y = l->list_y + r * l->row_h;
+        if (i == v->sel) {
+            ui_fill_round_rect(c, (UiRect){l->list_x, y + 1.0f, l->list_w, l->row_h - 2.0f}, UI_RADIUS,
+                               UI_SELECTED);
+            ui_fill_round_rect(c, (UiRect){l->list_x, y + 4.0f, 2.0f, l->row_h - 8.0f}, 1.0f, UI_ACCENT);
+        }
+        if (sp >= SPECIES_MAX) continue;
+        float ry = y + l->row_h / 2 - ui_text_cap_middle(c, UI_FONT_REGULAR, KV_SIZE);
+        snprintf(num, sizeof(num), "#%03u", ix->national[sp]);
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, l->list_x + 10.0f, ry, 40.0f, UI_ALIGN_LEFT, UI_MUTED, num);
+        Name n = search_name(ix, sp);
+        float nx = l->list_x + 54.0f;
+        float nw = ui_text(c, i == v->sel ? UI_FONT_SEMIBOLD : UI_FONT_REGULAR, KV_SIZE, nx, ry, 170.0f,
+                           UI_ALIGN_LEFT, UI_TEXT, n.s);
+        if (ix->gender_mark[sp])
+            ui_gender(c, nx + nw + 4.0f, y + l->row_h / 2 - 5.5f, 11.0f, ix->gender_mark[sp] == 1);
+        if (search_caught(snap, ix->national[sp]))
+            ui_check(c, l->list_x + l->list_w - 20.0f, ry, 12.0f, UI_GOOD);
+    }
+}
+
+static void draw_search(UiCanvas* c, const GameSnapshot* snap, const GamePanelSearch* s, float top) {
+    if (!s || !s->view || !s->index || !s->index->ok) {
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, PANEL_W / 2, 220.0f, RIGHT - LEFT, UI_ALIGN_CENTER,
+                UI_MUTED, "Search unavailable");
+        return;
+    }
+    SearchLayout l;
+    search_view_layout(&l);
+    search_list(c, snap, s, &l);
+    if (s->detail && s->view->result_count) search_detail(c, snap, s, top);
+}
+
 /* The ROM itself is unsupported: say so plainly, since a hack would otherwise look broken. */
 static void draw_unsupported(UiCanvas* c, GameSupport support) {
     static const char* const hack[] = {
@@ -1406,24 +1698,31 @@ static void draw_unsupported(UiCanvas* c, GameSupport support) {
 }
 
 void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel,
-                     const NuzView* nuz, uint8_t nuz_sub, uint8_t berry_sel, bool berry_alerts) {
-    static const char* const labels[5] = {"Battle", "Party", "Route", "Nuzlocke", "Berries"};
+                     const NuzView* nuz, uint8_t nuz_sub, uint8_t berry_sel, bool berry_alerts,
+                     const GamePanelSearch* search) {
+    static const char* const labels[6] = {"Battle", "Party", "Route", "Nuzlocke", "Berries", "Search"};
     GamePage shown = game_panel_resolve_page(page, snap->context);
     int active = shown == GAME_PAGE_PARTY ? 1 : shown == GAME_PAGE_ENCOUNTERS ? 2
-               : shown == GAME_PAGE_NUZLOCKE ? 3 : shown == GAME_PAGE_BERRIES ? 4 : 0;
+               : shown == GAME_PAGE_NUZLOCKE ? 3 : shown == GAME_PAGE_BERRIES ? 4
+               : shown == GAME_PAGE_SEARCH ? 5 : 0;
     const char* hint = "F10 page";
     if (active == 1) hint = "F10 page   [ ] select";
     else if (active == 3) hint = nuz && nuz->state == NUZ_VIEW_NO_RUN ? "F10 page   N start" : "F10 page   [ ] view";
     else if (active == 4) hint = "F10 page   [ ] place   B alerts";
+    else if (active == 5)
+        hint = search && search->view && search->view->focused ? "Up/Down select   Esc done"
+                                                               : "F10 page   / search";
 
     ui_canvas_unclip(c);
     ui_canvas_clear(c, UI_BG);
-    float top = ui_tabs(c, LEFT, 12.0f, RIGHT - LEFT, labels, 5, active,
+    float top = ui_tabs(c, LEFT, 12.0f, RIGHT - LEFT, labels, 6, active,
                         page == GAME_PAGE_AUTO ? "Auto" : NULL, hint);
 
     ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, PANEL_H - top - 4.0f});
     if (!snap->valid && snap->support != GAME_SUPPORT_OK) {
         draw_unsupported(c, snap->support);
+    } else if (active == 5) {
+        draw_search(c, snap, search, top);
     } else if (active == 3) {
         draw_nuzlocke(c, nuz, top, nuz_sub);
     } else if (!snap->valid) {

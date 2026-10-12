@@ -499,7 +499,29 @@ TEST(snapshot_reads_berries_and_dumps_them) {
     ASSERT_TRUE(strstr(buf, "\nberry 3 ROUTE ONE CHERI stage 5 next 300 ripe 0 yield 3-3 status 1 water 0\n") != NULL);
 }
 
+TEST(snapshot_dex_caught_bits) {
+    build_world();
+    fixture_put16(at(0x08001800 + 4), 3);  /* species 3 -> national 3 for this test */
+    set_dex_caught(1);
+    set_dex_caught(3);
+    at(SB2 + 0x28)[32] |= 0x40;            /* species 2 = national 263: SB2 owned bit only */
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(gs->snap.valid);
+    ASSERT_EQ(gs->snap.dex_caught[0], 0x05);
+    ASSERT_EQ(gs->snap.dex_caught[1], 0);
+    ASSERT_EQ(gs->snap.dex_caught[32] & 0x40, 0);   /* owned alone is not caught */
+    set_dex_caught(263);                            /* the mapping is live: all four flags -> caught */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.dex_caught[32] & 0x40, 0x40);
+    fixture_put32(at(0x03000000), 0);
+    game_update_mem(gs, &m);
+    for (int i = 0; i < 52; i++) ASSERT_EQ(gs->snap.dex_caught[i], 0);
+}
+
 void run_game_snapshot_tests(void) {
+    RUN_TEST(snapshot_dex_caught_bits);
     RUN_TEST(snapshot_reads_berries_and_dumps_them);
     TEST_SUITE("game_snapshot");
     RUN_TEST(snapshot_without_profile_explains);

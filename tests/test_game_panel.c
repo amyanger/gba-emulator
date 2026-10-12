@@ -2,6 +2,8 @@
 #include "frontend/game_panel.h"
 #include "ui/ui_canvas.h"
 #include "ui/ui_theme.h"
+#include "ui/ui_widgets.h"
+#include "frontend/search_view.h"
 
 #define BUF_W 1800
 #define BUF_H 1440
@@ -15,7 +17,8 @@ TEST(panel_page_cycles) {
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_PARTY), GAME_PAGE_ENCOUNTERS);
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_ENCOUNTERS), GAME_PAGE_NUZLOCKE);
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_NUZLOCKE), GAME_PAGE_BERRIES);
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_BERRIES), GAME_PAGE_AUTO);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_BERRIES), GAME_PAGE_SEARCH);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_SEARCH), GAME_PAGE_AUTO);
 }
 
 TEST(panel_auto_page_follows_context) {
@@ -196,16 +199,21 @@ static void fill_party_and_route(GameSnapshot* s) {
     }
 }
 
-static bool draw_checked_nuz(float density, const GameSnapshot* snap, GamePage page, uint8_t sel,
-                             const NuzView* nuz) {
+static bool draw_checked_full(float density, const GameSnapshot* snap, GamePage page, uint8_t sel,
+                              const NuzView* nuz, const GamePanelSearch* search) {
     int w = (int)(600 * density + 0.5f), h = (int)(480 * density + 0.5f);
     for (int i = 0; i < GUARD; i++) s_buf[w * h + i] = SENTINEL;
     UiCanvas c;
     ui_canvas_init(&c, s_buf, w, h, density);
-    game_panel_draw(&c, snap, page, sel, nuz, (uint8_t)(sel % NUZ_SUB_COUNT), sel, true);
+    game_panel_draw(&c, snap, page, sel, nuz, (uint8_t)(sel % NUZ_SUB_COUNT), sel, true, search);
     for (int i = 0; i < GUARD; i++)
         if (s_buf[w * h + i] != SENTINEL) return false;
     return (s_buf[w * h - 1] >> 24) == 0xFF;
+}
+
+static bool draw_checked_nuz(float density, const GameSnapshot* snap, GamePage page, uint8_t sel,
+                             const NuzView* nuz) {
+    return draw_checked_full(density, snap, page, sel, nuz, NULL);
 }
 
 static bool draw_checked(float density, const GameSnapshot* snap, GamePage page, uint8_t sel) {
@@ -315,7 +323,7 @@ TEST(panel_long_names_stay_in_columns) {
     snap.enemy_count = 1;
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL);
     /* Rows between the HP bar and the bottom of the enemy's move list; the gap between
      * the left column (ends at x 292) and the right one (starts at x 308),
      * minus a pixel either side for anti-aliasing. */
@@ -332,7 +340,7 @@ TEST(panel_invalid_snapshot_shows_reason) {
     game_strcpy(snap.reason, sizeof(snap.reason), "Waiting for save data");
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL);
     int lit = 0;
     for (int y = 220; y < 240; y++)
         for (int x = 0; x < 600; x++)
@@ -356,7 +364,7 @@ TEST(panel_unsupported_rom_explains_why) {
         snap.support = kinds[k];
         UiCanvas c;
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true);
+        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL);
         ASSERT_TRUE(lit_rows(160, 190) > 0);  /* heading */
         ASSERT_TRUE(lit_rows(200, 300) > 0);  /* explanation */
     }
@@ -380,7 +388,7 @@ static int lit_rect(int x0, int x1, int y0, int y1, bool tinted) {
 static void draw_1x(const GameSnapshot* snap) {
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true);
+    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL);
 }
 
 /* The enemy's moves sit in the right column under the IVs (which end near y 230). */
@@ -502,7 +510,7 @@ TEST(panel_route_overflow_keeps_whole_rows_and_counts_the_rest) {
     ASSERT_TRUE(l.height[0] <= l.avail && l.height[1] <= l.avail);
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0, NULL, 0, 0, true);
+    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0, NULL, 0, 0, true, NULL);
 }
 
 static void fill_mirage(GameSnapshot* s, MirageWhere today) {
@@ -752,6 +760,241 @@ TEST(panel_berries_more_places_line_stays_above_footer) {
         }
 }
 
+TEST(panel_follow_battle_hold_keeps_page) {
+    PanelBattleFollow f = { 0 };
+    f.hold = true;
+    GamePage page = game_panel_follow_battle(GAME_PAGE_SEARCH, GAME_CTX_BATTLE_WILD, &f);
+    ASSERT_EQ(page, GAME_PAGE_SEARCH);
+    ASSERT_TRUE(f.in_battle);
+    ASSERT_TRUE(!f.restore);
+    page = game_panel_follow_battle(page, GAME_CTX_OVERWORLD, &f);
+    ASSERT_EQ(page, GAME_PAGE_SEARCH);
+    ASSERT_TRUE(!f.in_battle);
+    ASSERT_TRUE(!f.restore);
+    /* Released: the next battle switches to Auto again. */
+    f.hold = false;
+    page = game_panel_follow_battle(page, GAME_CTX_BATTLE_TRAINER, &f);
+    ASSERT_EQ(page, GAME_PAGE_AUTO);
+}
+
+/* Search item names and species that the page title-cases. */
+TEST(panel_title_case_search_names) {
+    char out[GAME_NAME_LEN];
+    game_panel_title_case("FARFETCH'D", out, sizeof(out));
+    ASSERT_STR_EQ(out, "Farfetch'd");
+    game_panel_title_case("PORYGON2", out, sizeof(out));
+    ASSERT_STR_EQ(out, "Porygon2");
+    game_panel_title_case("DEEPSEATOOTH", out, sizeof(out));
+    ASSERT_STR_EQ(out, "Deepseatooth");
+    game_panel_title_case("UP-GRADE", out, sizeof(out));
+    ASSERT_STR_EQ(out, "Up-Grade");
+}
+
+/* search_view.c hard-codes the content top; it must match where the tab bar ends. */
+TEST(panel_search_layout_matches_tabs) {
+    static const float densities[] = {0.8f, 1.0f, 1.5f, 2.0f, 3.0f};
+    static const char* const labels[6] = {"Battle", "Party", "Route", "Nuzlocke", "Berries", "Search"};
+    SearchLayout l;
+    search_view_layout(&l);
+    for (size_t d = 0; d < sizeof(densities) / sizeof(densities[0]); d++) {
+        int w = (int)(600 * densities[d] + 0.5f), h = (int)(480 * densities[d] + 0.5f);
+        UiCanvas c;
+        ui_canvas_init(&c, s_buf, w, h, densities[d]);
+        float top = ui_tabs(&c, 16.0f, 12.0f, 568.0f, labels, 6, 5, NULL, "F10 page   / search");
+        ASSERT_TRUE(top == l.box_y);
+        ASSERT_TRUE(top == l.detail_y);
+    }
+}
+
+static SpeciesIndex s_ix;
+static SpeciesDetail s_detail;
+static uint16_t s_results[SPECIES_MAX];
+
+/* Species id i has national number i; a mix of short, wide and Nidoran names. */
+static void fill_index(SpeciesIndex* ix) {
+    static const char* const names[] = {
+        "RALTS", "KIRLIA", "GARDEVOIR", "NIDORAN", "NIDORAN", "MR. MIME", "HO-OH", "FARFETCH'D",
+        "WWWWWWWWWW", "PORYGON2", "AZURILL", "MARILL", "CLAMPERL", "HUNTAIL", "FEEBAS", "MILOTIC",
+    };
+    memset(ix, 0, sizeof(*ix));
+    ix->ok = true;
+    ix->count = 386;
+    for (uint16_t i = 1; i <= 386; i++) {
+        ix->order[i - 1] = i;
+        ix->national[i] = i;
+        game_strcpy(ix->name[i], SPECIES_NAME_LEN, names[i % 16]);
+        game_strcpy(ix->key[i], SPECIES_KEY_LEN, "x");
+    }
+    ix->gender_mark[4] = 1;
+    ix->gender_mark[5] = 2;
+}
+
+static void fill_rows(SpeciesDetail* d, uint16_t n) {
+    static const char* const places[] = {"ROUTE 119", "MIRAGE ISLAND", "SEAFLOOR CAVERN", "ABANDONED SHIP"};
+    static const uint8_t flags[] = {0, SROW_MIRAGE, SROW_FEEBAS_TILES, SROW_POSTGAME, SROW_LOW_TIDE,
+                                    SROW_MIRAGE | SROW_POSTGAME | SROW_LOW_TIDE | SROW_FEEBAS_TILES};
+    d->row_count = n;
+    d->row_total = n;
+    for (uint16_t i = 0; i < n; i++) {
+        SpeciesRow* r = &d->rows[i];
+        r->method = (uint8_t)(i * (SROW_ANY_ROD + 1) / n);  /* every method, grouped */
+        r->mapsec = (uint8_t)i;
+        game_strcpy(r->place, SPECIES_MAP_NAME_LEN, places[i % 4]);
+        r->min_level = (uint8_t)(i % 3 ? 5 : 100);
+        r->max_level = 100;
+        r->pct_lo = (uint8_t)(i % 2 ? 1 : 100);
+        r->pct_hi = 100;
+        r->flags = flags[i % 6];
+    }
+}
+
+static void search_set(GamePanelSearch* s, SearchView* v, const char* query, uint16_t sel,
+                       const SpeciesDetail* detail) {
+    search_view_init(v);
+    search_view_text(v, query);
+    search_view_set_focus(v, true);
+    uint16_t n = species_search_query(&s_ix, v->query, s_results);
+    v->sel = sel;
+    search_view_set_results(v, n);
+    s->view = v;
+    s->index = &s_ix;
+    s->results = s_results;
+    s->detail = n ? detail : NULL;
+    s->caret_on = true;
+    if (s->detail) {
+        uint16_t visible = 0;
+        uint16_t lines = game_panel_search_detail_lines(s->detail, &visible);
+        search_view_set_detail_lines(v, lines, visible);
+    }
+}
+
+TEST(panel_search_page_draws_in_bounds) {
+    static const float densities[] = {0.8f, 1.0f, 1.5f, 2.0f, 3.0f};
+    static GameSnapshot snap, title_screen;
+    fill_party_and_route(&snap);
+    memset(snap.dex_caught, 0x55, sizeof(snap.dex_caught));
+    memset(&title_screen, 0, sizeof(title_screen));
+    game_strcpy(title_screen.reason, sizeof(title_screen.reason), "Waiting for save data");
+    fill_index(&s_ix);
+    SearchView v;
+    GamePanelSearch s;
+
+    for (size_t d = 0; d < sizeof(densities) / sizeof(densities[0]); d++) {
+        float dn = densities[d];
+        /* No search state, and an index the ROM could not build. */
+        ASSERT_TRUE(draw_checked_full(dn, &snap, GAME_PAGE_SEARCH, 0, NULL, NULL));
+        search_set(&s, &v, "", 0, NULL);
+        s_ix.ok = false;
+        ASSERT_TRUE(draw_checked_full(dn, &snap, GAME_PAGE_SEARCH, 0, NULL, &s));
+        s_ix.ok = true;
+
+        /* Empty query lists everything; a long query that matches nothing. */
+        memset(&s_detail, 0, sizeof(s_detail));
+        s_detail.species = 1;
+        s_detail.kind = SPECIES_WILD;
+        s_detail.rows_species = 1;
+        fill_rows(&s_detail, 3);
+        search_set(&s, &v, "", 0, &s_detail);
+        ASSERT_TRUE(draw_checked_full(dn, &snap, GAME_PAGE_SEARCH, 0, NULL, &s));
+        ASSERT_TRUE(draw_checked_full(dn, &title_screen, GAME_PAGE_SEARCH, 0, NULL, &s));
+        search_set(&s, &v, "WWWWWWWWWWWWWWQ", 0, &s_detail);
+        ASSERT_EQ(v.result_count, 0);
+        ASSERT_TRUE(draw_checked_full(dn, &snap, GAME_PAGE_SEARCH, 0, NULL, &s));
+
+        /* A selection far down the list (list scrolled). */
+        search_set(&s, &v, "", 300, &s_detail);
+        ASSERT_TRUE(v.list_top > 0);
+        ASSERT_TRUE(draw_checked_full(dn, &snap, GAME_PAGE_SEARCH, 0, NULL, &s));
+        v.focused = false;
+        ASSERT_TRUE(draw_checked_full(dn, &snap, GAME_PAGE_SEARCH, 0, NULL, &s));
+
+        /* 128 rows with every method and flag, at the top, the bottom and past it. */
+        fill_rows(&s_detail, SPECIES_ROWS_MAX);
+        s_detail.row_total = 150;
+        search_set(&s, &v, "", 0, &s_detail);
+        ASSERT_TRUE(draw_checked_full(dn, &snap, GAME_PAGE_SEARCH, 0, NULL, &s));
+        v.detail_top = (uint16_t)(v.detail_lines - v.detail_visible);
+        ASSERT_TRUE(draw_checked_full(dn, &snap, GAME_PAGE_SEARCH, 0, NULL, &s));
+        v.detail_top = 0xFFFF;
+        ASSERT_TRUE(draw_checked_full(dn, &snap, GAME_PAGE_SEARCH, 0, NULL, &s));
+
+        /* Evolve: every method word, items in the two-step chain. */
+        for (uint16_t m = 1; m <= 16; m++) {
+            memset(&s_detail, 0, sizeof(s_detail));
+            s_detail.species = 3;
+            s_detail.kind = m == 16 ? SPECIES_EVOLVE_NOT_WILD : SPECIES_EVOLVE;
+            s_detail.rows_species = 1;
+            s_detail.step_count = 2;
+            s_detail.steps[0] = (SpeciesStep){2, m, 100, ""};
+            s_detail.steps[1] = (SpeciesStep){1, 6, 0, ""};
+            game_strcpy(s_detail.steps[0].item, SPECIES_NAME_LEN, "DEEPSEATOOTH");
+            game_strcpy(s_detail.steps[1].item, SPECIES_NAME_LEN, "DEEPSEATOOTH");
+            if (m != 16) fill_rows(&s_detail, 40);
+            search_set(&s, &v, "", 2, &s_detail);
+            ASSERT_TRUE(draw_checked_full(dn, &snap, GAME_PAGE_SEARCH, 0, NULL, &s));
+        }
+        /* Breed with an incense, and a species found nowhere. */
+        memset(&s_detail, 0, sizeof(s_detail));
+        s_detail.species = 10;
+        s_detail.kind = SPECIES_BREED;
+        s_detail.rows_species = 8;
+        game_strcpy(s_detail.incense, SPECIES_NAME_LEN, "SEA INCENSE");
+        fill_rows(&s_detail, 12);
+        search_set(&s, &v, "", 9, &s_detail);
+        ASSERT_TRUE(draw_checked_full(dn, &snap, GAME_PAGE_SEARCH, 0, NULL, &s));
+        memset(&s_detail, 0, sizeof(s_detail));
+        s_detail.species = 10;
+        s_detail.kind = SPECIES_NOT_WILD;
+        ASSERT_TRUE(draw_checked_full(dn, &snap, GAME_PAGE_SEARCH, 0, NULL, &s));
+    }
+}
+
+/* Scrolled to the bottom, the last line (here "+N more places") is on screen. */
+TEST(panel_search_chain_truncated_adds_a_line) {
+    memset(&s_detail, 0, sizeof(s_detail));
+    s_detail.kind = SPECIES_EVOLVE_NOT_WILD;
+    s_detail.step_count = 3;
+    uint16_t visible = 0;
+    uint16_t base = game_panel_search_detail_lines(&s_detail, &visible);
+    s_detail.steps_truncated = true;
+    ASSERT_EQ(game_panel_search_detail_lines(&s_detail, &visible), base + 1);
+}
+
+TEST(panel_search_detail_bottom_shows_last_line) {
+    static GameSnapshot snap;
+    static uint32_t a[600 * 480];
+    fill_party_and_route(&snap);
+    fill_index(&s_ix);
+    memset(&s_detail, 0, sizeof(s_detail));
+    s_detail.species = 1;
+    s_detail.kind = SPECIES_WILD;
+    s_detail.rows_species = 1;
+    fill_rows(&s_detail, 60);
+    s_detail.row_total = 72;
+    SearchView v;
+    GamePanelSearch s;
+    search_set(&s, &v, "", 0, &s_detail);
+    uint16_t visible = 0;
+    uint16_t lines = game_panel_search_detail_lines(&s_detail, &visible);
+    ASSERT_TRUE(lines > visible && visible > 5);
+    ASSERT_EQ(v.detail_lines, lines);
+
+    UiCanvas c;
+    const uint16_t tops[3] = {(uint16_t)(lines - visible), 0xFFFF, (uint16_t)(lines - visible - 1)};
+    const bool last_shown[3] = {true, true, false};
+    for (int t = 0; t < 3; t++) {
+        v.detail_top = tops[t];
+        s_detail.row_total = 72;
+        ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s);
+        memcpy(a, s_buf, sizeof(a));
+        s_detail.row_total = 99;  /* only the last line changes */
+        ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s);
+        ASSERT_EQ(memcmp(a, s_buf, sizeof(a)) != 0, last_shown[t]);
+    }
+}
+
 void run_game_panel_tests(void) {
     RUN_TEST(panel_berries_more_places_line_stays_above_footer);
     RUN_TEST(panel_berry_time_format);
@@ -787,4 +1030,10 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_mirage_key_rearms_after_timeout);
     RUN_TEST(panel_mirage_key_rearms_when_target_changes);
     RUN_TEST(panel_mirage_key_refuses_when_not_useful);
+    RUN_TEST(panel_follow_battle_hold_keeps_page);
+    RUN_TEST(panel_title_case_search_names);
+    RUN_TEST(panel_search_layout_matches_tabs);
+    RUN_TEST(panel_search_page_draws_in_bounds);
+    RUN_TEST(panel_search_chain_truncated_adds_a_line);
+    RUN_TEST(panel_search_detail_bottom_shows_last_line);
 }

@@ -7,9 +7,11 @@
 #include "game/game.h"
 #include "ui/ui_canvas.h"
 #include "frontend/nuzlocke_session.h"
+#include "frontend/search_view.h"
 
 typedef enum {
-    GAME_PAGE_AUTO, GAME_PAGE_PARTY, GAME_PAGE_ENCOUNTERS, GAME_PAGE_NUZLOCKE, GAME_PAGE_BERRIES, GAME_PAGE_COUNT
+    GAME_PAGE_AUTO, GAME_PAGE_PARTY, GAME_PAGE_ENCOUNTERS, GAME_PAGE_NUZLOCKE, GAME_PAGE_BERRIES,
+    GAME_PAGE_SEARCH, GAME_PAGE_COUNT
 } GamePage;
 /* Views inside the Nuzlocke page, switched with [ and ]. */
 typedef enum { NUZ_SUB_ROUTES, NUZ_SUB_TEAM, NUZ_SUB_GRAVEYARD, NUZ_SUB_COUNT } NuzSubView;
@@ -23,14 +25,29 @@ typedef struct {
     bool in_battle;     /* last non-NONE context seen was a battle */
     bool restore;       /* put saved_page back when the battle ends */
     uint8_t saved_page; /* GamePage the user had before the battle */
+    bool hold;          /* while true (typing a search), battles only update in_battle */
 } PanelBattleFollow;
 /* Returns the page to show after the context becomes ctx. GAME_CTX_NONE is ignored. */
 GamePage game_panel_follow_battle(GamePage page, GameContext ctx, PanelBattleFollow* f);
+/* What the Search page draws. The owner runs the query and the detail lookup. */
+typedef struct {
+    const SearchView* view;
+    const SpeciesIndex* index;
+    const uint16_t* results;            /* view->result_count species ids */
+    const SpeciesDetail* detail;        /* NULL when nothing is selected */
+    bool caret_on;                      /* blink phase; drawn only while focused */
+} GamePanelSearch;
 /* Draws the panel into a canvas sized 600*density by 480*density pixels. nuz may be
  * NULL (no tracking); nuz_sub is a NuzSubView. berry_sel picks the open place on the
- * Berries page (0 = the first, which is the current place when it has trees). */
+ * Berries page (0 = the first, which is the current place when it has trees). search
+ * may be NULL; the Search page then says it is unavailable. */
 void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel,
-                     const NuzView* nuz, uint8_t nuz_sub, uint8_t berry_sel, bool berry_alerts);
+                     const NuzView* nuz, uint8_t nuz_sub, uint8_t berry_sel, bool berry_alerts,
+                     const GamePanelSearch* search);
+/* Lines in the Search page's scrolling detail body and how many the drawer shows at once
+ * (one fewer than fit when it needs the "N more below" footer). Feed both to
+ * search_view_set_detail_lines. */
+uint16_t game_panel_search_detail_lines(const SpeciesDetail* d, uint16_t* visible);
 
 /* Berries page helpers, exposed for tests and the frontend. */
 /* "40m", "5h 10m", "1d 9h". */

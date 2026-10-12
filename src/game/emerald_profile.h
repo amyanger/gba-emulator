@@ -69,6 +69,18 @@ typedef struct {
     uint32_t trainer_class_names; uint8_t trainer_class_count;   /* 13-byte stride */
     uint32_t map_groups;          uint8_t map_group_count;       /* pointer per group */
 
+    /* Species search (pret: data/maps/map_groups.json, region_map_sections.json,
+     * src/daycare.c, src/wild_encounter.c) */
+    uint32_t wild_feebas;              /* sWildFeebas {u8 min, u8 max, u16 species} */
+    uint8_t  feebas_map_group, feebas_map_num;   /* Route 119 */
+    uint8_t  mirage_map_group, mirage_map_num;   /* Route 130 land = Mirage Island */
+    uint8_t  mirage_mapsec;                      /* MAPSEC_MIRAGE_ISLAND */
+    uint8_t  dive_map[2][2];                     /* Underwater_Route124, Underwater_Route126 */
+    uint8_t  dive_surface_mapsec[2];             /* MAPSEC_ROUTE_124, MAPSEC_ROUTE_126 */
+    uint8_t  postgame_map[5][2];                 /* Safari NE/SE, Desert Underpass, Artisan B1F/1F */
+    uint8_t  low_tide_mapsec;                    /* MAPSEC_SHOAL_CAVE */
+    uint16_t incense_baby[2], incense_item[2];   /* AlterEggSpeciesWithIncenseItem */
+
     /* Following Pokemon */
     uint32_t player_avatar;        /* 0x02037590 struct PlayerAvatar */
     uint32_t camera;               /* 0x02037334 struct Camera {u8 active; s32 x @4; s32 y @8} */

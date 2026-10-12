@@ -693,6 +693,7 @@ static void frontend_handle_window_event(Frontend* fe, const SDL_Event* event) {
         if (event->window.event == SDL_WINDOWEVENT_SIZE_CHANGED) {
             frontend_layout(fe, false);
         }
+        if (event->window.event == SDL_WINDOWEVENT_FOCUS_LOST) frontend_search_unfocus(fe);
 #if SDL_VERSION_ATLEAST(2, 0, 18)
         if (event->window.event == SDL_WINDOWEVENT_DISPLAY_CHANGED) {
             frontend_layout(fe, true);
@@ -725,6 +726,7 @@ static void release_gba_keys(Frontend* fe, GBA* gba) {
 void frontend_settings_open(Frontend* fe, GBA* gba) {
     if (fe->settings.open) return;
     if (slot_picker_is_open(fe)) slot_picker_close(fe);
+    frontend_search_unfocus(fe);
     fe->settings_was_paused = fe->paused;
     fe->paused = true;
     release_gba_keys(fe, gba);
@@ -1008,6 +1010,148 @@ void frontend_update_settings(Frontend* fe, GBA* gba) {
     if (fe->settings.close_requested) frontend_settings_close(fe, gba);
 }
 
+bool frontend_search_shown(const Frontend* fe) {
+    return fe->panel_visible &&
+           game_panel_resolve_page((GamePage)fe->panel_page, fe->last_snap.context) == GAME_PAGE_SEARCH;
+}
+
+static float frontend_px_per_unit(Frontend* fe) {
+    int win_w = 0, win_h = 0, out_w = 0, out_h = 0;
+    SDL_GetWindowSize(fe->window, &win_w, &win_h);
+    SDL_GetRendererOutputSize(fe->renderer, &out_w, &out_h);
+    return win_w > 0 && out_w > 0 ? (float)out_w / (float)win_w : 1.0f;
+}
+
+/* Window point to panel points; false outside the panel. */
+static bool panel_point(Frontend* fe, int32_t wx, int32_t wy, float* x, float* y) {
+    float ppu = frontend_px_per_unit(fe);
+    float px = (float)wx * ppu - (float)fe->panel_rect.x;
+    float py = (float)wy * ppu - (float)fe->panel_rect.y;
+    if (fe->panel_rect.w <= 0 || fe->panel_density <= 0.0f || px < 0.0f || py < 0.0f ||
+        px >= (float)fe->panel_rect.w || py >= (float)fe->panel_rect.h)
+        return false;
+    *x = px / fe->panel_density;
+    *y = py / fe->panel_density;
+    return true;
+}
+
+/* Focus the box: the game sees no keyboard keys until it is left (the controller
+ * keeps playing), and the IME candidate window sits under the box. */
+static void search_focus(Frontend* fe, GBA* gba) {
+    search_view_set_focus(&fe->search, true);
+    fe->search_wheel_acc = 0.0f;
+    fe->kb_keys = 0;
+    fe->ff_hold = false;
+#ifdef ENABLE_REWIND
+    fe->rewind_hold = false;
+#endif
+    frontend_apply_input(fe, gba);
+    SDL_StartTextInput();
+    SearchLayout l;
+    search_view_layout(&l);
+    float ppu = frontend_px_per_unit(fe), d = fe->panel_density;
+    SDL_Rect r = {(int)(((float)fe->panel_rect.x + l.box_x * d) / ppu),
+                  (int)(((float)fe->panel_rect.y + l.box_y * d) / ppu), (int)(l.box_w * d / ppu),
+                  (int)(l.box_h * d / ppu)};
+    SDL_SetTextInputRect(&r);
+    fe->search_caret_ms = SDL_GetTicks();
+}
+
+void frontend_search_unfocus(Frontend* fe) {
+    if (!fe->search.focused) return;
+    search_view_set_focus(&fe->search, false);
+    fe->search_wheel_acc = 0.0f;
+    SDL_StopTextInput();
+}
+
+/* Left click and wheel on the main window. A click outside the panel only drops focus. */
+static void search_mouse(Frontend* fe, GBA* gba, const SDL_Event* e) {
+    int wx = 0, wy = 0;
+    if (e->type == SDL_MOUSEBUTTONDOWN) {
+        if (e->button.button != SDL_BUTTON_LEFT) return;
+        wx = e->button.x;
+        wy = e->button.y;
+    } else {
+        SDL_GetMouseState(&wx, &wy);
+    }
+    float x = 0.0f, y = 0.0f;
+    if (!panel_point(fe, wx, wy, &x, &y)) {
+        if (e->type == SDL_MOUSEBUTTONDOWN) frontend_search_unfocus(fe);
+        return;
+    }
+    if (!fe->search_ok || !frontend_search_shown(fe)) {
+        fe->search_wheel_acc = 0.0f;
+        return;
+    }
+    SearchLayout l;
+    search_view_layout(&l);
+    if (e->type == SDL_MOUSEWHEEL) {
+        int region = search_view_wheel_region(&l, x, y);
+        if (region != fe->search_wheel_region) fe->search_wheel_acc = 0.0f;
+        fe->search_wheel_region = region;
+#if SDL_VERSION_ATLEAST(2, 0, 18)
+        float dy = e->wheel.preciseY;
+#else
+        float dy = (float)e->wheel.y;
+#endif
+        int n = search_wheel_notches(&fe->search_wheel_acc, dy);   /* SDL: positive y scrolls up */
+        if (n != 0) search_view_wheel(&fe->search, &l, x, y, n);
+        return;
+    }
+    bool was = fe->search.focused;
+    search_view_click(&fe->search, &l, x, y);
+    if (!was && fe->search.focused) search_focus(fe, gba);
+    else if (was && !fe->search.focused) SDL_StopTextInput();
+}
+
+/* While the box has focus: returns true when the event was used up here. */
+static bool search_handle_event(Frontend* fe, const SDL_Event* e) {
+    uint32_t main_id = SDL_GetWindowID(fe->window);
+    switch (e->type) {
+    case SDL_TEXTEDITING:
+        return true;
+    case SDL_TEXTINPUT:
+        if (e->text.windowID == main_id && !fe->search_guard.swallow_text &&
+            search_view_text(&fe->search, e->text.text) != SV_NONE)
+            fe->search_caret_ms = SDL_GetTicks();
+        return true;
+    case SDL_KEYDOWN: {
+        if (e->key.windowID != main_id) return false;
+        int32_t scan = (int32_t)e->key.keysym.scancode;
+        /* Only a new press: a held "/" must not type its own character. */
+        if (!e->key.repeat) fe->search_guard.swallow_text = false;
+        SvKey key = SV_KEY_OTHER;
+        switch (search_route_keydown(scan, (uint16_t)e->key.keysym.mod, e->key.repeat != 0, &key)) {
+        case SV_ROUTE_PASS:
+            return false;
+        case SV_ROUTE_UNFOCUS_PASS:
+            frontend_search_unfocus(fe);
+            return false;
+        case SV_ROUTE_KEY:
+            if (search_view_key(&fe->search, key) == SV_UNFOCUS) {
+                frontend_search_unfocus(fe);
+                search_guard_leave(&fe->search_guard, scan);
+            }
+            fe->search_caret_ms = SDL_GetTicks();
+            return true;
+        case SV_ROUTE_PASTE: {
+            char* clip = SDL_GetClipboardText();
+            if (clip) {
+                if (search_view_text(&fe->search, clip) != SV_NONE) fe->search_caret_ms = SDL_GetTicks();
+                SDL_free(clip);
+            }
+            return true;
+        }
+        case SV_ROUTE_SWALLOW:
+            return true;
+        }
+        return true;
+    }
+    default:
+        return false;
+    }
+}
+
 /* J on the Route page: first press arms, second within 3 s moves the RTC to the next
  * Mirage day. Only the host-side clock offset changes; the game steps its own value
  * on the next map load. */
@@ -1057,6 +1201,9 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             continue;
         }
 
+        /* Every key-up, whoever gets the event, ends a key's focus-leave block. */
+        if (event.type == SDL_KEYUP) search_guard_keyup(&fe->search_guard, (int32_t)event.key.keysym.scancode);
+
         /* Window events come before the slot picker, which swallows everything,
          * so the layout still follows resizes while it is open. */
         if (event.type == SDL_WINDOWEVENT) {
@@ -1084,17 +1231,33 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             }
         }
 
+        /* The Search box takes the keyboard while focused (key-ups still run below). */
+        if (fe->search.focused && search_handle_event(fe, &event)) continue;
+        /* The key that left the box does nothing until it is released. */
+        if (event.type == SDL_KEYDOWN && !fe->search.focused &&
+            search_guard_blocks_keydown(&fe->search_guard, (int32_t)event.key.keysym.scancode))
+            continue;
+
         switch (event.type) {
         case SDL_KEYDOWN: {
+            if (fe->search_ok &&
+                search_focus_key((int32_t)event.key.keysym.sym, event.key.repeat != 0, frontend_search_shown(fe),
+                                 keymap_lookup(event.key.keysym.scancode) != 0)) {
+                fe->search_guard.swallow_text = true;
+                search_focus(fe, gba);
+                break;
+            }
             uint16_t key = keymap_lookup(event.key.keysym.scancode);
-            if (key) {
+            if (key && !fe->search.focused) {
                 fe->kb_keys |= key;
                 frontend_apply_input(fe, gba);
             }
 
             // Escape to quit
-            /* Not on repeat: a held Esc that just closed Settings must not quit. */
-            if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat) {
+            /* Not on repeat: a held Esc that just closed Settings must not quit. Never
+             * on the Search page, where Esc clears and leaves the box. */
+            if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE && !event.key.repeat &&
+                !frontend_search_shown(fe)) {
                 fe->running = false;
                 gba->running = false;
             }
@@ -1147,7 +1310,8 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                     uint8_t order[BERRY_PLACE_MAX];
                     fe->berry_sel = game_panel_select(fe->berry_sel, delta,
                                                       game_panel_berry_places(&fe->last_snap.berries, order));
-                }
+                } else if (shown_page == GAME_PAGE_SEARCH)
+                    search_view_key(&fe->search, delta < 0 ? SV_KEY_UP : SV_KEY_DOWN);
             }
             if (event.key.keysym.scancode == SDL_SCANCODE_B && !event.key.repeat && fe->panel_visible &&
                 shown_page == GAME_PAGE_BERRIES && keymap_lookup(SDL_SCANCODE_B) == 0)
@@ -1279,6 +1443,14 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 fe->rewind_hold = false;
             }
 #endif
+            break;
+        }
+
+        case SDL_MOUSEBUTTONDOWN:
+        case SDL_MOUSEWHEEL: {
+            uint32_t id = event.type == SDL_MOUSEWHEEL ? event.wheel.windowID : event.button.windowID;
+            if (id == SDL_GetWindowID(fe->window) && fe->panel_visible && !slot_picker_is_open(fe))
+                search_mouse(fe, gba, &event);
             break;
         }
 

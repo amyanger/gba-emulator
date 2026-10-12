@@ -77,6 +77,8 @@ void run_video_filter_tests(void);
 void run_hud_tests(void);
 void run_overworld_draw_tests(void);
 void run_nuzlocke_read_tests(void);
+void run_species_search_tests(void);
+void run_search_view_tests(void);
 void run_nuzlocke_tests(void);
 void run_nuzlocke_session_tests(void);
 void run_library_tests(void);
@@ -164,6 +166,8 @@ int main(void) {
     RUN_SUITE(run_hud_tests);
     RUN_SUITE(run_overworld_draw_tests);
     RUN_SUITE(run_nuzlocke_read_tests);
+    RUN_SUITE(run_species_search_tests);
+    RUN_SUITE(run_search_view_tests);
     RUN_SUITE(run_nuzlocke_tests);
     RUN_SUITE(run_nuzlocke_session_tests);
     RUN_SUITE(run_library_tests);
