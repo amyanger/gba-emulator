@@ -381,6 +381,9 @@ void cartridge_load_save_file(Cartridge* cart) {
                 uint64_t u = 0;
                 for (int i = 0; i < 8; i++) u |= (uint64_t)trailer[8 + i] << (i * 8);
                 cart->rtc.offset_secs = (int64_t)u;
+                /* A trailer means the chip kept running on its battery: 24-hour mode,
+                 * POWER clear. Otherwise Emerald's probe resets it and zeroes the offset. */
+                cart->rtc.status_reg = 0x40;
             } else {
                 LOG_WARN("RTC trailer version %u not supported, ignoring", ver);
             }

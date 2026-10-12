@@ -260,3 +260,23 @@ uint8_t rtc_gpio_exchange(RTCState* rtc,
 
     return rtc->sio_out;
 }
+
+bool rtc_effective_tm(const RTCState* rtc, struct tm* out) {
+    time_t eff = g_time_source(NULL) + (time_t)rtc->offset_secs;
+    struct tm* tmp = localtime(&eff);
+    if (!tmp) return false;
+    *out = *tmp;
+    return true;
+}
+
+bool rtc_advance_days(RTCState* rtc, uint32_t days) {
+    time_t now = g_time_source(NULL);
+    struct tm t;
+    if (!rtc_effective_tm(rtc, &t)) return false;
+    t.tm_mday += (int)days;
+    t.tm_isdst = -1;
+    time_t moved = mktime(&t);
+    if (moved == (time_t)-1) return false;
+    rtc->offset_secs = (int64_t)moved - (int64_t)now;
+    return true;
+}

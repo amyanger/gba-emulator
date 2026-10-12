@@ -16,4 +16,11 @@ uint8_t rtc_gpio_exchange(RTCState* rtc,
 /* Test seam. Default source is `time`. Pass NULL to reset. */
 void rtc_set_time_source(time_t (*source)(time_t*));
 
+/* Wall time the chip reports right now (host time + offset). False if it can't be converted. */
+bool rtc_effective_tm(const RTCState* rtc, struct tm* out);
+
+/* Move the clock `days` calendar days ahead at the same wall time. Goes through
+ * mktime so a DST change doesn't shift the hour (and with it, maybe the day). */
+bool rtc_advance_days(RTCState* rtc, uint32_t days);
+
 #endif // RTC_H
