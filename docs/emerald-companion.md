@@ -2,7 +2,7 @@
 
 Emerald Companion is a side panel that shows live info from your Pokemon Emerald game: the wild Pokemon you're fighting, your party's hidden stats, and the encounter table for where you are. Press **F9** to open it next to the game.
 
-**On this page:** [Battle](#battle) · [Party](#party) · [Route](#route) · [Mirage Island](#mirage-island) · [Nuzlocke](#nuzlocke) · [Berries](#berries) · [Details](#details) · [Overworld X-Ray](#overworld-x-ray)
+**On this page:** [Battle](#battle) · [Party](#party) · [Route](#route) · [Mirage Island](#mirage-island) · [Nuzlocke](#nuzlocke) · [Berries](#berries) · [Search](#search) · [Details](#details) · [Overworld X-Ray](#overworld-x-ray)
 
 > [!IMPORTANT]
 > **Emerald Companion only works with the original, unmodified Pokemon Emerald (US/English) ROM.** This is the version it was built and tested with. It's the retail cartridge release, game code `BPEE`, sold in North America and Europe.
@@ -17,13 +17,14 @@ Emerald Companion is a side panel that shows live info from your Pokemon Emerald
 | Key | Panel action |
 |-----|--------------|
 | F9 | Show or hide the panel |
-| F10 | Cycle the page: Auto, Party, Route, Nuzlocke, Berries. Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
+| F10 | Cycle the page: Auto, Party, Route, Nuzlocke, Berries, Search. Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
 | [ and ] | Select the previous or next Pokemon on the Party page, switch views on the Nuzlocke page, or open the previous or next place on the Berries page |
 | N | Start a Nuzlocke run, on the Nuzlocke page |
 | J, twice | Move the clock to the next Mirage Island day, on the Route page |
 | B | Turn berry alerts on or off, on the Berries page |
+| / | Start typing a Pokemon name, on the Search page |
 
-On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is set to use F1, F2 and so on as standard function keys. `[`, `]`, `N`, `J` and `B` only work on their pages, and only when they are not bound to a GBA button in a custom keymap.
+On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is set to use F1, F2 and so on as standard function keys. `[`, `]`, `N`, `J`, `B` and `/` only work on their pages, and only when they are not bound to a GBA button in a custom keymap.
 
 ## Battle
 
@@ -106,13 +107,29 @@ Times are real time, because Emerald's clock is. The countdowns keep moving betw
 
 **Berry alerts.** While you play, with or without the panel open, a toast tells you when a tree becomes ripe, when it needs water for a new stage, when ripe berries are about to drop, and when you arrive somewhere with trees that need you. Trees on the map you're standing on stay quiet, events at the same place share one toast, and they wait until a battle is over. When you open a game, one toast sums up what needs you. Press **B** on the Berries page to turn alerts off or back on.
 
+## Search
+
+Type part of a Pokemon's name and see where to get it in Emerald. Open the Search page with F10, then press `/` or click the box to start typing. The list narrows on every keystroke: an exact name comes first, then names that start with what you typed, then names that contain it. Spaces and punctuation are ignored, so "mr mime" and "hooh" work, and "nidoran" finds both Nidorans.
+
+- **Keys.** Up and Down pick a result, or `[` and `]` when you're not typing. PageUp, PageDown or the mouse wheel scroll the details. Enter or Esc stops typing, and Esc clears the text first if there is any.
+- **While you type.** Keyboard keys don't reach the game or any hotkey, so typing a name won't press buttons. A controller still plays. Esc never quits the emulator on this page, and a battle starting while you type doesn't switch the page away.
+- **Details.** The national dex number and a check if you've caught it, then every wild spot: Grass, Surf, Dive, Rock Smash and the Old, Good and Super Rod, each with levels and encounter chance. When floors of the same place differ, the chance is shown as a range.
+- **Special cases.** Feebas appears on Route 119 with any rod, on one of 6 hidden tiles. Wynaut on Mirage Island shows up only on days the island appears. Places that open after the Hall of Fame are listed under "After the Hall of Fame", and Shoal Cave's low tide spots are marked "Low tide".
+- **Not wild.** The page works back to the nearest Pokemon you can catch and lists the steps. For Gardevoir that is: evolve Kirlia at Lv 30, evolve Ralts at Lv 20, and Ralts is on Route 102. Pokemon that only hatch from eggs say so and tell you which evolved form to breed, and Azurill needs a parent holding Sea Incense. Anything else says "Not found in the wild in Emerald".
+
+![Route 102 with "ra" typed in the Search page: Rattata, Raticate, Raichu and more narrowed down by name, with Ralts picked and its Route 102 grass spot on the right](screenshots/panel-search-typing.png)
+
+![Searching "gardevoir" on Route 102: Gardevoir isn't wild, so the page says to evolve Kirlia at Lv 30 and Ralts at Lv 20, and that Ralts is caught in Route 102's grass](screenshots/panel-search.png)
+
+Gifts, legendaries, trades and roaming Pokemon aren't covered yet. Like the rest of the panel, every name and location is read from your own ROM.
+
 ## Details
 
 The panel sizes itself to the screen's pixel density, so it stays crisp on standard monitors, Windows display scaling, Retina and 4K. `--scale` only sets the size of the game. The panel is 600 by 480 points, the window is at least 480 points tall while the panel is open, and the game is centered vertically. In fullscreen (F11) the game grows to fill the screen with the panel beside it. On Linux X11 the panel uses the display DPI only when it indicates a high-DPI screen; otherwise it uses 1.0.
 
 Every name and number is read from your own ROM at runtime, and nothing from the game ships with the emulator. The panel only reads memory. It never writes to the game, makes no bus accesses, does not change timing, and leaves savestates untouched. Addresses come from the pret/pokeemerald decomp.
 
-Not shown yet: Safari Ball odds, mass outbreaks, Feebas tiles, roamers, Altering Cave variants, lead ability effects (Static, Magnet Pull and similar), and Battle Pyramid and Battle Pike tables. Weather Ball matchups use its base type.
+Not shown yet: Safari Ball odds, mass outbreaks, exact Feebas tile positions, roamers, Altering Cave variants, lead ability effects (Static, Magnet Pull and similar), and Battle Pyramid and Battle Pike tables. Weather Ball matchups use its base type.
 
 To check decoded state without a window, run headless with `--game-dump <file>` (see [Headless mode](usage.md#headless-mode)).
 

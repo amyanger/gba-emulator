@@ -53,6 +53,7 @@ These need the original, unmodified Pokemon Emerald (US/English) ROM. Every othe
 | &nbsp;&nbsp;[Mirage Island](docs/emerald-companion.md#mirage-island) | J, twice | Which of your Pokemon raises Mirage Island today and when it next will, then jump the clock to that day. |
 | &nbsp;&nbsp;[Nuzlocke](docs/emerald-companion.md#nuzlocke) | N | Logs each area's first encounter, every death and any reload after a death. |
 | &nbsp;&nbsp;[Berries](docs/emerald-companion.md#berries) | B | Every berry tree you've planted, with growth, watering and countdowns, plus a toast when berries are ripe, need water or are about to drop. |
+| &nbsp;&nbsp;[Search](docs/emerald-companion.md#search) | / | Type a Pokemon's name to see every wild spot with levels and odds, or how to get it by evolution or breeding. |
 | **[Overworld X-Ray](docs/emerald-companion.md#overworld-x-ray)** | F4 | Trainer sight lines, item names and NPC gifts drawn right on the map. |
 | **[Following Pokemon](docs/usage.md#following-pokemon)** | F1 | Your lead Pokemon walks behind you and talks like it does in HeartGold and SoulSilver, using your own HeartGold or SoulSilver ROM. |
 
@@ -70,6 +71,10 @@ These need the original, unmodified Pokemon Emerald (US/English) ROM. Every othe
 <tr>
 <td><a href="docs/usage.md#following-pokemon"><img src="docs/screenshots/following-talk.png" width="100%" alt="Latios following the player in Lilycove City, saying LATIOS looks very happy! in the HeartGold text box"></a><br><b>Following Pokemon:</b> Latios in Lilycove City</td>
 <td><a href="docs/emerald-companion.md#party"><img src="docs/screenshots/panel-party.png" alt="Party page showing a Torchic's stats, IVs and EVs"></a><br><b>Party:</b> hidden stats for each Pokemon</td>
+</tr>
+<tr>
+<td><a href="docs/emerald-companion.md#search"><img src="docs/screenshots/panel-search-typing.png" alt="Search page with ra typed in, the list narrowed to matching names and Ralts picked, showing its Route 102 grass spot"></a><br><b>Search:</b> the list narrows as you type</td>
+<td><a href="docs/emerald-companion.md#search"><img src="docs/screenshots/panel-search.png" alt="Search page for Gardevoir, showing it evolves from Kirlia at Lv 30 and Ralts at Lv 20, with Ralts caught on Route 102"></a><br><b>Search:</b> not wild? It shows the evolution path</td>
 </tr>
 </table>
 
