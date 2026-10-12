@@ -504,6 +504,108 @@ TEST(panel_route_overflow_keeps_whole_rows_and_counts_the_rest) {
     game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0, NULL, 0);
 }
 
+static void fill_mirage(GameSnapshot* s, MirageWhere today) {
+    s->context = GAME_CTX_OVERWORLD;
+    MirageInfo* mi = &s->mirage;
+    memset(mi, 0, sizeof(*mi));
+    mi->valid = mi->clock_set = mi->clock_known = true;
+    mi->today.where = today;
+    mi->today.slot = today == MIRAGE_BOX ? 14 : 5;
+    game_strcpy(mi->today.name, sizeof(mi->today.name), "CRAWDAUNTXX");
+    mi->forecast_count = 3;
+    const uint16_t days[3] = {7, 3650, 36000};
+    for (int i = 0; i < 3; i++) {
+        mi->forecast[i].where = i ? MIRAGE_BOX : MIRAGE_PARTY;
+        mi->forecast[i].slot = (uint8_t)(i ? 14 : 5);
+        mi->forecast[i].days = days[i];
+        game_strcpy(mi->forecast[i].name, sizeof(mi->forecast[i].name), "FLETCHINDERX");
+    }
+}
+
+TEST(panel_route_mirage_card_shrinks_list) {
+    static GameSnapshot snap;
+    static const uint8_t counts[ENC_METHOD_COUNT] = {12, 12, 12, 12, 12, 12};
+    RouteLayout plain, with;
+    fill_route(&snap, counts);
+    game_panel_route_layout(&snap, &plain);
+    fill_mirage(&snap, MIRAGE_NONE);
+    game_panel_route_layout(&snap, &with);
+    ASSERT_TRUE(with.avail < plain.avail);
+    ASSERT_TRUE(with.height[0] <= with.avail && with.height[1] <= with.avail);
+    ASSERT_EQ(layout_total(&with), 72);
+}
+
+TEST(panel_route_mirage_card_stays_in_bounds) {
+    static const float densities[] = {0.75f, 1.0f, 1.5f, 2.0f, 3.0f};
+    static const MirageWhere states[] = {MIRAGE_NONE, MIRAGE_PARTY, MIRAGE_BOX};
+    static GameSnapshot snap;
+    static const uint8_t counts[ENC_METHOD_COUNT] = {12, 3, 0, 2, 3, 5};
+    for (size_t d = 0; d < sizeof(densities) / sizeof(densities[0]); d++)
+        for (size_t k = 0; k < 3; k++) {
+            fill_route(&snap, counts);
+            fill_mirage(&snap, states[k]);
+            snap.mirage.pending = k == 2 ? 212 : 0;
+            ASSERT_TRUE(draw_checked(densities[d], &snap, GAME_PAGE_ENCOUNTERS, 0));
+            snap.mirage.clock_set = false;
+            ASSERT_TRUE(draw_checked(densities[d], &snap, GAME_PAGE_ENCOUNTERS, 0));
+            snap.mirage.clock_set = true;
+            snap.mirage.forecast_count = 0;
+            ASSERT_TRUE(draw_checked(densities[d], &snap, GAME_PAGE_ENCOUNTERS, 0));
+        }
+}
+
+TEST(panel_mirage_key_arms_then_jumps) {
+    static GameSnapshot snap;
+    memset(&snap, 0, sizeof(snap));
+    snap.valid = true;
+    fill_mirage(&snap, MIRAGE_BOX);
+    MirageArm arm = {0, 0};
+    ASSERT_EQ(game_panel_mirage_key(&snap, 1000, &arm), MIRAGE_KEY_ARM);
+    ASSERT_EQ(game_panel_mirage_key(&snap, 2500, &arm), MIRAGE_KEY_JUMP);
+    /* Disarmed after the jump: the next press arms again. */
+    ASSERT_EQ(game_panel_mirage_key(&snap, 2600, &arm), MIRAGE_KEY_ARM);
+}
+
+TEST(panel_mirage_key_rearms_after_timeout) {
+    static GameSnapshot snap;
+    memset(&snap, 0, sizeof(snap));
+    snap.valid = true;
+    fill_mirage(&snap, MIRAGE_NONE);
+    MirageArm arm = {0, 0};
+    ASSERT_EQ(game_panel_mirage_key(&snap, 1000, &arm), MIRAGE_KEY_ARM);
+    ASSERT_EQ(game_panel_mirage_key(&snap, 4001, &arm), MIRAGE_KEY_ARM);
+    ASSERT_EQ(game_panel_mirage_key(&snap, 4100, &arm), MIRAGE_KEY_JUMP);
+}
+
+TEST(panel_mirage_key_rearms_when_target_changes) {
+    static GameSnapshot snap;
+    memset(&snap, 0, sizeof(snap));
+    snap.valid = true;
+    fill_mirage(&snap, MIRAGE_NONE);
+    MirageArm arm = {0, 0};
+    ASSERT_EQ(game_panel_mirage_key(&snap, 1000, &arm), MIRAGE_KEY_ARM);
+    snap.mirage.forecast[0].days = 6;
+    ASSERT_EQ(game_panel_mirage_key(&snap, 1500, &arm), MIRAGE_KEY_ARM);
+}
+
+TEST(panel_mirage_key_refuses_when_not_useful) {
+    static GameSnapshot snap;
+    memset(&snap, 0, sizeof(snap));
+    snap.valid = true;
+    MirageArm arm = {0, 0};
+    fill_mirage(&snap, MIRAGE_PARTY);
+    ASSERT_EQ(game_panel_mirage_key(&snap, 1000, &arm), MIRAGE_KEY_ALREADY_UP);
+    fill_mirage(&snap, MIRAGE_NONE);
+    snap.mirage.forecast_count = 0;
+    ASSERT_EQ(game_panel_mirage_key(&snap, 1000, &arm), MIRAGE_KEY_NO_MATCH);
+    snap.mirage.clock_set = false;
+    ASSERT_EQ(game_panel_mirage_key(&snap, 1000, &arm), MIRAGE_KEY_NOT_SET);
+    fill_mirage(&snap, MIRAGE_NONE);
+    snap.context = GAME_CTX_BATTLE_WILD;
+    ASSERT_EQ(game_panel_mirage_key(&snap, 1000, &arm), MIRAGE_KEY_IGNORE);
+    ASSERT_EQ(arm.armed_ms, 0);
+}
+
 void run_game_panel_tests(void) {
     TEST_SUITE("game_panel");
     RUN_TEST(panel_page_cycles);
@@ -527,4 +629,10 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_nuzlocke_views_stay_in_bounds);
     RUN_TEST(panel_nuzlocke_sub_views_cycle);
     RUN_TEST(panel_nuzlocke_route_window_keeps_current_place);
+    RUN_TEST(panel_route_mirage_card_shrinks_list);
+    RUN_TEST(panel_route_mirage_card_stays_in_bounds);
+    RUN_TEST(panel_mirage_key_arms_then_jumps);
+    RUN_TEST(panel_mirage_key_rearms_after_timeout);
+    RUN_TEST(panel_mirage_key_rearms_when_target_changes);
+    RUN_TEST(panel_mirage_key_refuses_when_not_useful);
 }
