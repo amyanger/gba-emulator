@@ -137,6 +137,7 @@ set(SOURCES
     src/game/follower.c
     src/game/follower_ctx.c
     src/game/follower_places.c
+    src/game/mirage.c
     src/hgss/nds_fs.c
     src/hgss/hgss_msg.c
     src/hgss/hgss_gfx.c
@@ -316,6 +317,7 @@ set(LIB_SOURCES
     src/game/follower.c
     src/game/follower_ctx.c
     src/game/follower_places.c
+    src/game/mirage.c
     src/hgss/nds_fs.c
     src/hgss/hgss_msg.c
     src/hgss/hgss_gfx.c
@@ -417,6 +419,7 @@ set(TEST_SOURCES
     tests/test_game_battle.c
     tests/test_game_encounters.c
     tests/test_game_snapshot.c
+    tests/test_mirage.c
     tests/test_game_panel.c
     tests/test_overworld.c
     tests/test_nds_fs.c

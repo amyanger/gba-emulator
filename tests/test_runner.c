@@ -44,6 +44,7 @@ void run_game_pokemon_tests(void);
 void run_game_battle_tests(void);
 void run_game_encounters_tests(void);
 void run_game_snapshot_tests(void);
+void run_mirage_tests(void);
 void run_game_panel_tests(void);
 void run_overworld_tests(void);
 void run_nds_fs_tests(void);
@@ -125,6 +126,7 @@ int main(void) {
     RUN_SUITE(run_game_battle_tests);
     RUN_SUITE(run_game_encounters_tests);
     RUN_SUITE(run_game_snapshot_tests);
+    RUN_SUITE(run_mirage_tests);
     RUN_SUITE(run_game_panel_tests);
     RUN_SUITE(run_overworld_tests);
     RUN_SUITE(run_nds_fs_tests);
