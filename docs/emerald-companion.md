@@ -44,9 +44,26 @@ The name of the route, town or city you're in, read from the game's region map, 
 
 ### Mirage Island
 
-Mirage Island shows up on Route 130 on days when the low half of a party Pokemon's personality value matches a random value the game rolls once a day. The card at the bottom of the Route page tells you whether it's up today and which Pokemon raises it. If the match is in your PC, it names the box, so you can put that Pokemon in your party. It also lists the next three days one of your Pokemon will raise it, counting your whole PC.
+Mirage Island is the rare island on Route 130 where Wynaut lives and the Liechi Berry grows. Emerald rolls a random number once a day, and the island is there only on days when that number matches part of a party Pokemon's personality value. With a full PC that can still be years apart, so most players never see it.
 
-Press J twice within three seconds to move the cartridge clock to the first of those days. Only the clock moves. The game catches up the next time you go through a door (not inside a Pokemon Center), so have the named Pokemon in your party when you get to Route 130. Berries, Shoal Cave tides and the game's other daily events move forward too, and there is no way to move the clock back from here.
+The Mirage Island card at the bottom of the Route page does the math for you:
+
+- **Today.** Whether the island is up today, and which party Pokemon raises it. If the match is a Pokemon in your PC, the card names its box, so you can put it in your party.
+- **Forecast.** The next three days one of your Pokemon will raise the island, counting your party and your whole PC.
+- **Clock jump.** Press J twice within three seconds to move the cartridge clock to the first of those days.
+
+![Lilycove City with the Route page: Mirage Island is not up today, Latios raises it in 2545 days and Salamence in 13064, and a hint to press J twice](screenshots/panel-mirage-forecast.png)
+
+After the jump, the game catches up the next time you go through a door (not inside a Pokemon Center). Have the named Pokemon in your party when you get to Route 130, and the island is there. The card shows "Up today" in green, and the Route page lists the island's Wynaut.
+
+![Standing on Mirage Island on Route 130, with the Route page saying Mirage Island is up today thanks to Latios and listing Wynaut in the grass](screenshots/panel-mirage-island.png)
+
+Things to know about the clock jump:
+
+- Only the clock moves. Your save data isn't edited, and the new time is kept in the save file, so it survives closing the emulator.
+- Berries, Shoal Cave tides, the lottery and the game's other daily events move forward too.
+- The clock only moves forward, and there's no way to move it back from here. Copy your `.sav` file first if you want to keep the old date.
+- The forecast stops at the end of 2099, the last date the cartridge clock can hold.
 
 ## Nuzlocke
 
