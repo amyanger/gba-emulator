@@ -2,6 +2,8 @@
 
 Emerald Companion is a side panel that shows live info from your Pokemon Emerald game: the wild Pokemon you're fighting, your party's hidden stats, and the encounter table for where you are. Press **F9** to open it next to the game.
 
+**On this page:** [Battle](#battle) · [Party](#party) · [Route](#route) · [Mirage Island](#mirage-island) · [Nuzlocke](#nuzlocke) · [Berries](#berries) · [Details](#details) · [Overworld X-Ray](#overworld-x-ray)
+
 > [!IMPORTANT]
 > **Emerald Companion only works with the original, unmodified Pokemon Emerald (US/English) ROM.** This is the version it was built and tested with. It's the retail cartridge release, game code `BPEE`, sold in North America and Europe.
 >
@@ -96,7 +98,11 @@ Keeps track of every berry tree in your game: what's growing, where it is, and w
 - **All trees.** Below, one place at a time. The place you're standing on opens first and is marked "You are here". Each tree shows its growth stage, a drop for each of the four stages you can water it in (filled when watered, an orange ring when it needs water now, dark when that stage was missed), what happens next and how many berries to expect. Before a tree is ripe, the number is the most it can still give if you water every stage that's left. Other places sit underneath with a one-line summary. Use `[` and `]` to open them.
 - **Empty soil.** Each place shows how many of its spots are free. With nothing planted, the page lists where the soft soil is.
 
+![Route 102 just after planting a Liechi and a Pecha: the Berries page shows both trees watered once, with countdowns to the next stage and to ripe, and the game's own berry trees elsewhere marked ripe, not visited yet](screenshots/panel-berries-planted.png)
+
 Times are real time, because Emerald's clock is. The countdowns keep moving between the game's own updates, and they match what the game will do when you next go through a door. The trees the game plants on its own show as "ripe, not visited yet" until you walk past them, since they don't grow before that.
+
+![The same spot 13 hours later: the Pecha tree has berries on the map, and the page lists it under Needs you as ripe, with 10 hours before the berries drop](screenshots/panel-berries-ripe.png)
 
 **Berry alerts.** While you play, with or without the panel open, a toast tells you when a tree becomes ripe, when it needs water for a new stage, when ripe berries are about to drop, and when you arrive somewhere with trees that need you. Trees on the map you're standing on stay quiet, events at the same place share one toast, and they wait until a battle is over. When you open a game, one toast sums up what needs you. Press **B** on the Berries page to turn alerts off or back on.
 

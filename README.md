@@ -10,6 +10,8 @@ No other GBA emulator offers this. Every emulator is a black box. This one lets 
 
 Built around an ARM7TDMI CPU interpreter, scanline-based PPU, and an SDL2 frontend. No external libraries beyond SDL2. Pokemon Emerald is fully playable end-to-end.
 
+**Jump to:** [Download](#download) · [Features](#features) · [Screenshots](#screenshots) · [Quick start](#quick-start) · [Building](#building-from-source) · [Documentation](#documentation)
+
 ![Hardware X-Ray window on the Pokemon Emerald title screen: Rayquaza, clouds and the logo on separate background layers, live audio waveforms, CPU registers and the sound DMAs](docs/screenshots/xray.png)
 
 ## Download
@@ -24,27 +26,52 @@ Ready-to-run apps for **macOS** (Apple Silicon), **Windows** and **Linux** are o
 
 The apps aren't signed with a paid certificate, so macOS and Windows ask you to confirm the first time you open them. [Installing a pre-built binary](docs/usage.md#installing-a-pre-built-binary) has step-by-step instructions for each system.
 
-## Highlights
+## Features
 
-- **[Hardware X-Ray Mode](docs/hardware-xray.md)** (F2): a second window showing background layers, sprites, tiles, palettes, audio channels, CPU registers, timers, DMA and interrupts as the game runs.
-- **[Emerald Companion](docs/emerald-companion.md)** (F9): a side panel for Pokemon Emerald with wild battle IVs, natures and catch odds, move matchups both ways, your party's hidden stats and the current route's encounter table.
-- **[Nuzlocke tracker](docs/emerald-companion.md#nuzlocke)**: a Companion page that keeps your Nuzlocke run honest, logging each area's first encounter, every death and any reload after a death.
-- **[Mirage Island helper](docs/emerald-companion.md#mirage-island)**: see which of your Pokemon raises Mirage Island today and when it next will, then jump the clock to that day.
-- **[Berry tracker](docs/emerald-companion.md#berries)**: every berry tree you've planted, with growth stage, watering and countdowns, plus a toast when berries are ripe, need water or are about to drop.
-- **[Overworld X-Ray](docs/emerald-companion.md#overworld-x-ray)** (F4): trainer sight lines, item names and NPC gifts drawn right on the map in Pokemon Emerald.
-- **[Following Pokemon](docs/usage.md#following-pokemon)** (F1): your lead Pokemon walks behind you in Pokemon Emerald and talks like it does in HeartGold and SoulSilver, using your own HeartGold or SoulSilver ROM.
-- **Save states and rewind**: 10 save-state slots, plus hold Backspace to rewind up to 60 seconds.
-- **[Cheats](docs/usage.md#cheats)**: paste CodeBreaker, GameShark or Action Replay codes as found online. Your save is backed up before any cheat runs.
-- **[Link cable](docs/usage.md#link-cable)**: two windows on the same machine can trade and battle.
-- **[Screen filters](docs/usage.md#screen-filters)**: smooth out jagged pixel edges and match the colors of a real GBA screen.
-- **[HQ music](docs/hq-music.md)** (H): game music re-mixed in high quality for games that use the standard MP2K sound driver.
-- **Fast-forward**, frame advance, screenshots and fullscreen.
+### Every game
 
-Emerald Companion, Overworld X-Ray and Following Pokemon only work with the original, unmodified Pokemon Emerald (US/English) ROM. Every other game still runs normally.
+| Feature | Key | What it does |
+|---------|-----|--------------|
+| **[Hardware X-Ray Mode](docs/hardware-xray.md)** | F2 | A second window showing background layers, sprites, tiles, palettes, audio channels, CPU registers, timers, DMA and interrupts as the game runs. |
+| **[Save states and rewind](docs/usage.md#controls)** | F5 / F8, Backspace | 10 save-state slots, plus hold Backspace to rewind up to 60 seconds. |
+| **[Fast-forward](docs/usage.md#controls)** | Tab | Hold to speed up. Frame advance, screenshots and fullscreen are in the controls list. |
+| **[Cheats](docs/usage.md#cheats)** | | Paste CodeBreaker, GameShark or Action Replay codes as found online. Your save is backed up before any cheat runs. |
+| **[Link cable](docs/usage.md#link-cable)** | | Two windows on the same machine can trade and battle. |
+| **[Screen filters](docs/usage.md#screen-filters)** | | Smooth out jagged pixel edges and match the colors of a real GBA screen. |
+| **[HQ music](docs/hq-music.md)** | H | Game music re-mixed in high quality for games that use the standard MP2K sound driver. |
 
-![Latios following the player in Lilycove City, saying LATIOS looks very happy! in the HeartGold text box](docs/screenshots/following-talk.png)
+### Pokemon Emerald extras
 
-![Emerald Companion beside a wild battle against a Poochyena, showing your Swampert's moves and the Poochyena's moves](docs/screenshots/panel-battle.png)
+These need the original, unmodified Pokemon Emerald (US/English) ROM. Every other game still runs normally.
+
+| Feature | Key | What it does |
+|---------|-----|--------------|
+| **[Emerald Companion](docs/emerald-companion.md)** | F9 | A side panel with live info from your game. F10 switches pages. |
+| &nbsp;&nbsp;[Battle](docs/emerald-companion.md#battle) | | The opponent's IVs, nature, ability and held item, move matchups both ways, and in wild battles the catch odds for each ball. |
+| &nbsp;&nbsp;[Party](docs/emerald-companion.md#party) | | Your Pokemon's hidden stats: IVs, EVs, Hidden Power, friendship. |
+| &nbsp;&nbsp;[Route](docs/emerald-companion.md#route) | | The wild encounter table for where you are, with caught Pokemon checked off. |
+| &nbsp;&nbsp;[Mirage Island](docs/emerald-companion.md#mirage-island) | J, twice | Which of your Pokemon raises Mirage Island today and when it next will, then jump the clock to that day. |
+| &nbsp;&nbsp;[Nuzlocke](docs/emerald-companion.md#nuzlocke) | N | Logs each area's first encounter, every death and any reload after a death. |
+| &nbsp;&nbsp;[Berries](docs/emerald-companion.md#berries) | B | Every berry tree you've planted, with growth, watering and countdowns, plus a toast when berries are ripe, need water or are about to drop. |
+| **[Overworld X-Ray](docs/emerald-companion.md#overworld-x-ray)** | F4 | Trainer sight lines, item names and NPC gifts drawn right on the map. |
+| **[Following Pokemon](docs/usage.md#following-pokemon)** | F1 | Your lead Pokemon walks behind you and talks like it does in HeartGold and SoulSilver, using your own HeartGold or SoulSilver ROM. |
+
+## Screenshots
+
+<table>
+<tr>
+<td width="50%"><a href="docs/emerald-companion.md#battle"><img src="docs/screenshots/panel-battle.png" alt="Emerald Companion beside a wild battle against a Poochyena, showing your Swampert's moves and the Poochyena's moves"></a><br><b>Battle:</b> IVs, nature and matchups for a wild Poochyena</td>
+<td width="50%"><a href="docs/emerald-companion.md#berries"><img src="docs/screenshots/panel-berries-ripe.png" alt="Route 102 with a ripe Pecha tree, and the Berries page listing it under Needs you"></a><br><b>Berries:</b> a ripe Pecha, 10 hours before it drops</td>
+</tr>
+<tr>
+<td><a href="docs/emerald-companion.md#nuzlocke"><img src="docs/screenshots/panel-nuzlocke-routes.png" alt="Nuzlocke page listing every area used so far with what was met there"></a><br><b>Nuzlocke:</b> every area used and what you met there</td>
+<td><a href="docs/emerald-companion.md#mirage-island"><img src="docs/screenshots/panel-mirage-forecast.png" alt="Route page in Lilycove City with the Mirage Island forecast"></a><br><b>Mirage Island:</b> which Pokemon raises it, and when</td>
+</tr>
+<tr>
+<td><a href="docs/usage.md#following-pokemon"><img src="docs/screenshots/following-talk.png" width="100%" alt="Latios following the player in Lilycove City, saying LATIOS looks very happy! in the HeartGold text box"></a><br><b>Following Pokemon:</b> Latios in Lilycove City</td>
+<td><a href="docs/emerald-companion.md#party"><img src="docs/screenshots/panel-party.png" alt="Party page showing a Torchic's stats, IVs and EVs"></a><br><b>Party:</b> hidden stats for each Pokemon</td>
+</tr>
+</table>
 
 ## Quick start
 
