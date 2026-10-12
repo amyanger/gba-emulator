@@ -789,7 +789,7 @@ static int thumb_cond_branch(ARM7TDMI* cpu, uint16_t instr) {
 
     /* Sign-extend 8-bit offset and shift left 1 */
     int32_t offset = (int32_t)(int8_t)(instr & 0xFF);
-    offset <<= 1;
+    offset *= 2;   /* not <<: shifting a negative value is undefined in C */
 
     cpu->regs[REG_PC] += (uint32_t)offset;
     cpu_flush_pipeline(cpu);
@@ -818,7 +818,7 @@ static int thumb_unconditional_branch(ARM7TDMI* cpu, uint16_t instr) {
     if (offset & 0x400) {
         offset |= (int32_t)0xFFFFF800;
     }
-    offset <<= 1;
+    offset *= 2;
 
     cpu->regs[REG_PC] += (uint32_t)offset;
     cpu_flush_pipeline(cpu);
@@ -839,7 +839,7 @@ static int thumb_long_branch_link(ARM7TDMI* cpu, uint16_t instr) {
         if (offset & 0x400) {
             offset |= (int32_t)0xFFFFF800;
         }
-        offset <<= 12;
+        offset *= 4096;
 
         cpu->regs[REG_LR] = cpu->regs[REG_PC] + (uint32_t)offset;
         return 1; /* 1S */
