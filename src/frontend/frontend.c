@@ -12,6 +12,7 @@
 #include "input/input.h"
 #include "input/keymap.h"
 #include "frontend/rom_picker.h"
+#include "frontend/run_panel.h"
 #include "ui/ui_theme.h"
 #include <math.h>
 #include <stdlib.h>
@@ -1294,9 +1295,11 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             if (event.key.keysym.scancode == SDL_SCANCODE_F10 && !event.key.repeat) {
                 fe->panel_page = (uint8_t)game_panel_next_page((GamePage)fe->panel_page);
                 fe->panel_follow.restore = false;
+                if (fe->panel_page == GAME_PAGE_RUN) fe->run_scroll = 0;
             }
-            /* [ and ] move the party selection (or switch Nuzlocke views) unless the keymap
-             * binds them; N starts a Nuzlocke run from its page. */
+            /* [ and ] move the party selection (or switch Nuzlocke views, or scroll the Run
+             * page) unless the keymap binds them; N starts a Nuzlocke run from its page, D
+             * flips the Run page between its dashboard and Details sheet. */
             GamePage shown_page = game_panel_resolve_page((GamePage)fe->panel_page, fe->last_snap.context);
             if ((event.key.keysym.scancode == SDL_SCANCODE_LEFTBRACKET ||
                  event.key.keysym.scancode == SDL_SCANCODE_RIGHTBRACKET) &&
@@ -1310,8 +1313,19 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                     uint8_t order[BERRY_PLACE_MAX];
                     fe->berry_sel = game_panel_select(fe->berry_sel, delta,
                                                       game_panel_berry_places(&fe->last_snap.berries, order));
-                } else if (shown_page == GAME_PAGE_SEARCH)
+                } else if (shown_page == GAME_PAGE_SEARCH) {
                     search_view_key(&fe->search, delta < 0 ? SV_KEY_UP : SV_KEY_DOWN);
+                } else if (shown_page == GAME_PAGE_RUN) {
+                    int max = run_panel_max_scroll(fe->run_view, fe->run_details);
+                    int sc = fe->run_scroll + delta;
+                    fe->run_scroll = (uint8_t)(sc < 0 ? 0 : sc > max ? max : sc);
+                }
+            }
+            /* A focused Search box gets the 'd' instead (it normally swallows the key above). */
+            if (event.key.keysym.scancode == SDL_SCANCODE_D && !event.key.repeat && fe->panel_visible &&
+                !fe->search.focused && shown_page == GAME_PAGE_RUN && keymap_lookup(SDL_SCANCODE_D) == 0) {
+                fe->run_details = !fe->run_details;
+                fe->run_scroll = 0;
             }
             if (event.key.keysym.scancode == SDL_SCANCODE_B && !event.key.repeat && fe->panel_visible &&
                 shown_page == GAME_PAGE_BERRIES && keymap_lookup(SDL_SCANCODE_B) == 0)

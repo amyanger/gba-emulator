@@ -64,6 +64,9 @@ static void fill_mon(const MonData* d, NuzMon* out) {
     out->species = d->species;
     out->level = d->level;
     out->met = d->met_location;
+    out->met_level = d->met_level;
+    out->ball = d->ball;
+    out->pokerus = d->pokerus;
     out->egg = d->is_egg;
     out->hp = d->hp;
     memcpy(out->nick, d->nickname_raw, sizeof(out->nick));

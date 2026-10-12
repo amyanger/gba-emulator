@@ -100,6 +100,23 @@ TEST(nuz_read_trainer_time_party_and_holes) {
     ASSERT_EQ(f.active_party, -1);
 }
 
+TEST(nuz_read_party_extras) {
+    build();
+    uint8_t plain[4][12];
+    fixture_plain_mon(plain, 3);
+    plain[3][0] = 0x12;                                  /* pokerus */
+    plain[3][1] = 16;
+    fixture_put16(plain[3] + 2, (uint16_t)(7 | (3 << 7) | (2 << 11)));
+    fixture_encode_mon(at(0x02000400), 0xAAAA0001, 0x12345678, plain, 0x02);
+    GameMem m = mem();
+    static NuzFacts f;
+    ASSERT_TRUE(nuz_read(&k_profile, &m, false, &f));
+    ASSERT_EQ(f.party[0].met, 16);
+    ASSERT_EQ(f.party[0].met_level, 7);
+    ASSERT_EQ(f.party[0].ball, 2);
+    ASSERT_EQ_HEX(f.party[0].pokerus, 0x12);
+}
+
 TEST(nuz_read_boxes_with_level_from_exp) {
     build();
     GameMem m = mem();
@@ -165,6 +182,7 @@ TEST(nuz_shiny_and_time_format) {
 void run_nuzlocke_read_tests(void) {
     RUN_TEST(nuz_read_waits_for_save_blocks);
     RUN_TEST(nuz_read_trainer_time_party_and_holes);
+    RUN_TEST(nuz_read_party_extras);
     RUN_TEST(nuz_read_boxes_with_level_from_exp);
     RUN_TEST(nuz_read_battle_enemy_and_active_slot);
     RUN_TEST(nuz_families_follow_evolution_lines);

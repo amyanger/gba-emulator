@@ -27,6 +27,8 @@ const GameProfile g_emerald_profile = {
     .map_header = 0x02037318,
     .battle_outcome = 0x0202433A,
     .pokemon_storage_ptr = 0x03005D94,
+    .trainer_battle_opponent_a = 0x02038BCA, /* gTrainerBattleOpponent_A */
+    .battler_attacker = 0x0202420B,          /* gBattlerAttacker */
 
     .species_names = 0x083185C8, .species_count = 412,
     .move_names = 0x0831977C, .move_count = 355,
@@ -53,6 +55,7 @@ const GameProfile g_emerald_profile = {
     .backup_map_data = 0x02032318,
     .main_callback2 = 0x030022C4,
     .cb2_overworld = 0x08085E5D,
+    .cb2_whiteout = 0x08085F59,     /* CB2_WhiteOut 0x08085F58 | Thumb */
     .palette_fade_byte = 0x02037FDB,
     .lock_field_controls = 0x03000F2C,
     .trainers = 0x08310030, .trainer_count = 855,

@@ -8,6 +8,7 @@ static const char* gen3_glyph(uint8_t c, char* one) {
     switch (c) {
     case 0x00: case 0xFE: return " ";
     case 0x1B: return "e";
+    case 0x2D: return "&";   /* charmap.txt; trainer names like TATE&LIZA */
     case 0x53: return "Pk";
     case 0x54: return "Mn";
     case 0x5C: return "(";

@@ -71,7 +71,11 @@ bool pokemon_decode(const uint8_t* raw, bool party, MonData* out) {
         out->pp[i] = attacks[8 + i];
     }
     memcpy(out->evs, evs, 6);
+    out->pokerus = misc[0];
     out->met_location = misc[1];
+    uint16_t origin = rd16(misc + 2);
+    out->met_level = (uint8_t)(origin & 0x7F);
+    out->ball = (uint8_t)((origin >> 11) & 0x0F);
     out->iv_word = rd32(misc + 4);
     pokemon_unpack_ivs(out->iv_word, out->ivs);
     out->is_egg = ((out->iv_word >> 30) & 1) || (raw[MON_FLAGS] & MON_FLAG_IS_EGG);

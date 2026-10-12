@@ -35,6 +35,8 @@ typedef struct {
     uint32_t map_header;            /* struct MapHeader gMapHeader */
     uint32_t battle_outcome;        /* u8 gBattleOutcome, 0 while a battle runs */
     uint32_t pokemon_storage_ptr;   /* IWRAM pointer to struct PokemonStorage (PC boxes) */
+    uint32_t trainer_battle_opponent_a; /* u16 gTrainerBattleOpponent_A */
+    uint32_t battler_attacker;      /* u8 gBattlerAttacker */
 
     /* ROM tables */
     uint32_t species_names;      uint16_t species_count;  /* 11-byte stride */
@@ -63,6 +65,7 @@ typedef struct {
     uint32_t backup_map_data;       /* the address backup_map_layout.map must hold */
     uint32_t main_callback2;        /* gMain.callback2 */
     uint32_t cb2_overworld;         /* callback2 value on the overworld (Thumb bit set) */
+    uint32_t cb2_whiteout;          /* callback2 value while whiting out (Thumb bit set) */
     uint32_t palette_fade_byte;     /* gPaletteFade byte 7: bit 7 = fade active */
     uint32_t lock_field_controls;   /* u8 sLockFieldControls */
     uint32_t trainers;            uint16_t trainer_count;        /* 0x28-byte stride */

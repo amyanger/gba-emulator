@@ -12,6 +12,7 @@
 #include "frontend/toast.h"
 #include "frontend/game_panel.h"
 #include "frontend/rom_picker.h"
+#include "frontend/run_session.h"
 #include "frontend/library_run.h"
 #include "frontend/overworld_draw.h"
 #include "frontend/prefs.h"
@@ -44,6 +45,8 @@ static XRayState s_xray_state;
 static GameState s_game;
 static NuzSession s_nuz;
 static bool s_nuz_on;        /* tracking runs in the window, and headless only with --nuzlocke-file */
+static RunSession s_run;
+static bool s_run_on;        /* run log in the window, and headless only with --run-file */
 static OverworldFeed s_ow;
 static Mp2kMixer s_mp2k;   /* ~112 KB of buffers: static, never on the stack */
 static FollowerFeed s_fol;
@@ -57,10 +60,13 @@ static uint16_t s_talk_keys;   /* keys held when a talk ended: hidden from the g
 static Prefs s_prefs;
 static char s_keymap_path[PREFS_PATH_LEN]; /* <prefdir>/keymap.ini, empty when unavailable */
 
-/* One emulated frame for the Nuzlocke tracker (also the headless per-frame hook). */
+/* One emulated frame for the Nuzlocke tracker and the run log (also the headless per-frame
+ * hook). The run log uses the facts the Nuzlocke session reads. */
 static void nuz_tick(GBA* gba, void* ctx) {
     GameMem m = { gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size };
-    if (s_nuz_on) nuz_session_frame((NuzSession*)ctx, &m);
+    NuzSession* nuz = (NuzSession*)ctx;
+    if (s_nuz_on || s_run_on) nuz_session_frame(nuz, &m);
+    if (s_run_on) run_session_frame(&s_run, &m, &nuz->facts);
 }
 
 /* Berry toasts, checked once a second whether or not the panel is open. */
@@ -160,11 +166,15 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
         uint32_t caret_phase = 0;
         if (fe->search.focused && frontend_search_shown(fe))
             caret_phase = (SDL_GetTicks() - fe->search_caret_ms) / UI_CARET_MS;
+        /* Run changes only repaint while the Run page is shown; switching to it repaints anyway. */
+        bool run_shown = game_panel_resolve_page((GamePage)fe->panel_page, s_game.snap.context) == GAME_PAGE_RUN;
         /* Redraw only when something on the panel can have changed. */
         if (fe->panel_dirty || fe->last_page != fe->panel_page || fe->last_sel != fe->panel_sel ||
             fe->last_nuz_sub != fe->nuz_sub || fe->last_nuz_version != s_nuz.view_version ||
             fe->last_berry_sel != fe->berry_sel || fe->last_berry_alerts != fe->berry_alerts ||
             fe->last_search_version != fe->search.version || fe->last_caret_phase != caret_phase ||
+            (run_shown && (fe->last_run_version != s_run.view_version ||
+                           fe->last_run_scroll != fe->run_scroll || fe->last_run_details != fe->run_details)) ||
             memcmp(&fe->last_snap, &s_game.snap, sizeof(s_game.snap)) != 0) {
             UiCanvas canvas;
             ui_canvas_init(&canvas, fe->panel_buffer, fe->panel_px_w, fe->panel_px_h,
@@ -173,10 +183,14 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
                                       fe->search.result_count > 0 ? &s_search_detail : NULL,
                                       caret_phase % 2 == 0};
             game_panel_draw(&canvas, &s_game.snap, (GamePage)fe->panel_page, fe->panel_sel,
-                            &s_nuz.view, fe->nuz_sub, fe->berry_sel, fe->berry_alerts, &search);
+                            &s_nuz.view, fe->nuz_sub, fe->berry_sel, fe->berry_alerts, &search,
+                            &s_run.view, fe->run_scroll, fe->run_details);
             fe->last_search_version = fe->search.version;
             fe->last_caret_phase = caret_phase;
             fe->last_nuz_sub = fe->nuz_sub;
+            fe->last_run_version = s_run.view_version;
+            fe->last_run_scroll = fe->run_scroll;
+            fe->last_run_details = fe->run_details;
             fe->last_berry_sel = fe->berry_sel;
             fe->last_berry_alerts = fe->berry_alerts;
             fe->last_nuz_version = s_nuz.view_version;
@@ -212,11 +226,13 @@ static void print_usage(const char* prog) {
     printf("  --game-dump <file>     Headless: write decoded Emerald state after the run\n");
     printf("  --panel-out <file>     Headless: render the Emerald Companion panel to a PNG after the run\n");
     printf("  --panel-density <f>    Headless: panel pixels per point, 0.5 to 4.0 (default: 1.0)\n");
-    printf("  --panel-page <p>       Headless: panel page, auto|party|route|nuzlocke|berries|search (default: auto)\n");
+    printf("  --panel-page <p>       Headless: panel page, auto|party|route|nuzlocke|berries|search|run\n");
+    printf("                         (default: auto)\n");
     printf("  --panel-search <q>     Headless: Search page with this query typed in (implies --panel-page search)\n");
     printf("  --panel-select <n>     Headless: party slot, Nuzlocke view 0-2 (routes, team, graveyard),\n");
-    printf("                         or the selected Search result (0 is the first)\n");
+    printf("                         the selected Search result (0 is the first), or 1 for Run details\n");
     printf("  --nuzlocke-file <f>    Headless: track a Nuzlocke run in this file, starting one if it has none\n");
+    printf("  --run-file <f>         Headless: keep the run log (Run page) in this file\n");
     printf("  --library-folder <dir> Game folder for the library, used when none has been chosen yet\n");
     printf("  --library-out <file>   Render the library for --library-folder to a PNG and exit (no ROM)\n");
     printf("  --xray-out <file>      Headless: render the Hardware X-Ray window to a PNG after the run\n");
@@ -272,6 +288,7 @@ int main(int argc, char* argv[]) {
     const char* video_out_path = NULL;
     bool color_correct_arg = false;
     const char* nuzlocke_file = NULL;
+    const char* run_file = NULL;
     const char* gift_audit_path = NULL;
     const char* library_folder = NULL;
     const char* library_out_path = NULL;
@@ -337,6 +354,8 @@ int main(int argc, char* argv[]) {
             library_out_path = argv[++i];
         } else if (strcmp(argv[i], "--nuzlocke-file") == 0 && i + 1 < argc) {
             nuzlocke_file = argv[++i];
+        } else if (strcmp(argv[i], "--run-file") == 0 && i + 1 < argc) {
+            run_file = argv[++i];
         } else if (strcmp(argv[i], "--gift-audit") == 0 && i + 1 < argc) {
             gift_audit_path = argv[++i];
         } else if (strcmp(argv[i], "--follower-hgss") == 0 && i + 1 < argc) {
@@ -377,6 +396,10 @@ int main(int argc, char* argv[]) {
     }
     if (nuzlocke_file && !headless) {
         LOG_ERROR("--nuzlocke-file requires --headless");
+        return 1;
+    }
+    if (run_file && !headless) {
+        LOG_ERROR("--run-file requires --headless");
         return 1;
     }
     if (xray_out_path && !headless) {
@@ -433,8 +456,10 @@ int main(int argc, char* argv[]) {
             panel_page = GAME_PAGE_BERRIES;
         } else if (strcmp(panel_page_arg, "search") == 0) {
             panel_page = GAME_PAGE_SEARCH;
+        } else if (strcmp(panel_page_arg, "run") == 0) {
+            panel_page = GAME_PAGE_RUN;
         } else if (strcmp(panel_page_arg, "auto") != 0) {
-            LOG_ERROR("--panel-page must be auto, party, route, nuzlocke, berries or search (got %s)",
+            LOG_ERROR("--panel-page must be auto, party, route, nuzlocke, berries, search or run (got %s)",
                       panel_page_arg);
             return 1;
         }
@@ -608,7 +633,10 @@ int main(int argc, char* argv[]) {
     overworld_feed_init(&s_ow, s_game.profile);
     follower_feed_init(&s_fol, s_game.profile);
     s_nuz_on = !headless || nuzlocke_file;
-    nuz_session_init(&s_nuz, s_game.profile, rom_path, headless ? nuzlocke_file : NULL);
+    s_run_on = !headless || run_file;
+    /* Headless runs never touch sidecar files next to the ROM, only the fixed paths given. */
+    nuz_session_init(&s_nuz, s_game.profile, headless ? NULL : rom_path, headless ? nuzlocke_file : NULL);
+    run_session_init(&s_run, s_game.profile, headless ? NULL : rom_path, headless ? run_file : NULL);
     if (s_game.support == GAME_SUPPORT_MODIFIED)
         LOG_WARN("Emerald Companion (F9) is off: this ROM is a hack or modified copy of Pokemon "
                  "Emerald. It only supports the original Pokemon Emerald (US/English) ROM.");
@@ -765,7 +793,7 @@ int main(int argc, char* argv[]) {
             feebas_read(s_game.profile, &gm, &feebas);
             if (!f || !game_dump(&dump_state.snap, f) || (s_game.profile && !overworld_dump(&s_ow.shown, f)) ||
                 (s_game.profile && !feebas_dump(&feebas, f)) ||
-                (nuzlocke_file && !nuz_session_dump(&s_nuz, f))) {
+                (nuzlocke_file && !nuz_session_dump(&s_nuz, f)) || (run_file && !run_session_dump(&s_run, f))) {
                 LOG_ERROR("Failed to write --game-dump file: %s", game_dump_path);
                 rc = 1;
             }
@@ -806,11 +834,14 @@ int main(int argc, char* argv[]) {
                     uint16_t lines = game_panel_search_detail_lines(&search_detail, &visible);
                     search_view_set_detail_lines(&search_view, lines, visible);
                 }
+                /* Headless keeps no run log unless asked, so say what the Run page needs. */
+                static const RunView no_run_file = { .state = RUN_VIEW_OFF, .reason = "Needs --run-file" };
                 UiCanvas canvas;
                 ui_canvas_init(&canvas, px, w, h, panel_density);
                 game_panel_draw(&canvas, &dump_state.snap, panel_page, panel_select,
                                 nuzlocke_file ? &s_nuz.view : NULL, (uint8_t)(panel_select % NUZ_SUB_COUNT),
-                                panel_select, true, &search);
+                                panel_select, true, &search, run_file ? &s_run.view : &no_run_file, 0,
+                                panel_page == GAME_PAGE_RUN && panel_select == 1);
                 if (rc == 0 && !screenshot_save_argb(px, w, h, panel_out_path)) {
                     LOG_ERROR("Failed to write --panel-out file: %s", panel_out_path);
                     rc = 1;
@@ -904,6 +935,7 @@ int main(int argc, char* argv[]) {
     fe.ow_feed = s_game.profile ? &s_ow : NULL;
     fe.nuz = &s_nuz;
     fe.search_ok = s_game.search.ok;
+    fe.run_view = &s_run.view;
     VideoFilter pref_filter = VIDEO_FILTER_SHARP;
     video_filter_from_name(prefs_get(&s_prefs, "video_filter"), &pref_filter);
     fe.video_filter = video_filter_arg ? video_filter : pref_filter;

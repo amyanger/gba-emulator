@@ -1,4 +1,5 @@
 #include "frontend/game_panel.h"
+#include "frontend/run_panel.h"
 #include "common.h"
 #include "ui/ui_font.h"
 #include "ui/ui_theme.h"
@@ -1697,25 +1698,59 @@ static void draw_unsupported(UiCanvas* c, GameSupport support) {
         ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, x, y, w, UI_ALIGN_CENTER, UI_MUTED, scope[i]);
 }
 
+static const char* const k_tab_labels[7] = {"Battle", "Party", "Route", "Nuzlocke", "Berries",
+                                            "Search", "Run"};
+
+/* Tab index for the shown page: 0 is the battle page (GAME_PAGE_COUNT). */
+static int tab_index(GamePage shown) {
+    switch (shown) {
+    case GAME_PAGE_PARTY: return 1;
+    case GAME_PAGE_ENCOUNTERS: return 2;
+    case GAME_PAGE_NUZLOCKE: return 3;
+    case GAME_PAGE_BERRIES: return 4;
+    case GAME_PAGE_SEARCH: return 5;
+    case GAME_PAGE_RUN: return 6;
+    default: return 0;
+    }
+}
+
+const char* game_panel_hint(GamePage shown, const NuzView* nuz, bool search_focused, const RunView* run,
+                            bool run_details) {
+    switch (tab_index(shown)) {
+    case 1: return "F10 page   [ ] select";
+    case 3: return nuz && nuz->state == NUZ_VIEW_NO_RUN ? "F10 page   N start" : "F10 page   [ ] view";
+    case 4: return "F10 page   [ ] place   B alerts";
+    case 5: return search_focused ? "Up/Down select   Esc done" : "F10 page   / search";
+    case 6:
+        if (!run || run->state != RUN_VIEW_RUN) return "F10 page";
+        return run_details ? "F10 page   [ ] scroll   D back" : "F10 page   [ ] scroll   D details";
+    default: return "F10 page";
+    }
+}
+
+/* Mirrors the spacing in ui_tabs. */
+float game_panel_tabs_width(const UiCanvas* c, GamePage shown, bool auto_badge) {
+    int active = tab_index(shown);
+    float w = 0;
+    for (int i = 0; i < 7; i++)
+        w += ui_text_width(c, i == active ? UI_FONT_SEMIBOLD : UI_FONT_REGULAR, UI_SIZE_SMALL,
+                           k_tab_labels[i]) + 18.0f;
+    if (auto_badge) w += ui_text_width(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL, "Auto") + 10.0f;
+    return w;
+}
+
 void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel,
                      const NuzView* nuz, uint8_t nuz_sub, uint8_t berry_sel, bool berry_alerts,
-                     const GamePanelSearch* search) {
-    static const char* const labels[6] = {"Battle", "Party", "Route", "Nuzlocke", "Berries", "Search"};
+                     const GamePanelSearch* search, const RunView* run, uint8_t run_scroll,
+                     bool run_details) {
     GamePage shown = game_panel_resolve_page(page, snap->context);
-    int active = shown == GAME_PAGE_PARTY ? 1 : shown == GAME_PAGE_ENCOUNTERS ? 2
-               : shown == GAME_PAGE_NUZLOCKE ? 3 : shown == GAME_PAGE_BERRIES ? 4
-               : shown == GAME_PAGE_SEARCH ? 5 : 0;
-    const char* hint = "F10 page";
-    if (active == 1) hint = "F10 page   [ ] select";
-    else if (active == 3) hint = nuz && nuz->state == NUZ_VIEW_NO_RUN ? "F10 page   N start" : "F10 page   [ ] view";
-    else if (active == 4) hint = "F10 page   [ ] place   B alerts";
-    else if (active == 5)
-        hint = search && search->view && search->view->focused ? "Up/Down select   Esc done"
-                                                               : "F10 page   / search";
+    int active = tab_index(shown);
+    bool search_focused = search && search->view && search->view->focused;
+    const char* hint = game_panel_hint(shown, nuz, search_focused, run, run_details);
 
     ui_canvas_unclip(c);
     ui_canvas_clear(c, UI_BG);
-    float top = ui_tabs(c, LEFT, 12.0f, RIGHT - LEFT, labels, 6, active,
+    float top = ui_tabs(c, LEFT, 12.0f, RIGHT - LEFT, k_tab_labels, 7, active,
                         page == GAME_PAGE_AUTO ? "Auto" : NULL, hint);
 
     ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, PANEL_H - top - 4.0f});
@@ -1725,6 +1760,8 @@ void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8
         draw_search(c, snap, search, top);
     } else if (active == 3) {
         draw_nuzlocke(c, nuz, top, nuz_sub);
+    } else if (active == 6) {
+        run_panel_draw(c, run, top, run_scroll, run_details);
     } else if (!snap->valid) {
         ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, PANEL_W / 2, 220.0f, RIGHT - LEFT,
                 UI_ALIGN_CENTER, UI_MUTED, snap->reason);

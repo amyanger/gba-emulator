@@ -57,6 +57,9 @@ typedef struct Frontend {
     int search_wheel_region;      /* region the accumulator belongs to */
     uint32_t search_caret_ms;     /* caret visible for UI_CARET_MS after this, then blinks */
     uint32_t last_caret_phase;
+    uint8_t run_scroll;           /* Run page list scroll, [ and ] */
+    bool run_details;             /* Run page Details sheet, D */
+    const RunView* run_view;      /* set by main; clamps run_scroll */
     LayoutPlan plan;
     PxRect game_rect, panel_rect; /* drawable pixels */
 
@@ -66,6 +69,9 @@ typedef struct Frontend {
     uint8_t last_page, last_sel, last_nuz_sub, last_berry_sel;
     bool last_berry_alerts;
     uint32_t last_nuz_version;
+    uint32_t last_run_version;
+    uint8_t last_run_scroll;
+    bool last_run_details;
     bool panel_dirty;
 
     /* Toasts and status badges, drawn over the top of the game at full resolution. */

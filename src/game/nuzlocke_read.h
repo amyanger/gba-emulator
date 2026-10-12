@@ -36,6 +36,7 @@ typedef struct {
     uint16_t species;
     uint8_t level;
     uint8_t met;          /* met location (mapsec) */
+    uint8_t met_level, ball, pokerus;
     bool egg;
     uint16_t hp;          /* party only */
     uint8_t nick[10];     /* Gen 3 encoded */
