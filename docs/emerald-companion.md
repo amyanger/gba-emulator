@@ -1,8 +1,8 @@
 # Emerald Companion
 
-Emerald Companion is a side panel that shows live info from your Pokemon Emerald game. It has pages for the battle you're in, your party's hidden stats, the wild Pokemon where you are, a Nuzlocke run, your berry trees, a Pokemon search and the story of your playthrough. Press **F9** to open it next to the game.
+Emerald Companion is a side panel that shows live info from your Pokemon Emerald game. It has pages for the battle you're in, your party's hidden stats, the wild Pokemon where you are, a Nuzlocke run, your berry trees, a Pokemon search, a shiny hunting page and the story of your playthrough. Press **F9** to open it next to the game.
 
-**On this page:** [Battle](#battle) · [Party](#party) · [Route](#route) · [Mirage Island](#mirage-island) · [Nuzlocke](#nuzlocke) · [Berries](#berries) · [Search](#search) · [Run](#run) · [Details](#details) · [Overworld X-Ray](#overworld-x-ray)
+**On this page:** [Battle](#battle) · [Party](#party) · [Route](#route) · [Mirage Island](#mirage-island) · [Nuzlocke](#nuzlocke) · [Berries](#berries) · [Search](#search) · [Hunt](#hunt) · [Run](#run) · [Details](#details) · [Overworld X-Ray](#overworld-x-ray)
 
 > [!IMPORTANT]
 > **Emerald Companion only works with the original, unmodified Pokemon Emerald (US/English) ROM.** This is the version it was built and tested with. It's the retail cartridge release, game code `BPEE`, sold in North America and Europe.
@@ -17,15 +17,17 @@ Emerald Companion is a side panel that shows live info from your Pokemon Emerald
 | Key | Panel action |
 |-----|--------------|
 | F9 | Show or hide the panel |
-| F10 | Cycle the page: Auto, Party, Route, Nuzlocke, Berries, Search, Run. Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
-| [ and ] | Select the previous or next Pokemon on the Party page, switch views on the Nuzlocke page, open the previous or next place on the Berries page, move the Search selection, or scroll the list on the Run page |
+| F10 | Cycle the page: Auto, Party, Route, Nuzlocke, Berries, Search, Hunt, Run. Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
+| [ and ] | Select the previous or next Pokemon on the Party page, switch views on the Nuzlocke page, open the previous or next place on the Berries page, move the Search selection, pick the target species on the Hunt page, or scroll the list on the Run page |
 | N | Start a Nuzlocke run, on the Nuzlocke page |
 | J, twice | Move the clock to the next Mirage Island day, on the Route page |
 | B | Turn berry alerts on or off, on the Berries page |
 | / | Start typing a Pokemon name, on the Search page |
+| , and . | Pick the nature the Hunt page looks for |
+| R, twice | Reset the Hunt page's encounter counts |
 | D | Switch between the Run page's dashboard and its Details sheet |
 
-On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is set to use F1, F2 and so on as standard function keys. `[`, `]`, `N`, `J`, `B`, `/` and `D` only work on their pages, and only when they are not bound to a GBA button in a custom keymap.
+On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is set to use F1, F2 and so on as standard function keys. `[`, `]`, `,`, `.`, `N`, `J`, `B`, `R`, `/` and `D` only work on their pages, and only when they are not bound to a GBA button in a custom keymap.
 
 ## Battle
 
@@ -155,6 +157,26 @@ Type part of a Pokemon's name and see where to get it in Emerald. Open the Searc
 ![Searching "gardevoir" on Route 102: Gardevoir isn't wild, so the page says to evolve Kirlia at Lv 30 and Ralts at Lv 20, and that Ralts is caught in Route 102's grass](screenshots/panel-search.png)
 
 Gifts, legendaries, trades and roaming Pokemon aren't covered yet. Like the rest of the panel, every name and location is read from your own ROM.
+
+## Hunt
+
+A page for shiny hunting in tall grass. Open it with F10. It counts every wild encounter and shows what the next ones will be, so you can see how far into a hunt you are and when to expect a match. Shiny is always part of what it looks for.
+
+- **Counting.** Every wild battle adds one to the total, and soft-reset static battles are counted too. Safari Zone and static battle detection has not been tested in a live game yet. The count keeps going through soft resets, savestates and rewinds and never rolls back. The page also shows how many were this session and the odds you'd have seen a shiny by now (with a target, a shiny of that species, from how many of it you've seen). Press **R** twice (the first press arms it for 3 seconds) to start the count over. A "Seen this hunt" list tallies each species.
+- **Target.** `[` and `]` pick Any or one of the species on the current map. `,` and `.` pick a nature to look for, or any. The Looking for card shows the current filter.
+- **Next match.** The time and the number of RNG advances until a step that finishes in tall grass would give a Pokemon matching your filter, with its nature and IVs.
+- **Next frames.** Each row is one advance of the game's random number generator: what a step that finishes now would give, then what it would give one, two and up to five advances later. In the overworld the generator usually advances once a frame, hence the name. A row where the encounter roll fails says "no encounter". Each row shows the species, nature and whether it would be shiny.
+- **Toast.** A toast appears when a shiny wild Pokemon shows up, with how many encounters it took.
+
+The count is saved as `<rom>.<trainer id>.hunt` next to the ROM, one line per encounter, and is only ever added to.
+
+**Not predicted.** Surfing, fishing, Rock Smash, Sweet Scent, the Safari Zone, maps with a mass outbreak, a lead Pokemon with Sand Veil, anything during a battle, and the first few steps after a battle or a warp. Some single steps are skipped too: the step where Repel wears off, and steps where the game does something else first (the friendship check every 128 steps, the Match Call check every 10 steps once you have it, a Day Care egg check or hatch, poison making a Pokemon faint). After one more step the predictions come back. The page says why instead of guessing, and on non-grass tiles it waits until you step into tall grass. Encounters in these cases are still counted.
+
+**Timing.** What comes up next depends on how many times the game calls its random number generator, and that depends on timing. The game also calls it once every frame, and when a row's nature search runs long, that call can land in the middle of it. Such rows show "?" instead of the shiny star and are never picked as the Next match. The Next match time is an estimate from the advance rate measured while you play, so people walking around and other things that use the generator can move it. The timing is this emulator's. It was checked live against 116 real battles and no confident prediction was wrong, but it has not been checked against real hardware. Not checked at all: one-off story phone calls and the end of the Kyogre and Groudon weather, which can take over a step.
+
+While the Hunt page is up, a battle starting doesn't switch the panel to the battle page.
+
+![The Hunt page on Route 101: no encounters counted yet, the next match about 6 minutes away with its nature and IVs, and what the next five frames would give](screenshots/panel-hunt.png)
 
 ## Run
 

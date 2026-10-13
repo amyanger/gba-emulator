@@ -122,13 +122,15 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 | F3 | Toggle input display HUD (mini-GBA overlay showing held buttons) |
 | F4 | Show or hide Overworld X-Ray: trainer sight lines and hidden items on the map (original Pokemon Emerald US/English ROM only, remembered between launches) |
 | F9 | Show or hide Emerald Companion (original Pokemon Emerald US/English ROM only) |
-| F10 | Cycle the Emerald Companion page: Auto, Party, Route, Nuzlocke, Berries, Search, Run (Auto shows the battle page during battles; a battle switches to Auto and the old page returns afterwards) |
-| [ and ] | Select the previous or next Pokemon on the Party page, switch Nuzlocke views, open another place on the Berries page, move the Search selection, or scroll the Run page (unless bound to a GBA button) |
+| F10 | Cycle the Emerald Companion page: Auto, Party, Route, Nuzlocke, Berries, Search, Hunt, Run (Auto shows the battle page during battles; a battle switches to Auto and the old page returns afterwards, except on the Hunt page, which stays up) |
+| [ and ] | Select the previous or next Pokemon on the Party page, switch Nuzlocke views, open another place on the Berries page, move the Search selection, pick the target species on the Hunt page, or scroll the Run page (unless bound to a GBA button) |
 | / | Start typing a Pokemon name, on the Search page (unless bound to a GBA button) |
 | N | Start a Nuzlocke run, on the Nuzlocke page (unless bound to a GBA button) |
 | J, twice | Move the clock to the next Mirage Island day, on the Route page (unless bound to a GBA button) |
 | B | Turn berry alerts on or off, on the Berries page (unless bound to a GBA button) |
 | D | Switch between the dashboard and the Details sheet, on the Run page (unless bound to a GBA button) |
+| , and . | Pick the nature the Hunt page's Next match looks for (unless bound to a GBA button; Ctrl+, still opens Settings) |
+| R, twice | Reset the Hunt page's encounter counts: the first press arms it for 3 seconds, the second resets (unless bound to a GBA button) |
 | F5 | Save state to current slot |
 | F6 | Edit label of current save-state slot |
 | F7 | Open save-state slot picker |
@@ -266,13 +268,14 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--input-script <file>` | Replay scripted keypad input. Headless only. Format below. |
 | `--panel-out <file>` | After the run, render the Emerald Companion panel to a PNG. Requires `--headless`. |
 | `--panel-density <f>` | Panel pixels per point, 0.5 to 4.0 (default 1.0). Requires `--headless`. |
-| `--panel-page <p>` | Panel page: `auto`, `party`, `route`, `nuzlocke`, `berries`, `search` or `run` (default `auto`). Requires `--headless`. |
+| `--panel-page <p>` | Panel page: `auto`, `party`, `route`, `nuzlocke`, `berries`, `search`, `hunt` or `run` (default `auto`). Requires `--headless`. |
 | `--panel-search <text>` | Open the Search page with this text typed in. Implies `--panel-page search`, and is an error with any other page. Requires `--headless`. |
 | `--panel-select <n>` | Selected party slot, 0 to 5, for the party page, the Nuzlocke view: 0 routes, 1 team, 2 graveyard, the open place on the Berries page, the Nth result on the Search page, 0 being the first, or 1 for the Details sheet on the Run page (default 0). Requires `--headless`. |
 | `--library-folder <dir>` | Game folder for the library, used only when none has been chosen yet. |
 | `--library-out <file>` | Render the library for `--library-folder` to a PNG and exit. Takes no ROM and never reads or writes `library.txt`. |
 | `--nuzlocke-file <file>` | Track a Nuzlocke run in `file` during the run, starting one if the file has none. `--game-dump` then adds `nuz` lines. Requires `--headless`. |
 | `--run-file <file>` | Keep the Run page's log in `file` during the run. Without it a headless run tracks nothing and writes no `.run` file. `--game-dump` then adds `run` lines, and `--panel-page run` shows it (without the file, that page says it needs `--run-file`). Requires `--headless`. |
+| `--hunt-file <file>` | Keep the Hunt page's encounter counts in `file` during the run. Without it a headless run counts nothing and writes no `.hunt` file. `--game-dump` then adds `hunt` lines (with the whole Next match search run first), and `--panel-page hunt` shows it (without the file, that page says it needs `--hunt-file`). Requires `--headless`. |
 | `--xray-out <file>` | After the run, render the Hardware X-Ray window to a 2400x1640 PNG. Requires `--headless` and an X-Ray build. |
 | `--video-out <file>` | After the run, write the final frame through the screen filter as PNG, at the filter's own size for `--scale` (for example 720x480 for Smooth at scale 3). Requires `--headless`. |
 | `--overworld-out <file>` | After the run, write the final frame at 3x (720x480 PNG) with the Overworld X-Ray drawn on it. Requires `--headless`; original Pokemon Emerald (US) only. |
