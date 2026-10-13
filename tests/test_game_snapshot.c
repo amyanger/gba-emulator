@@ -1,10 +1,11 @@
 #include "test_harness.h"
 #include "game_fixture.h"
 #include "game/game.h"
+#include "game/damage_read.h"
 
 static uint8_t s_ewram[0x40000];
 static uint8_t s_iwram[0x8000];
-static uint8_t s_rom[0x4000];
+static uint8_t s_rom[0x10000];
 
 #define SB1 0x02010000u
 #define SB2 0x02000100u
@@ -33,6 +34,14 @@ static const GameProfile k_test_profile = {
     .wild_mon_headers = 0x08001900, .wild_header_cap = 200,
     .region_map_entries = 0x08001C00, .region_map_count = 2,
     .berries = 0x08002000,
+    /* damage calculator */
+    .battle_weather = 0x02000E50, .side_statuses = 0x02000E54,
+    .absent_battler_flags = 0x02000E58, .trainer_battle_opponent_a = 0x02000E5A,
+    .battle_resources = 0x02000E5C, .statuses3 = 0x02000E60, .disable_structs = 0x02000F00,
+    .stat_stage_ratios = 0x08006100,
+    .hold_effect_to_type = 0x08006120, .hold_effect_to_type_count = 2,
+    .flail_table = 0x08006140, .weight_table = 0x08006150,
+    .pokedex_entries = 0x08008000, .pokedex_count = 387,
 };
 
 static GameMem test_mem(void) {
@@ -89,6 +98,25 @@ static void build_world(void) {
     at(0x08000300 + 12 * 3)[1] = 20; at(0x08000300 + 12 * 3)[2] = 4;   /* Ground */
     put_str(0x08000200 + 13 * 237, "HIDDEN POWER");
     at(0x08000300 + 12 * 237)[1] = 60; at(0x08000300 + 12 * 237)[2] = 0;  /* stored Normal */
+    at(0x08000300 + 12 * 237)[0] = 135;                                  /* EFFECT_HIDDEN_POWER */
+    put_str(0x08000200 + 13 * 4, "WEATHER BALL");
+    at(0x08000300 + 12 * 4)[0] = 203; at(0x08000300 + 12 * 4)[1] = 50;  /* EFFECT_WEATHER_BALL, Normal */
+    put_str(0x08000200 + 13 * 5, "THUNDERSHOCK");
+    at(0x08000300 + 12 * 5)[0] = 6; at(0x08000300 + 12 * 5)[1] = 40; at(0x08000300 + 12 * 5)[2] = 13;
+    put_str(0x08000200 + 13 * 6, "LOW KICK");
+    at(0x08000300 + 12 * 6)[0] = 196; at(0x08000300 + 12 * 6)[1] = 1; at(0x08000300 + 12 * 6)[2] = 1;
+    /* item 5: WATER_POWER (52) x1.1 */
+    at(0x08000700 + 44 * 5)[0x12] = 52; at(0x08000700 + 44 * 5)[0x13] = 10;
+    /* damage tables: stat stage ratios, two hold-effect types, Flail and Low Kick tables */
+    const uint8_t ratios[26] = {10, 40, 10, 35, 10, 30, 10, 25, 10, 20, 10, 15, 10, 10,
+                                15, 10, 20, 10, 25, 10, 30, 10, 35, 10, 40, 10};
+    memcpy(at(0x08006100), ratios, sizeof(ratios));
+    const uint8_t hold_types[4] = {52, 11, 58, 10};
+    memcpy(at(0x08006120), hold_types, sizeof(hold_types));
+    const uint8_t flail[12] = {1, 200, 4, 150, 9, 100, 16, 80, 32, 40, 48, 20};
+    memcpy(at(0x08006140), flail, sizeof(flail));
+    const uint16_t weight[12] = {100, 20, 250, 40, 500, 60, 1000, 80, 2000, 100, 0xFFFF, 0xFFFF};
+    for (int i = 0; i < 12; i++) fixture_put16(at(0x08006150 + 2u * i), weight[i]);
     put_str(0x08000400 + 13 * 1, "OVERGROW");
     put_str(0x08000400 + 13 * 2, "PICKUP");
     put_str(0x08000500 + 7 * 0, "NORMAL");
@@ -443,7 +471,7 @@ TEST(snapshot_dump_writes_text) {
     fclose(f);
     remove("game_dump_test.txt");
     ASSERT_TRUE(strstr(buf, "\nenemy 0 ZIGZAGOON ") != NULL);
-    ASSERT_TRUE(strstr(buf, "\nenemy_move 0 0 WATER GUN type 11 x8\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "\nenemy_move 0 0 WATER GUN type 11 x8 dmg 0 0 0\n") != NULL);
     ASSERT_TRUE(strstr(buf, "\nenemy_move 0 1 GROWL type 3 x0 status\n") != NULL);
 }
 
@@ -520,6 +548,299 @@ TEST(snapshot_dex_caught_bits) {
     for (int i = 0; i < 52; i++) ASSERT_EQ(gs->snap.dex_caught[i], 0);
 }
 
+/* Makes the fixture battle readable for the damage calculator: ROM tables loaded, stats and
+ * neutral stages, personalities that match party slot 0 on each side, and a gBattleResources
+ * chain inside EWRAM. Player: Lv10, 20 in every stat, 30/30 HP. Enemy: Lv3, 10 in every stat. */
+static bool enable_damage(GameState* gs) {
+    GameMem m = test_mem();
+    uint8_t* player = at(0x02000C00);
+    uint8_t* enemy = at(0x02000C00 + 0x58);
+    for (int i = 0; i < 5; i++) {
+        fixture_put16(player + 2 + 2 * i, 20);
+        fixture_put16(enemy + 2 + 2 * i, 10);
+    }
+    memset(player + 0x18, 6, 8);
+    memset(enemy + 0x18, 6, 8);
+    player[0x2A] = 10;
+    fixture_put16(player + 0x28, 30);
+    fixture_put16(player + 0x2C, 30);
+    fixture_put32(player + 0x48, 25);           /* gPlayerParty[0] personality */
+    fixture_put32(enemy + 0x48, 0x1234);
+    fixture_put32(at(0x02000800), 0x1234);      /* gEnemyParty[0] personality */
+    fixture_put16(at(0x02000E08), 0);           /* gBattlerPartyIndexes[0], [1] */
+    fixture_put16(at(0x02000E0A), 0);
+    fixture_put32(at(0x02000E5C), 0x02001000);  /* gBattleResources */
+    fixture_put32(at(0x02001004), 0x02001100);  /* ->flags */
+    return damage_tables_load(&m, &k_test_profile, &gs->dmg_tables);
+}
+
+/* Water Gun both ways: player (Fire, Lv10, SpA 20) vs enemy (Fire, SpD 10):
+ * 20*40*6/10/50 = 9, +2 = 11, x2 = 22, rolls 18..22. Enemy (Lv3, SpA 10) vs player (SpD 20):
+ * 10*40*3/20/50 = 1, +2 = 3, x2 = 6, rolls 5..6. */
+TEST(snapshot_damage_wild_battle_both_directions) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    const GameEnemy* e = &gs->snap.enemies[0];
+    ASSERT_EQ(e->eff[0].dmg_kind, DMG_RANGE);
+    ASSERT_EQ(e->eff[0].dmg_lo, 18);
+    ASSERT_EQ(e->eff[0].dmg_hi, 22);
+    ASSERT_EQ(e->eff[1].dmg_kind, DMG_NONE);  /* Growl */
+    ASSERT_EQ(e->moves[0].dmg_kind, DMG_RANGE);
+    ASSERT_EQ(e->moves[0].dmg_lo, 5);
+    ASSERT_EQ(e->moves[0].dmg_hi, 6);
+    ASSERT_EQ(e->player_hp, 30);
+    ASSERT_EQ(e->player_max_hp, 30);
+}
+
+TEST(snapshot_damage_none_without_tables) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    gs->dmg_tables.valid = false;
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_NONE);
+    ASSERT_EQ(gs->snap.enemies[0].moves[0].dmg_kind, DMG_NONE);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].quarters, 8);
+}
+
+/* R4: gBattleMons from the previous battle (personality differs from the party slot). */
+TEST(snapshot_damage_stale_personality_is_none) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    GameMem m = test_mem();
+    fixture_put32(at(0x02000C00 + 0x58 + 0x48), 0x9999);
+    game_update_mem(gs, &m);
+    const GameEnemy* e = &gs->snap.enemies[0];
+    for (int i = 0; i < e->eff_count; i++) ASSERT_EQ(e->eff[i].dmg_kind, DMG_NONE);
+    for (int i = 0; i < e->move_count; i++) ASSERT_EQ(e->moves[i].dmg_kind, DMG_NONE);
+    ASSERT_EQ(e->eff[0].quarters, 8);         /* the multiplier display still works */
+
+    fixture_put32(at(0x02000C00 + 0x58 + 0x48), 0x1234);
+    fixture_put32(at(0x02000C00 + 0x48), 26);  /* player side mismatch */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_NONE);
+    ASSERT_EQ(gs->snap.enemies[0].moves[0].dmg_kind, DMG_NONE);
+
+    fixture_put32(at(0x02000C00 + 0x48), 25);
+    fixture_put16(at(0x02000E0A), 6);          /* enemy party index out of range */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_NONE);
+}
+
+/* R3: Charge on battler 0 (the player) doubles the player's Electric move only:
+ * 11 -> 22 (rolls 18..22); the enemy's stays 3. */
+TEST(snapshot_damage_reads_status3_by_battler_id) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    fixture_put16(at(0x02000C00 + 0x0E), 5);         /* player: Thundershock in slot 1 */
+    fixture_put16(at(0x02000C00 + 0x58 + 0x0E), 5);  /* enemy: Thundershock in slot 1 */
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[1].dmg_hi, 11);
+    ASSERT_EQ(gs->snap.enemies[0].moves[1].dmg_hi, 3);
+    fixture_put32(at(0x02000E60), 1u << 9);          /* gStatuses3[0] |= STATUS3_CHARGED_UP */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[1].dmg_kind, DMG_RANGE);
+    ASSERT_EQ(gs->snap.enemies[0].eff[1].dmg_lo, 18);
+    ASSERT_EQ(gs->snap.enemies[0].eff[1].dmg_hi, 22);
+    ASSERT_EQ(gs->snap.enemies[0].moves[1].dmg_kind, DMG_RANGE);
+    ASSERT_EQ(gs->snap.enemies[0].moves[1].dmg_hi, 3);
+}
+
+/* Doubles: per-battler reads use the battler id. Battler 1 (enemy side) is empty, battler 3
+ * becomes enemies[0]; Charge set only on battler 3 doubles the enemy's Electric move and
+ * leaves the player's alone. */
+TEST(snapshot_damage_doubles_uses_battler_id) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    fixture_put16(at(0x02000C00 + 0x0E), 5);         /* player: Thundershock in slot 1 */
+    fixture_put16(at(0x02000C00 + 0x58 + 0x0E), 5);  /* enemy: Thundershock in slot 1 */
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    memcpy(at(0x02000C00 + 3 * 0x58), at(0x02000C00 + 0x58), 0x58);  /* enemy -> battler 3 */
+    fixture_put16(at(0x02000C00 + 0x58), 0);                         /* battler 1: no species */
+    at(0x02000E00)[0] = 4;                                           /* gBattlersCount */
+    at(0x02000E04)[2] = 0; at(0x02000E04)[3] = 3;                    /* positions: [2] ally, [3] foe */
+    fixture_put16(at(0x02000E0E), 0);                                /* gBattlerPartyIndexes[3] */
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemy_count, 1);
+    ASSERT_EQ(gs->snap.enemies[0].eff[1].dmg_hi, 11);
+    ASSERT_EQ(gs->snap.enemies[0].moves[1].dmg_hi, 3);
+    fixture_put32(at(0x02000E60 + 4 * 3), 1u << 9);  /* gStatuses3[3] |= STATUS3_CHARGED_UP */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].moves[1].dmg_kind, DMG_RANGE);
+    ASSERT_EQ(gs->snap.enemies[0].moves[1].dmg_hi, 6);   /* enemy's Electric move doubled */
+    ASSERT_EQ(gs->snap.enemies[0].eff[1].dmg_hi, 11);    /* player's is not */
+}
+
+/* R7: Weather Ball in rain is a Water move for the pill and the multiplier. */
+TEST(snapshot_damage_weather_ball_effective_type) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    fixture_put16(at(0x02000C00 + 0x0C), 4);  /* player: Weather Ball in slot 0 */
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].type, 0);      /* no weather: Normal */
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].quarters, 4);
+    fixture_put16(at(0x02000E50), 0x0001);               /* B_WEATHER_RAIN_TEMPORARY */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].type, 11);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].quarters, 8);   /* Water vs Fire */
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_RANGE);
+    at(0x02000C00 + 0x58)[0x20] = 13;                     /* enemy Cloud Nine: no effect */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].type, 0);
+}
+
+TEST(snapshot_damage_fainted_target_is_none) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    GameMem m = test_mem();
+    fixture_put16(at(0x02000C00 + 0x58 + 0x28), 0);  /* enemy hp 0 */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_NONE);
+    ASSERT_EQ(gs->snap.enemies[0].moves[0].dmg_kind, DMG_NONE);
+}
+
+TEST(snapshot_damage_resources_outside_ewram_is_none) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    GameMem m = test_mem();
+    fixture_put32(at(0x02000E5C), 0x03000000);  /* gBattleResources in IWRAM */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_NONE);
+    ASSERT_EQ(gs->snap.enemies[0].moves[0].dmg_kind, DMG_NONE);
+    fixture_put32(at(0x02000E5C), 0);           /* NULL, as outside battle */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_NONE);
+    fixture_put32(at(0x02000E5C), 0x02001000);
+    fixture_put32(at(0x02001004), 0x0203FFFC);  /* flags[] runs off the end of EWRAM */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_NONE);
+    fixture_put32(at(0x02001004), 0x02001100);
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_RANGE);
+}
+
+TEST(snapshot_damage_safari_is_none) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    GameMem m = test_mem();
+    fixture_put32(at(0x02000E10), 1u << 7);
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_NONE);
+    ASSERT_EQ(gs->snap.enemies[0].moves[0].dmg_kind, DMG_NONE);
+}
+
+/* Stone Badge (flag 0x867 = byte 0x10C bit 7): Mud Slap 20*20*6/10/50 + 2 = 6 -> Atk 22 gives 7.
+ * Not against a secret base trainer (gTrainerBattleOpponent_A 1024). */
+TEST(snapshot_damage_badges_from_save_flags) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    fixture_put16(at(0x02000C00 + 0x0C), 3);  /* player: Mud Slap in slot 0 */
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 6);
+    at(SB1 + 0x1270 + 0x10C)[0] = 0x80;
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 7);
+    ASSERT_EQ(gs->snap.enemies[0].moves[0].dmg_hi, 6);  /* the enemy never gets badges */
+    fixture_put32(at(0x02000E10), 1u << 3);           /* trainer battle */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 7);
+    fixture_put16(at(0x02000E5A), 1024);               /* TRAINER_SECRET_BASE */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 6);
+}
+
+/* Item 5 is WATER_POWER x1.1: SpA 22 -> 22*40*6/10/50 + 2 = 12, x2 = 24. Item ids past the
+ * table mean no hold effect, as GetItemHoldEffect does. */
+TEST(snapshot_damage_reads_hold_items) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    GameMem m = test_mem();
+    fixture_put16(at(0x02000C00 + 0x2E), 5);
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 24);
+    fixture_put16(at(0x02000C00 + 0x2E), 50);
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_RANGE);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 22);
+}
+
+/* Low Kick needs the target's Pokedex weight by national number (species 2 -> 263). */
+TEST(snapshot_damage_low_kick_weight_by_national_dex) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    fixture_put16(at(0x02000C00 + 0x0C), 6);  /* player: Low Kick in slot 0 */
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_NONE);  /* weight 0 = unknown */
+    fixture_put16(at(0x08008000 + 263 * 0x20 + 0x0E), 100);    /* 10.0 kg -> power 40 */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_RANGE);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 11);           /* 20*40*6/10/50 + 2 */
+}
+
+TEST(snapshot_damage_dump_lines) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    char buf[4096];
+    FILE* f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    ASSERT_TRUE(game_dump(&gs->snap, f));
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    ASSERT_TRUE(strstr(buf, "\nyour_move 0 WATER GUN type 11 x8 dmg 1 18 22\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "\nyour_move 1 GROWL type 3 x0 status\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "\nenemy_move 0 0 WATER GUN type 11 x8 dmg 1 5 6\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "\nenemy_move 0 1 GROWL type 3 x0 status\n") != NULL);
+}
+
 void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_dex_caught_bits);
     RUN_TEST(snapshot_reads_berries_and_dumps_them);
@@ -540,4 +861,17 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_clamps_party_count);
     RUN_TEST(snapshot_dump_writes_text);
     RUN_TEST(snapshot_includes_mirage_and_dump_line);
+    RUN_TEST(snapshot_damage_wild_battle_both_directions);
+    RUN_TEST(snapshot_damage_none_without_tables);
+    RUN_TEST(snapshot_damage_stale_personality_is_none);
+    RUN_TEST(snapshot_damage_reads_status3_by_battler_id);
+    RUN_TEST(snapshot_damage_doubles_uses_battler_id);
+    RUN_TEST(snapshot_damage_weather_ball_effective_type);
+    RUN_TEST(snapshot_damage_fainted_target_is_none);
+    RUN_TEST(snapshot_damage_resources_outside_ewram_is_none);
+    RUN_TEST(snapshot_damage_safari_is_none);
+    RUN_TEST(snapshot_damage_badges_from_save_flags);
+    RUN_TEST(snapshot_damage_reads_hold_items);
+    RUN_TEST(snapshot_damage_low_kick_weight_by_national_dex);
+    RUN_TEST(snapshot_damage_dump_lines);
 }

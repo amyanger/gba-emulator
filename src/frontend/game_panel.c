@@ -1,6 +1,7 @@
 #include "frontend/game_panel.h"
 #include "frontend/run_panel.h"
 #include "common.h"
+#include "game/damage.h"
 #include "ui/ui_font.h"
 #include "ui/ui_theme.h"
 #include "ui/ui_widgets.h"
@@ -253,33 +254,131 @@ static void title_meta(UiCanvas* c, float x, float y, float max_x, const char* p
                 suffix);
 }
 
-/* pill_x lines the type pills up in one column, as in the mockup's grid. The colours
- * say how good the matchup is for the player, so they flip for the enemy's moves
- * (against_you): x2 against you is a threat, a resisted or blocked move is good news. */
-static void move_row(UiCanvas* c, float x, float y, float w, float pill_x, const GameMoveEff* e,
-                     bool against_you) {
-    const char* txt = "?";
-    uint32_t color = UI_MUTED;
-    UiFont font = UI_FONT_SEMIBOLD;
-    uint32_t strong = against_you ? UI_BAD : UI_GOOD;
+static uint64_t damage_pct(uint32_t hp_amount, uint16_t max_hp) {
+    return max_hp == 0 ? 0 : (uint64_t)hp_amount * 100u / max_hp;
+}
+
+void game_panel_damage_text(const GameMoveEff* e, uint16_t hp, uint16_t max_hp, char* out,
+                            size_t n) {
+    (void)hp;
+    uint64_t lo = damage_pct(e->dmg_lo, max_hp), hi = damage_pct(e->dmg_hi, max_hp);
     if (e->status_move) {
-        txt = "status";
-        font = UI_FONT_REGULAR;
-    } else {
-        switch (e->quarters) {
-        case 16: txt = TIMES "4"; color = strong; break;
-        case 8: txt = TIMES "2"; color = strong; break;
-        case 4: txt = TIMES "1"; font = UI_FONT_REGULAR; break;
-        case 2: txt = TIMES "0.5"; color = against_you ? UI_GOOD : UI_WARN; break;
-        case 1: txt = TIMES "0.25"; color = against_you ? UI_GOOD : UI_WARN; break;
-        case 0: txt = TIMES "0"; color = against_you ? UI_GOOD : UI_BAD; break;
-        default: break; /* 0xFF: matchup unknown */
-        }
+        snprintf(out, n, "status");
+        return;
     }
+    switch (e->dmg_kind) {
+    case DMG_RANGE:
+    case DMG_FIXED:
+        if (e->dmg_kind == DMG_FIXED) hi = lo;
+        if (lo > 999) snprintf(out, n, ">999%%");
+        else if (hi > 999 && lo == 0) snprintf(out, n, "<1%%+");
+        else if (hi > 999) snprintf(out, n, "%u%%+", (uint32_t)lo);
+        else if (lo == hi && hi == 0) snprintf(out, n, "<1%%");
+        else if (lo == hi) snprintf(out, n, "%u%%", (uint32_t)lo);
+        else if (lo == 0) snprintf(out, n, "<1" NDASH "%u%%", (uint32_t)hi);
+        else snprintf(out, n, "%u" NDASH "%u%%", (uint32_t)lo, (uint32_t)hi);
+        return;
+    case DMG_OHKO: snprintf(out, n, "OHKO"); return;
+    case DMG_FAILS: snprintf(out, n, "fails"); return;
+    case DMG_IMMUNE: snprintf(out, n, TIMES "0"); return;
+    default: break;
+    }
+    switch (e->quarters) {
+    case 16: snprintf(out, n, TIMES "4"); break;
+    case 8: snprintf(out, n, TIMES "2"); break;
+    case 4: snprintf(out, n, TIMES "1"); break;
+    case 2: snprintf(out, n, TIMES "0.5"); break;
+    case 1: snprintf(out, n, TIMES "0.25"); break;
+    case 0: snprintf(out, n, TIMES "0"); break;
+    default: snprintf(out, n, "?"); break; /* 0xFF: matchup unknown */
+    }
+}
+
+/* The colours say how good the matchup is for the player, so they flip for the enemy's
+ * moves (against_you): x2 against you is a threat, a resisted or blocked move is good news. */
+uint32_t game_panel_damage_color(const GameMoveEff* e, uint16_t hp, bool against_you,
+                                 bool* semibold) {
+    uint32_t strong = against_you ? UI_BAD : UI_GOOD;
+    uint32_t color = UI_MUTED;
+    *semibold = true;
+    if (e->status_move) {
+        *semibold = false;
+        return color;
+    }
+    switch (e->dmg_kind) {
+    case DMG_RANGE:
+    case DMG_FIXED: {
+        *semibold = false;
+        if (e->dmg_no_ko) return UI_MUTED;
+        uint32_t h = hp;
+        uint32_t hi = e->dmg_hi;
+        if (e->dmg_leaves_one && hi + 1 > h) hi = h ? h - 1 : 0;
+        if (e->dmg_lo >= h && !e->dmg_leaves_one) {
+            *semibold = true;
+            return strong;
+        }
+        if (hi >= h) {
+            *semibold = true;
+            return UI_WARN;
+        }
+        return UI_TEXT;
+    }
+    case DMG_OHKO:
+        if (e->dmg_no_ko) {
+            *semibold = false;
+            return UI_MUTED;
+        }
+        return strong;
+    case DMG_FAILS: *semibold = false; return UI_MUTED;
+    case DMG_IMMUNE: return against_you ? UI_GOOD : UI_BAD;
+    default: break;
+    }
+    switch (e->quarters) {
+    case 16:
+    case 8: return strong;
+    case 4: *semibold = false; return UI_MUTED;
+    case 2:
+    case 1: return against_you ? UI_GOOD : UI_WARN;
+    case 0: return against_you ? UI_GOOD : UI_BAD;
+    default: return UI_MUTED; /* 0xFF: matchup unknown */
+    }
+}
+
+/* Muted multiplier shown beside the name when the value column holds a damage range. */
+static const char* name_suffix(const GameMoveEff* e) {
+    if (e->status_move || e->dmg_kind != DMG_RANGE) return NULL;
+    switch (e->quarters) {
+    case 16: return TIMES "4";
+    case 8: return TIMES "2";
+    case 2: return TIMES "0.5";
+    case 1: return TIMES "0.25";
+    default: return NULL;
+    }
+}
+
+/* pill_x lines the type pills up in one column, as in the mockup's grid. hp/max_hp are the
+ * move's target. */
+static void move_row(UiCanvas* c, float x, float y, float w, float pill_x, const GameMoveEff* e,
+                     bool against_you, uint16_t hp, uint16_t max_hp) {
+    char txt[24];
+    bool semi;
+    game_panel_damage_text(e, hp, max_hp, txt, sizeof(txt));
+    uint32_t color = game_panel_damage_color(e, hp, against_you, &semi);
+    UiFont font = semi ? UI_FONT_SEMIBOLD : UI_FONT_REGULAR;
     /* Text centered on the pill (UI_SIZE_PILL + 5 tall). */
     float ty = y + (UI_SIZE_PILL + 5.0f) / 2 - ui_text_cap_middle(c, UI_FONT_REGULAR, KV_SIZE);
     Name move = title(e->move);
-    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, ty, 130.0f, UI_ALIGN_LEFT, UI_TEXT, move.s);
+    float slot = pill_x - x - 8.0f;
+    if (slot > 130.0f) slot = 130.0f;
+    float name_w = ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, ty, slot, UI_ALIGN_LEFT, UI_TEXT,
+                           move.s);
+    const char* suf = name_suffix(e);
+    if (suf) {
+        float sw = ui_text_width(c, UI_FONT_REGULAR, KV_SIZE, suf);
+        if (name_w + 4.0f + sw <= slot)
+            ui_text(c, UI_FONT_REGULAR, KV_SIZE, x + name_w + 4.0f, ty, 0, UI_ALIGN_LEFT,
+                    UI_MUTED, suf);
+    }
     pill(c, pill_x, y, e->type);
     ui_text(c, font, KV_SIZE, x + w, ty, 0, UI_ALIGN_RIGHT, color, txt);
 }
@@ -402,8 +501,22 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
         float pw = pill_width(c, e->moves[i].type);
         if (pw > widest) widest = pw;
     }
-    float pill_off = COL_W - 54.0f - widest;
-    if (pill_off < 138.0f) pill_off = 138.0f;
+    /* Value column: the widest value text in either list, at least 44. */
+    float value_w = 44.0f;
+    for (uint8_t i = 0; i < eff_n; i++) {
+        char vt[24];
+        game_panel_damage_text(&e->eff[i], e->hp, e->max_hp, vt, sizeof(vt));
+        float tw = ui_text_width(c, UI_FONT_SEMIBOLD, KV_SIZE, vt);
+        if (tw > value_w) value_w = tw;
+    }
+    for (uint8_t i = 0; i < moves_n; i++) {
+        char vt[24];
+        game_panel_damage_text(&e->moves[i], e->player_hp, e->player_max_hp, vt, sizeof(vt));
+        float tw = ui_text_width(c, UI_FONT_SEMIBOLD, KV_SIZE, vt);
+        if (tw > value_w) value_w = tw;
+    }
+    float pill_off = COL_W - 10.0f - value_w - widest;
+    if (pill_off < 130.0f) pill_off = 130.0f;
     char upper[GAME_NAME_LEN];
 
     if (eff_n > 0) {
@@ -417,7 +530,7 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
         }
         ly += SECTION_ADV;
         for (uint8_t i = 0; i < eff_n; i++) {
-            move_row(c, LEFT, ly, COL_W, LEFT + pill_off, &e->eff[i], false);
+            move_row(c, LEFT, ly, COL_W, LEFT + pill_off, &e->eff[i], false, e->hp, e->max_hp);
             ly += 21.0f;
         }
     }
@@ -437,7 +550,8 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
         section(c, COL2_X, ry, COL_W, buf);
         ry += SECTION_ADV;
         for (uint8_t i = 0; i < moves_n; i++) {
-            move_row(c, COL2_X, ry, COL_W, COL2_X + pill_off, &e->moves[i], true);
+            move_row(c, COL2_X, ry, COL_W, COL2_X + pill_off, &e->moves[i], true, e->player_hp,
+                     e->player_max_hp);
             ry += 21.0f;
         }
     }

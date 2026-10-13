@@ -8,6 +8,8 @@
 #include "ui/ui_font.h"
 #include "screenshot/screenshot.h"
 #include <stdlib.h>
+#include <string.h>
+#include "game/damage.h"
 
 #define BUF_W 1800
 #define BUF_H 1440
@@ -395,6 +397,102 @@ static void draw_1x(const GameSnapshot* snap) {
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
     game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false);
+}
+
+static GameMoveEff dmg_eff(DamageKind k, uint32_t lo, uint32_t hi) {
+    GameMoveEff e;
+    memset(&e, 0, sizeof(e));
+    e.quarters = 4;
+    e.dmg_kind = (uint8_t)k;
+    e.dmg_lo = lo;
+    e.dmg_hi = hi;
+    return e;
+}
+
+TEST(panel_damage_text_cases) {
+    char b[32];
+    GameMoveEff e = dmg_eff(DMG_RANGE, 38, 45);
+    game_panel_damage_text(&e, 100, 100, b, sizeof(b));
+    ASSERT_STR_EQ(b, "38\xE2\x80\x93" "45%");
+    e = dmg_eff(DMG_RANGE, 100, 100);
+    game_panel_damage_text(&e, 100, 100, b, sizeof(b));
+    ASSERT_STR_EQ(b, "100%");
+    e = dmg_eff(DMG_FIXED, 0, 0);
+    game_panel_damage_text(&e, 100, 1000, b, sizeof(b));
+    ASSERT_STR_EQ(b, "<1%");
+    e = dmg_eff(DMG_FIXED, 20, 20);
+    game_panel_damage_text(&e, 100, 100, b, sizeof(b));
+    ASSERT_STR_EQ(b, "20%");
+    e = dmg_eff(DMG_RANGE, 5000, 9000);
+    game_panel_damage_text(&e, 100, 36, b, sizeof(b));
+    ASSERT_STR_EQ(b, ">999%");
+    e = dmg_eff(DMG_RANGE, 0, 5);
+    game_panel_damage_text(&e, 100, 100, b, sizeof(b));
+    ASSERT_STR_EQ(b, "<1\xE2\x80\x93" "5%");
+    e = dmg_eff(DMG_RANGE, 340, 400);
+    game_panel_damage_text(&e, 100, 40, b, sizeof(b));
+    ASSERT_STR_EQ(b, "850%+");
+    e = dmg_eff(DMG_RANGE, 5000, 9000);
+    game_panel_damage_text(&e, 100, 36, b, sizeof(b));
+    ASSERT_STR_EQ(b, ">999%");
+    e = dmg_eff(DMG_FIXED, 5000, 5000);
+    game_panel_damage_text(&e, 100, 36, b, sizeof(b));
+    ASSERT_STR_EQ(b, ">999%");
+    e = dmg_eff(DMG_OHKO, 36, 36);
+    game_panel_damage_text(&e, 36, 36, b, sizeof(b));
+    ASSERT_STR_EQ(b, "OHKO");
+    e = dmg_eff(DMG_FAILS, 0, 0);
+    game_panel_damage_text(&e, 36, 36, b, sizeof(b));
+    ASSERT_STR_EQ(b, "fails");
+    e = dmg_eff(DMG_IMMUNE, 0, 0);
+    e.quarters = 0;
+    game_panel_damage_text(&e, 36, 36, b, sizeof(b));
+    ASSERT_STR_EQ(b, "\xC3\x97" "0");
+    e = dmg_eff(DMG_NONE, 0, 0);
+    e.quarters = 8;
+    game_panel_damage_text(&e, 36, 36, b, sizeof(b));
+    ASSERT_STR_EQ(b, "\xC3\x97" "2");
+}
+
+TEST(panel_damage_color_cases) {
+    bool semi = false;
+    GameMoveEff e = dmg_eff(DMG_RANGE, 40, 48);
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 40, false, &semi), UI_GOOD);
+    ASSERT_TRUE(semi);
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 40, true, &semi), UI_BAD);
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 45, false, &semi), UI_WARN);
+    ASSERT_TRUE(semi);
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 60, false, &semi), UI_TEXT);
+    ASSERT_TRUE(!semi);
+    e.dmg_no_ko = true; /* behind a Substitute */
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 10, false, &semi), UI_MUTED);
+    ASSERT_TRUE(!semi);
+    e = dmg_eff(DMG_RANGE, 40, 48); /* semi-invulnerable target, same flag as Substitute */
+    e.dmg_no_ko = true;
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 40, true, &semi), UI_MUTED);
+    ASSERT_TRUE(!semi);
+    e = dmg_eff(DMG_RANGE, 30, 50);
+    e.dmg_leaves_one = true; /* False Swipe at 10 HP can never KO */
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 10, false, &semi), UI_TEXT);
+    ASSERT_TRUE(!semi);
+    e = dmg_eff(DMG_OHKO, 36, 36);
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 36, false, &semi), UI_GOOD);
+    e.dmg_no_ko = true; /* behind a Substitute or in Fly/Dig/Dive */
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 36, false, &semi), UI_MUTED);
+    ASSERT_TRUE(!semi);
+    e = dmg_eff(DMG_FAILS, 0, 0);
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 36, false, &semi), UI_MUTED);
+    e = dmg_eff(DMG_IMMUNE, 0, 0);
+    e.quarters = 0;
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 36, false, &semi), UI_BAD);
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 36, true, &semi), UI_GOOD);
+    e = dmg_eff(DMG_NONE, 0, 0);
+    e.quarters = 8;
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 36, false, &semi), UI_GOOD);
+    ASSERT_TRUE(semi);
+    e.quarters = 4;
+    ASSERT_EQ_HEX(game_panel_damage_color(&e, 36, false, &semi), UI_MUTED);
+    ASSERT_TRUE(!semi);
 }
 
 /* The enemy's moves sit in the right column under the IVs (which end near y 230). */
@@ -1265,6 +1363,8 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_long_names_stay_in_columns);
     RUN_TEST(panel_invalid_snapshot_shows_reason);
     RUN_TEST(panel_unsupported_rom_explains_why);
+    RUN_TEST(panel_damage_text_cases);
+    RUN_TEST(panel_damage_color_cases);
     RUN_TEST(panel_battle_shows_enemy_moves);
     RUN_TEST(panel_enemy_move_unknown_matchup_is_muted);
     RUN_TEST(panel_wild_battle_many_balls_fit);

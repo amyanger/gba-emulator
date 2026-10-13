@@ -9,6 +9,7 @@
 #include "game/mirage.h"
 #include "game/berry.h"
 #include "game/species_search.h"
+#include "game/damage.h"
 
 typedef struct GBA GBA;
 
@@ -44,6 +45,9 @@ typedef struct {
     uint8_t quarters;
     bool status_move;
     uint8_t type; /* effective matchup type, 0xFF when the move id is out of range or unreadable */
+    uint8_t dmg_kind;          /* DamageKind; DMG_NONE when no prediction (overworld, enemy 1, fallback) */
+    bool dmg_no_ko, dmg_leaves_one;
+    uint32_t dmg_lo, dmg_hi;   /* HP, non-critical hit */
 } GameMoveEff;
 
 typedef struct {
@@ -63,6 +67,7 @@ typedef struct {
     uint8_t move_count;
     GameMoveEff moves[4];    /* this enemy's moves against the player's active battler;
                                 quarters is 0xFF when that battler is unknown */
+    uint16_t player_hp, player_max_hp; /* the player's active battler, target of moves[] */
 } GameEnemy;
 
 typedef struct {
@@ -107,6 +112,7 @@ typedef struct {
     MirageClock clock;   /* set by game_update from the cartridge RTC */
     BerryPlaces places;  /* berry tree places, built from the ROM by game_init */
     SpeciesIndex search; /* species search index, built from the ROM by game_init */
+    DamageTables dmg_tables; /* damage calculator ROM tables, copied by game_init */
 } GameState;
 
 /* Item name from the ROM's item table ("--" for 0, "???" when out of range). */
@@ -123,6 +129,8 @@ void game_update(GameState* gs, const GBA* gba);
 void game_read_berries(GameState* gs, const GBA* gba, BerryView* out);
 void game_species_name(const GameMem* m, const GameProfile* p, uint16_t species, char* out);
 void game_mapsec_name(const GameMem* m, const GameProfile* p, uint8_t sec, char* out);
+/* National dex number of a species, 0 when out of range or unreadable. */
+uint16_t game_species_national(const GameMem* m, const GameProfile* p, uint16_t species);
 /* Plain-text dump of a snapshot (used by --game-dump). */
 bool game_dump(const GameSnapshot* snap, FILE* out);
 /* "Grass", "Surf", "Rock Smash", "Old Rod", "Good Rod", "Super Rod" */

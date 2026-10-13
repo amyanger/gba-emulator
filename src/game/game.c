@@ -1,5 +1,6 @@
 #include "game/game.h"
 #include "game/battle_info.h"
+#include "game/damage_read.h"
 #include "game/gen3_text.h"
 #include "gba.h"
 #include "cartridge/rtc.h"
@@ -150,7 +151,7 @@ static bool dex_bit(const GameMem* m, uint32_t base, uint16_t national) {
 }
 
 /* National dex number of a species, 0 when out of range or unreadable. */
-static uint16_t species_national(const GameMem* m, const GameProfile* p, uint16_t species) {
+uint16_t game_species_national(const GameMem* m, const GameProfile* p, uint16_t species) {
     uint16_t national;
     if (species == 0 || species >= p->species_count) return 0;
     if (!game_mem_read16(m, p->species_to_national + (species - 1u) * 2, &national) ||
@@ -162,7 +163,7 @@ static uint16_t species_national(const GameMem* m, const GameProfile* p, uint16_
 /* Mirrors GetSetPokedexFlag(FLAG_GET_CAUGHT) without its write-back. */
 static bool dex_caught(const GameMem* m, const GameProfile* p, uint32_t sb1, uint32_t sb2,
                        uint16_t species) {
-    uint16_t national = species_national(m, p, species);
+    uint16_t national = game_species_national(m, p, species);
     if (national == 0) return false;
     return dex_bit(m, sb2 + SB2_DEX_OWNED, national) && dex_bit(m, sb2 + SB2_DEX_SEEN, national) &&
            dex_bit(m, sb1 + SB1_DEX_SEEN1, national) && dex_bit(m, sb1 + SB1_DEX_SEEN2, national);
@@ -228,10 +229,11 @@ static void read_party(const GameMem* m, const GameProfile* p, GameSnapshot* s) 
     }
 }
 
-/* Battlers: returns enemy battle structs (up to 2) and the player's active one. */
+/* Battlers: returns enemy battle structs (up to 2) with their battler ids, and the player's
+ * active one. */
 static uint8_t read_battlers(const GameMem* m, const GameProfile* p,
-                             uint8_t enemies[2][BMON_SIZE], uint8_t player[BMON_SIZE],
-                             bool* have_player, uint8_t* player_battler) {
+                             uint8_t enemies[2][BMON_SIZE], uint8_t enemy_ids[2],
+                             uint8_t player[BMON_SIZE], bool* have_player, uint8_t* player_battler) {
     uint8_t in_battle, count, n = 0;
     *have_player = false;
     if (!game_mem_read8(m, p->main_in_battle, &in_battle) || !(in_battle & 0x02)) return 0;
@@ -242,7 +244,10 @@ static uint8_t read_battlers(const GameMem* m, const GameProfile* p,
         if (!game_mem_copy(m, p->battle_mons + (uint32_t)b * BMON_SIZE, mon, BMON_SIZE)) return 0;
         uint16_t species = rd16(mon + BMON_SPECIES);
         if (pos & 1) {
-            if (species != 0 && species < p->species_count && n < 2) memcpy(enemies[n++], mon, BMON_SIZE);
+            if (species != 0 && species < p->species_count && n < 2) {
+                enemy_ids[n] = b;
+                memcpy(enemies[n++], mon, BMON_SIZE);
+            }
         } else if (!*have_player) {
             memcpy(player, mon, BMON_SIZE);
             *have_player = true;
@@ -268,13 +273,25 @@ static void read_active_name(const GameMem* m, const GameProfile* p, uint8_t bat
     gen3_decode(d.nickname_raw, sizeof(d.nickname_raw), s->active_name, GAME_NAME_LEN);
 }
 
+/* Damage calculator inputs for one direction; NULL in fill_move_eff when not computed. */
+typedef struct {
+    const DamageTables* t;
+    const DamageCtx* ctx;
+    const DamageMon* atk;
+    const DamageMon* def;
+} DamagePair;
+
 /* One of attacker's moves against defender (NULL when unknown: quarters 0xFF).
- * Foresight is read from the defender, as TypeCalc checks the target's status2. */
+ * Foresight is read from the defender, as TypeCalc checks the target's status2.
+ * With dp, the effective type (R7) and the predicted damage are filled too. */
 static void fill_move_eff(const GameMem* m, const GameProfile* p, uint16_t mv,
                           const uint8_t* attacker, const uint8_t* defender,
-                          const uint8_t* type_table, uint32_t type_len, GameMoveEff* eff) {
+                          const uint8_t* type_table, uint32_t type_len, const DamagePair* dp,
+                          GameMoveEff* eff) {
     uint8_t bm[BATTLE_MOVE_SIZE];
+    DamageMove dmove;
     eff->type = 0xFF;
+    eff->dmg_kind = DMG_NONE;
     eff->quarters = defender ? 0 : 0xFF;
     move_name(m, p, mv, eff->move);
     if (mv >= p->move_count ||
@@ -288,7 +305,10 @@ static void fill_move_eff(const GameMem* m, const GameProfile* p, uint16_t mv,
         eff->type = move_type;
         return;
     }
-    if (mv == MOVE_HIDDEN_POWER) {
+    if (dp && !damage_read_move(m, p, mv, &dmove)) dp = NULL;
+    if (dp) {
+        move_type = damage_move_type(dp->ctx, dp->atk, mv, &dmove);
+    } else if (mv == MOVE_HIDDEN_POWER) {
         uint8_t ivs[6];
         pokemon_unpack_ivs(rd32(attacker + BMON_IVS), ivs);
         move_type = pokemon_hidden_power_type(ivs);
@@ -299,11 +319,22 @@ static void fill_move_eff(const GameMem* m, const GameProfile* p, uint16_t mv,
     uint8_t q = battle_type_quarters(type_table, type_len, move_type, defender[BMON_TYPE1],
                                      defender[BMON_TYPE2], foresight);
     eff->quarters = battle_apply_ability(q, move_type, defender[BMON_ABILITY]);
+    if (!dp) return;
+    DamageResult r;
+    damage_predict(dp->t, dp->ctx, dp->atk, dp->def, mv, &dmove, &r);
+    eff->dmg_kind = r.kind;
+    eff->dmg_lo = r.lo;
+    eff->dmg_hi = r.hi;
+    eff->dmg_no_ko = r.no_ko;
+    eff->dmg_leaves_one = r.leaves_one;
+    if (r.kind == DMG_IMMUNE) eff->quarters = 0;
 }
 
+/* to_player / from_player: damage inputs for this enemy's moves and the player's, or NULL. */
 static void fill_enemy(const GameMem* m, const GameProfile* p, const uint8_t* mon,
                        const uint8_t* player, bool have_player, const uint8_t* type_table,
-                       uint32_t type_len, GameEnemy* e) {
+                       uint32_t type_len, const DamagePair* to_player, const DamagePair* from_player,
+                       GameEnemy* e) {
     uint8_t info[SPECIES_INFO_SIZE];
     uint16_t species = rd16(mon + BMON_SPECIES);
     uint32_t personality = rd32(mon + BMON_PERSONALITY);
@@ -333,13 +364,16 @@ static void fill_enemy(const GameMem* m, const GameProfile* p, const uint8_t* mo
         uint16_t mv = rd16(mon + BMON_MOVES + 2 * i);
         if (mv != 0)
             fill_move_eff(m, p, mv, mon, have_player ? player : NULL, type_table, type_len,
-                          &e->moves[e->move_count++]);
+                          have_player ? to_player : NULL, &e->moves[e->move_count++]);
     }
     if (!have_player) return;
+    e->player_hp = rd16(player + BMON_HP);
+    e->player_max_hp = rd16(player + BMON_MAX_HP);
     for (int i = 0; i < 4; i++) {
         uint16_t mv = rd16(player + BMON_MOVES + 2 * i);
         if (mv != 0)
-            fill_move_eff(m, p, mv, player, mon, type_table, type_len, &e->eff[e->eff_count++]);
+            fill_move_eff(m, p, mv, player, mon, type_table, type_len, from_player,
+                          &e->eff[e->eff_count++]);
     }
 }
 
@@ -412,6 +446,7 @@ void game_init(GameState* gs, const uint8_t* rom, uint32_t rom_size) {
     GameMem m = { NULL, NULL, rom, rom_size };
     berry_places_build(&gs->places, gs->profile, &m);
     species_index_build(&gs->search, gs->profile, &m);
+    if (gs->profile) damage_tables_load(&m, gs->profile, &gs->dmg_tables);
 }
 
 void game_update_mem(GameState* gs, const GameMem* m) {
@@ -435,7 +470,7 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     }
     s->valid = true;
     for (uint16_t sp = 1; sp < p->species_count; sp++) {
-        uint16_t national = species_national(m, p, sp);
+        uint16_t national = game_species_national(m, p, sp);
         if (national != 0 && dex_caught(m, p, sb1, sb2, sp))
             s->dex_caught[(national - 1u) / 8] |= (uint8_t)(1u << ((national - 1u) % 8));
     }
@@ -447,10 +482,10 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     mirage_read(&gs->mirage, p, m, &gs->clock, sb1, sb2, &s->mirage);
     berry_read(&gs->places, p, m, &gs->clock, &s->berries);
 
-    uint8_t enemies[2][BMON_SIZE], player[BMON_SIZE];
+    uint8_t enemies[2][BMON_SIZE], player[BMON_SIZE], enemy_ids[2] = {0, 0};
     bool have_player;
     uint8_t player_battler = 0;
-    uint8_t n = read_battlers(m, p, enemies, player, &have_player, &player_battler);
+    uint8_t n = read_battlers(m, p, enemies, enemy_ids, player, &have_player, &player_battler);
     if (n == 0) {
         s->context = GAME_CTX_OVERWORLD;
         read_encounters(m, p, sb1, sb2, s);
@@ -463,8 +498,17 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     uint8_t type_table[TYPE_TABLE_MAX];
     uint32_t type_len = p->type_effectiveness_len <= TYPE_TABLE_MAX ? p->type_effectiveness_len : 0;
     if (type_len && !game_mem_copy(m, p->type_effectiveness, type_table, type_len)) type_len = 0;
+    /* Damage for enemies[0] only (R20); enemy 1 keeps DMG_NONE. */
+    DamageCtx ctx;
+    DamageMon dm_player, dm_enemy;
+    bool dmg = have_player && gs->dmg_tables.valid &&
+               damage_read_battle(m, p, player_battler, enemy_ids[0], &ctx, &dm_player, &dm_enemy);
+    DamagePair to_player = { &gs->dmg_tables, &ctx, &dm_enemy, &dm_player };
+    DamagePair from_player = { &gs->dmg_tables, &ctx, &dm_player, &dm_enemy };
     for (uint8_t i = 0; i < n; i++)
-        fill_enemy(m, p, enemies[i], player, have_player, type_table, type_len, &s->enemies[i]);
+        fill_enemy(m, p, enemies[i], player, have_player, type_table, type_len,
+                   dmg && i == 0 ? &to_player : NULL, dmg && i == 0 ? &from_player : NULL,
+                   &s->enemies[i]);
     s->enemy_count = n;
     if (have_player) read_active_name(m, p, player_battler, s);
     if (s->context == GAME_CTX_BATTLE_WILD) read_catch_rows(m, p, sb1, sb2, enemies[0], flags, s);
@@ -501,6 +545,15 @@ const char* game_method_name(EncMethod method) {
         "Grass", "Surf", "Rock Smash", "Old Rod", "Good Rod", "Super Rod",
     };
     return (unsigned)method < ENC_METHOD_COUNT ? names[method] : "?";
+}
+
+/* "<tag> <prefix><j> <name> type <t> x<q>", then " dmg <kind> <lo> <hi>" or " status". */
+static int dump_move(FILE* out, const char* tag, const char* prefix, uint8_t j, const GameMoveEff* mv) {
+    if (mv->status_move)
+        return fprintf(out, "%s %s%u %s type %u x%u status\n", tag, prefix, j, mv->move, mv->type,
+                       mv->quarters) >= 0;
+    return fprintf(out, "%s %s%u %s type %u x%u dmg %u %u %u\n", tag, prefix, j, mv->move, mv->type,
+                   mv->quarters, mv->dmg_kind, (unsigned)mv->dmg_lo, (unsigned)mv->dmg_hi) >= 0;
 }
 
 bool game_dump(const GameSnapshot* s, FILE* out) {
@@ -545,11 +598,11 @@ bool game_dump(const GameSnapshot* s, FILE* out) {
         ok &= fprintf(out, "enemy %u %s lv%u hp %u/%u nature %s iv %u/%u/%u/%u/%u/%u ability %s item %s\n",
                       i, e->species, e->level, e->hp, e->max_hp, e->nature, e->ivs[0], e->ivs[1],
                       e->ivs[2], e->ivs[3], e->ivs[4], e->ivs[5], e->ability, e->item) >= 0;
-        for (uint8_t j = 0; j < e->move_count; j++) {
-            const GameMoveEff* mv = &e->moves[j];
-            ok &= fprintf(out, "enemy_move %u %u %s type %u x%u%s\n", i, j, mv->move, mv->type,
-                          mv->quarters, mv->status_move ? " status" : "") >= 0;
-        }
+        for (uint8_t j = 0; i == 0 && j < e->eff_count; j++)
+            ok &= dump_move(out, "your_move", "", j, &e->eff[j]);
+        char prefix[8];
+        snprintf(prefix, sizeof(prefix), "%u ", i);
+        for (uint8_t j = 0; j < e->move_count; j++) ok &= dump_move(out, "enemy_move", prefix, j, &e->moves[j]);
     }
     for (uint8_t i = 0; i < s->catch_count; i++)
         ok &= fprintf(out, "catch %s x%u %d\n", s->catch_rows[i].ball, s->catch_rows[i].quantity,

@@ -38,6 +38,19 @@ typedef struct {
     uint32_t trainer_battle_opponent_a; /* u16 gTrainerBattleOpponent_A */
     uint32_t battler_attacker;      /* u8 gBattlerAttacker */
 
+    /* Damage calculator (docs/superpowers/specs/emerald-game-layer/damage-data.md) */
+    uint32_t battle_weather;        /* u16 gBattleWeather */
+    uint32_t side_statuses;         /* u16 gSideStatuses[2], by side */
+    uint32_t statuses3;             /* u32 gStatuses3[4], by battler */
+    uint32_t absent_battler_flags;  /* u8 gAbsentBattlerFlags, bit per battler */
+    uint32_t disable_structs;       /* struct DisableStruct[4], 0x1C each */
+    uint32_t battle_resources;      /* gBattleResources pointer; ->flags at +4, NULL outside battle */
+    uint32_t stat_stage_ratios;                           /* u8[13][2] gStatStageRatios */
+    uint32_t hold_effect_to_type; uint8_t hold_effect_to_type_count; /* u8 pairs sHoldEffectToType */
+    uint32_t flail_table;                                 /* u8[6][2] sFlailHpScaleToPowerTable */
+    uint32_t weight_table;                                /* u16[6][2] sWeightToDamageTable */
+    uint32_t pokedex_entries;     uint16_t pokedex_count; /* 0x20-byte stride, by national dex */
+
     /* ROM tables */
     uint32_t species_names;      uint16_t species_count;  /* 11-byte stride */
     uint32_t move_names;         uint16_t move_count;     /* 13-byte stride */

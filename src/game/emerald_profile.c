@@ -30,6 +30,20 @@ const GameProfile g_emerald_profile = {
     .trainer_battle_opponent_a = 0x02038BCA, /* gTrainerBattleOpponent_A */
     .battler_attacker = 0x0202420B,          /* gBattlerAttacker */
 
+    /* Damage calculator: RAM from pokeemerald.sym, ROM tables checked against ROM bytes
+     * (docs/superpowers/specs/emerald-game-layer/damage-data.md). */
+    .battle_weather = 0x020243CC,
+    .side_statuses = 0x0202428E,
+    .statuses3 = 0x020242AC,
+    .absent_battler_flags = 0x02024210,
+    .disable_structs = 0x020242BC,
+    .battle_resources = 0x020244A8,
+    .stat_stage_ratios = 0x08329D2E,
+    .hold_effect_to_type = 0x08329D74, .hold_effect_to_type_count = 17,
+    .flail_table = 0x0831C408,
+    .weight_table = 0x0831C428,
+    .pokedex_entries = 0x0856B5B0, .pokedex_count = 387, /* sym size 0x3060 = 387 x 0x20 */
+
     .species_names = 0x083185C8, .species_count = 412,
     .move_names = 0x0831977C, .move_count = 355,
     .battle_moves = 0x0831C898,

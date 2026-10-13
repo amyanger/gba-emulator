@@ -82,6 +82,13 @@ void game_panel_berry_layout(const BerryView* v, uint8_t sel, BerryPageLayout* o
 uint8_t game_panel_nuz_sub(uint8_t sub, int delta);
 /* First route row shown when only `fit` rows fit: keeps the current location in view. */
 uint8_t game_panel_nuz_route_start(const NuzView* v, uint8_t fit);
+/* Battle page move row value column, exposed for tests. The text is the damage as a percent
+ * of the target's max HP (or the plain multiplier for DMG_NONE rows). The colour follows
+ * the target's current hp; *semibold tells whether to draw it semibold. */
+void game_panel_damage_text(const GameMoveEff* e, uint16_t hp, uint16_t max_hp, char* out,
+                            size_t n);
+uint32_t game_panel_damage_color(const GameMoveEff* e, uint16_t hp, bool against_you,
+                                 bool* semibold);
 /* Moves the party selection by delta; wraps, and returns 0 when the party is empty. */
 uint8_t game_panel_select(uint8_t sel, int delta, uint8_t party_count);
 /* "WATER GUN" -> "Water Gun". The whole words POKE, HP and PP become "Poké", "HP" and

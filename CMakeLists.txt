@@ -130,6 +130,8 @@ set(SOURCES
     src/game/gen3_text.c
     src/game/pokemon.c
     src/game/battle_info.c
+    src/game/damage.c
+    src/game/damage_read.c
     src/game/encounters.c
     src/game/game.c
     src/game/overworld.c
@@ -322,6 +324,8 @@ set(LIB_SOURCES
     src/game/gen3_text.c
     src/game/pokemon.c
     src/game/battle_info.c
+    src/game/damage.c
+    src/game/damage_read.c
     src/game/encounters.c
     src/game/game.c
     src/game/overworld.c
@@ -444,6 +448,7 @@ set(TEST_SOURCES
     tests/test_game_text.c
     tests/test_game_pokemon.c
     tests/test_game_battle.c
+    tests/test_game_damage.c
     tests/test_game_encounters.c
     tests/test_game_snapshot.c
     tests/test_mirage.c
