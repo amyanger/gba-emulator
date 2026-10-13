@@ -35,6 +35,38 @@ The panel switches to this page by itself when a battle starts, even if you were
 
 ![Wild battle against a Poochyena, showing your Swampert's moves and the Poochyena's moves](screenshots/panel-battle.png)
 
+### Damage
+
+Every move row shows the damage it would do, as a percentage of the target's max HP. Your active Pokemon's moves are measured against the main enemy, and the enemy's moves against your active Pokemon.
+
+The number is a normal, non-critical hit, given as the lowest and highest result of the game's 16 random rolls. It is worked out from the battle stats the game is actually using right now, so level, nature, EVs, IVs, stat changes, abilities, held items, badges, weather, Reflect and Light Screen all count. It updates live as the battle goes on.
+
+| Shown | Meaning |
+|-------|---------|
+| 38–45% | The range of the 16 rolls. |
+| 40% | Every roll does the same damage. |
+| <1% | The move does less than 1% of the target's HP. |
+| <1–5% | The low rolls do less than 1%. |
+| 850%+ | Over 999% at the top end, with the lowest roll shown. |
+| >999% | Even the lowest roll is over 999%. |
+| OHKO | A one-hit KO move that can hit. |
+| fails | The move cannot work right now, for example Dream Eater on an awake target. |
+| ×0 | The target is immune, including through Levitate, Wonder Guard, Soundproof against a sound move, or an ability that absorbs the move's type. |
+
+A muted ×2 or ×0.5 beside the move name is the type multiplier, shown when there is room for it.
+
+The color of the number says whether the move can finish the target from its current HP:
+
+- Green, for your moves, or red, for the enemy's, means every roll is a KO.
+- Amber means some rolls are a KO.
+- Muted means no KO is shown. This is used when the target is behind a Substitute, and when it is in the middle of Fly, Dig or Dive, because whether your move lands depends on who moves first. False Swipe never counts as a KO, since it leaves 1 HP.
+
+Some moves fall back to the older ×2 or ×0.5 matchup display because their damage cannot be known ahead of time: multi-hit moves, Psywave, Magnitude, Present, Rollout, Ice Ball, Fury Cutter, Revenge, Counter, Mirror Coat, Bide, Future Sight, Doom Desire and Beat Up. The same happens when a Pokemon holds an Enigma Berry, in Safari Zone battles, and for moves whose power varies, or that hit harder against Fly, Dig, Dive or Minimize, while the user is locked into a multi-turn move.
+
+Not modelled: critical hits, accuracy, Helping Hand, and redirection from Lightning Rod or Follow Me. In double battles only the main enemy gets numbers. Right after a switch-in the numbers take a moment to settle.
+
+The calculation follows the damage code in pokeemerald. Its unit fixtures were checked against two independent derivations, and the real in-game hits we compared against all landed inside the predicted ranges.
+
 ## Party
 
 Each Pokemon's nature, ability, held item, Hidden Power type and power, friendship, experience to the next level, IVs and EVs. Use `[` and `]` to move between Pokemon.

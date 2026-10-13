@@ -48,6 +48,7 @@ These need the original, unmodified Pokemon Emerald (US/English) ROM. Every othe
 |---------|-----|--------------|
 | **[Emerald Companion](docs/emerald-companion.md)** | F9 | A side panel with live info from your game. F10 switches pages. |
 | &nbsp;&nbsp;[Battle](docs/emerald-companion.md#battle) | | The opponent's IVs, nature, ability and held item, move matchups both ways, and in wild battles the catch odds for each ball. |
+| &nbsp;&nbsp;[Damage](docs/emerald-companion.md#damage) | | Predicted damage as a percent of HP on every move in a battle, with KO coloring, for your moves and the enemy's. |
 | &nbsp;&nbsp;[Party](docs/emerald-companion.md#party) | | Your Pokemon's hidden stats: IVs, EVs, Hidden Power, friendship. |
 | &nbsp;&nbsp;[Route](docs/emerald-companion.md#route) | | The wild encounter table for where you are, with caught Pokemon checked off. |
 | &nbsp;&nbsp;[Mirage Island](docs/emerald-companion.md#mirage-island) | J, twice | Which of your Pokemon raises Mirage Island today and when it next will, then jump the clock to that day. |
