@@ -34,7 +34,10 @@ The apps aren't signed with a paid certificate, so macOS and Windows ask you to 
 |---------|-----|--------------|
 | **[Hardware X-Ray Mode](docs/hardware-xray.md)** | F2 | A second window showing background layers, sprites, tiles, palettes, audio channels, CPU registers, timers, DMA and interrupts as the game runs. |
 | **[Save states and rewind](docs/usage.md#controls)** | F5 / F8, Backspace | 10 save-state slots, plus hold Backspace to rewind up to 60 seconds. |
-| **[Fast-forward](docs/usage.md#controls)** | Tab | Hold to speed up. Frame advance, screenshots and fullscreen are in the controls list. |
+| **[Fast-forward](docs/usage.md#controls)** | Tab | Hold to speed up. Screenshots and fullscreen are in the controls list. |
+| **[Input display and frame advance](docs/usage.md#controls)** | F3, `\` | Show the buttons you're holding on screen, or step through the game one frame at a time. |
+| **[Game library](docs/usage.md#game-library)** | | Opens when you start the app without a game, with your games folder, recently played games and a Continue playing button. |
+| **[Settings](docs/usage.md#settings)** | Ctrl+, (Cmd+,) | Change keyboard and controller buttons, set up turbo A and B, and pick the fast-forward speed, volume and BIOS. |
 | **[Cheats](docs/usage.md#cheats)** | | Paste CodeBreaker, GameShark or Action Replay codes as found online. Your save is backed up before any cheat runs. |
 | **[Link cable](docs/usage.md#link-cable)** | | Two windows on the same machine can trade and battle. |
 | **[Screen filters](docs/usage.md#screen-filters)** | | Smooth out jagged pixel edges and match the colors of a real GBA screen. |
@@ -122,9 +125,10 @@ Build options, the architecture, the test suite and the golden-frame checks are 
 
 ## Documentation
 
-- [Using the emulator](docs/usage.md): installing, command-line options, all controls, headless mode, link cable, cheats
+- [Using the emulator](docs/usage.md): installing, the game library, command-line options, all controls, settings, screen filters, Following Pokemon, headless mode, link cable, cheats
 - [Emerald Companion and Overworld X-Ray](docs/emerald-companion.md)
 - [Hardware X-Ray Mode](docs/hardware-xray.md)
+- [HQ music](docs/hq-music.md)
 - [Development](docs/development.md): building, what's emulated, architecture, project structure, testing, roadmap, references
 
 ## License

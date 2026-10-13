@@ -11,7 +11,9 @@ remembered. Sound effects made by the GBA's tone channels (menu beeps, parts of
 some cries) play exactly as before.
 
 HQ music works with games that use the standard MP2K driver. For other games
-the switch shows "Not available for this game" and audio stays as it is.
+the switch shows "Not available for this game" and audio stays as it is. While
+it is on, Settings > Audio shows "Active" when it is re-mixing music, or
+"Waiting for music" when the game isn't playing any.
 
 It only changes what you hear. The game itself runs exactly the same, so save
 states, saves and speed are unaffected.

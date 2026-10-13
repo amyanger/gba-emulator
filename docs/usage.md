@@ -81,7 +81,7 @@ The folder and the recently played list are kept in `library.txt` in the app's s
 | Flag | Description |
 |------|-------------|
 | `--bios <file>` | Path to GBA BIOS dump (optional, HLE fallback available). Overrides the BIOS chosen in [Settings](#settings) |
-| `--scale <n>` | Window scale multiplier (default: 3) |
+| `--scale <n>` | Window scale multiplier, 1 to 10 (default: 3) |
 | `--cheats <file>` | Cheat file to use instead of `<rom>.cht` |
 | `--cheat-report` | Print how each cheat was read (device, decoded codes, problems) and exit |
 | `--keymap <file>` | Path to a keymap `.ini`, applied on top of the bindings saved from Settings (see [Keymap file](#keymap-file)) |
@@ -136,7 +136,7 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 | 0–9 | Select save state slot |
 | Tab (hold) | Fast-forward |
 | `` ` `` | Toggle fast-forward |
-| `\` | Frame advance — auto-pauses if running; ignored during fast-forward / rewind |
+| `\` | Frame advance: pauses if running, then steps one frame per press (hold to keep stepping). Ignored during fast-forward or rewind |
 | Backspace (hold) | Rewind (60s window, audio muted) |
 | M | Toggle audio mute |
 | H | Toggle HQ music: replays game music in high quality (games using the MP2K sound driver) |
@@ -148,18 +148,22 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 
 On macOS, F-keys need **fn** held (for example fn+F9) unless the keyboard is set to use them as standard function keys.
 
+In the F7 slot list, Up and Down pick a slot, Enter loads it, and Esc or F7 closes the list. F6 edits the label of the current slot once it has a save state: type the label, then Enter saves it and Esc cancels.
+
+Most of these keys show a short notice at the top of the game when you press them. While the game is paused, fast-forwarding, rewinding or muted, or Overworld X-Ray is on, a small badge in the top left corner says so.
+
 Save files (`<rom>.sav`) and save states (`<rom>.ss<N>`) are written next to the ROM.
 
 ## Settings
 
-Press Ctrl+, (Cmd+, on macOS), or use the Settings entry in the macOS menu bar. Changes apply right away and are remembered between launches. The **Video** page is described under [Screen filters](#screen-filters).
+Press Ctrl+, (Cmd+, on macOS), or use the Settings entry in the macOS menu bar. Settings has five pages: Cheats, Controls, General, Video and Audio. Changes apply right away and are remembered between launches. The **Video** page is described under [Screen filters](#screen-filters) and the **Cheats** page under [Cheats](#cheats).
 
 ### Controls
 
 Click the box next to a GBA button, in the keyboard column or the controller column, then press the key or controller button you want. Backspace clears the binding and Esc cancels. Controller triggers can be bound too.
 
 - **Turbo A** and **Turbo B** press and release the button every 2 frames (15 times a second) while the key or button is held.
-- Keys the emulator already uses can't be bound: F1 to F12, the number keys, Tab, `` ` ``, `\`, Backspace, Space, M and Escape.
+- Keys the emulator already uses can't be bound: F1 to F12, the number keys, Tab, `` ` ``, `\`, Space, M and H. Backspace and Esc can't be bound either, since they clear and cancel.
 - The left stick always works as the D-pad.
 - **Reset to defaults** restores the layout in the tables above. The default controller layout is A, B, Start, Back as Select, the D-pad, and the shoulder buttons as L and R. X and Y are unbound.
 
@@ -179,6 +183,7 @@ Click the box next to a GBA button, in the keyboard column or the controller col
 |---------|-------------|
 | Volume | Slider from 0 to 100% |
 | Start muted | Launch with audio muted. `M` still toggles mute while playing, and `--mute` still works |
+| HQ music | Turns [HQ music](hq-music.md) on or off, like H. Shows whether it is active, waiting for music, or not available for this game |
 
 ### Keymap file
 
@@ -295,19 +300,19 @@ Headless mode is incompatible with `--link-master` / `--link-client`
 
 ## Link Cable
 
-Two emulator instances on the same machine can connect over a UNIX domain socket and exchange GBA SIO multiplayer-mode packets — enough for Pokemon trade and battle between local windows.
+Two emulator instances on the same machine can connect over a UNIX domain socket and exchange GBA SIO multiplayer-mode packets. That is enough for Pokemon trade and battle between local windows.
 
 ```bash
-# Terminal 1 (host) — opens the socket and waits for a peer.
+# Terminal 1 (host): opens the socket and waits for a peer.
 ./build/gba_emulator roms/emerald.gba --link-master /tmp/gba.sock
 
-# Terminal 2 (client) — connects to the host's socket.
+# Terminal 2 (client): connects to the host's socket.
 ./build/gba_emulator roms/emerald.gba --link-client /tmp/gba.sock
 ```
 
 The host blocks at startup until the client connects. After both sides are up, in-game link interactions (Cable Club, trades, battles) cross between the two windows.
 
-**Limitations:** Multiplayer 16-bit mode only, 2 players. Normal 8/32-bit and UART SIO modes are not implemented. There is no internet-netplay support — the socket path must be local. The two emulators run lockstep at the SIO transfer point: one will briefly stall waiting for the other to reach the same `sio_tick` if they fall out of sync.
+**Limitations:** Multiplayer 16-bit mode only, 2 players. Normal 8/32-bit and UART SIO modes are not implemented. There is no internet netplay, so the socket path must be local. The two emulators run lockstep at the SIO transfer point: one will briefly stall waiting for the other to reach the same `sio_tick` if they fall out of sync.
 
 ## Cheats
 
@@ -324,6 +329,8 @@ Code name from the site
 XXXXXXXX YYYYYYYY
 XXXXXXXX YYYYYYYY
 ```
+
+You can also add cheats while playing: open [Settings](#settings) > **Cheats**, paste the codes into the box and click **Add cheat**. The page shows how many codes it read and which device it detected. Click the device name to pick another one, which you have to do when it isn't sure. If the pasted text has a title line above the codes, it becomes the name unless you type your own. Below that, each cheat has a switch to turn it on or off, a device menu, and a × button that asks once more before deleting. Changes are saved to the game's `.cht` file.
 
 - **Devices:** `[CodeBreaker]`, `[GameShark]` (v1/v2), `[ActionReplay]` (v3, also sold as GameShark v3/SP), plus `[GameSharkRaw]` and `[ActionReplayRaw]` for unencrypted codes. Encrypted codes are decrypted for you.
 - **Detection:** when a block has no `device=` line, the emulator works out the device from the codes themselves (a master code's game ID line settles it). If it can't tell, the cheat is not run; add `device=override` under the name to force the section's device.

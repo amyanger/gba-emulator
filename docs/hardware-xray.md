@@ -10,7 +10,9 @@ Press **F2** to open a second window that shows what the GBA hardware is doing w
 - **Processor**: the ARM CPU's registers, whether it is running ARM or Thumb code, its flags, the instruction it is on, and how much rewind history is stored.
 - **Behind the scenes**: hardware timers, DMA memory copies and interrupts. Rows and pills light up as they fire.
 
-The window sizes itself to fit your screen, opens on the same display as the game, and stays sharp on Retina displays.
+The window sizes itself to fit your screen, opens on the same display as the game, and stays sharp on Retina displays. Press F2 again or close the window to hide it. On macOS, hold **fn** with F2 unless your keyboard is set to use the F-keys as standard function keys.
+
+To get a picture of the window without opening it, run headless with `--xray-out <file>`, which writes a 2400x1640 PNG after the run (see [Headless mode](usage.md#headless-mode)).
 
 X-Ray Mode adds zero overhead when disabled. It's compile-time gated (`ENABLE_XRAY`, default ON) and runtime gated (null-pointer checks on every hook). The game runs identically whether X-Ray is open or closed.
 

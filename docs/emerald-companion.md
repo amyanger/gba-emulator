@@ -1,6 +1,6 @@
 # Emerald Companion
 
-Emerald Companion is a side panel that shows live info from your Pokemon Emerald game: the wild Pokemon you're fighting, your party's hidden stats, and the encounter table for where you are. Press **F9** to open it next to the game.
+Emerald Companion is a side panel that shows live info from your Pokemon Emerald game. It has pages for the battle you're in, your party's hidden stats, the wild Pokemon where you are, a Nuzlocke run, your berry trees, a Pokemon search and the story of your playthrough. Press **F9** to open it next to the game.
 
 **On this page:** [Battle](#battle) · [Party](#party) · [Route](#route) · [Mirage Island](#mirage-island) · [Nuzlocke](#nuzlocke) · [Berries](#berries) · [Search](#search) · [Run](#run) · [Details](#details) · [Overworld X-Ray](#overworld-x-ray)
 
@@ -29,7 +29,7 @@ On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is s
 
 ## Battle
 
-The opposing Pokemon's species, level, HP, types, nature, IVs, ability and held item, how your active Pokemon's moves match up against it, the opponent's own moves and how they match up against your active Pokemon, and, in wild battles, the catch chance for each ball in your bag. For the opponent's moves the colors are from your side: red means a move is super effective against you, green means you resist it or are immune.
+The opposing Pokemon's species, level, HP, types, nature, IVs, ability, held item and any status condition, how your active Pokemon's moves match up against it, the opponent's own moves and how they match up against your active Pokemon, and, in wild battles, the catch chance for each ball in your bag. For the opponent's moves the colors are from your side: red means a move is super effective against you, green means you resist it or are immune. In a double battle a line under the name shows the second opponent's species, level and HP.
 
 The panel switches to this page by itself when a battle starts, even if you were on Party or Route, and goes back to your page when the battle ends.
 
@@ -138,14 +138,14 @@ Times are real time, because Emerald's clock is. The countdowns keep moving betw
 
 ![The same spot 13 hours later: the Pecha tree has berries on the map, and the page lists it under Needs you as ripe, with 10 hours before the berries drop](screenshots/panel-berries-ripe.png)
 
-**Berry alerts.** While you play, with or without the panel open, a toast tells you when a tree becomes ripe, when it needs water for a new stage, when ripe berries are about to drop, and when you arrive somewhere with trees that need you. Trees on the map you're standing on stay quiet, events at the same place share one toast, and they wait until a battle is over. When you open a game, one toast sums up what needs you. Press **B** on the Berries page to turn alerts off or back on.
+**Berry alerts.** While you play, with or without the panel open, a toast tells you when a tree becomes ripe, when it needs water for a new stage, when ripe berries are about to drop, and when you arrive somewhere with trees that need you. Trees on the map you're standing on stay quiet, events at the same place share one toast, and they wait until a battle is over. When you open a game, one toast sums up what needs you. Press **B** on the Berries page to turn alerts off or back on. The choice is remembered between launches.
 
 ## Search
 
 Type part of a Pokemon's name and see where to get it in Emerald. Open the Search page with F10, then press `/` or click the box to start typing. The list narrows on every keystroke: an exact name comes first, then names that start with what you typed, then names that contain it. Spaces and punctuation are ignored, so "mr mime" and "hooh" work, and "nidoran" finds both Nidorans.
 
-- **Keys.** Up and Down pick a result, or `[` and `]` when you're not typing. PageUp, PageDown or the mouse wheel scroll the details. Enter or Esc stops typing, and Esc clears the text first if there is any.
-- **While you type.** Keyboard keys don't reach the game or any hotkey, so typing a name won't press buttons. A controller still plays. Esc never quits the emulator on this page, and a battle starting while you type doesn't switch the page away.
+- **Keys.** Up and Down pick a result, or `[` and `]` when you're not typing. Home and End jump to the first and last result. Clicking a result picks it too. PageUp, PageDown or the mouse wheel scroll the details, and the wheel over the list scrolls the list. Enter or Esc stops typing, and Esc clears the text first if there is any. Ctrl+Backspace (Cmd+Backspace on macOS) clears the box, and Ctrl+V (Cmd+V) pastes into it.
+- **While you type.** Letters and other keys don't reach the game or the emulator's letter hotkeys (M, H and so on), so typing a name won't press buttons. The F-keys still work, except F5 and F8, so a typed name can't save or load a state by accident. F6, F7, F9 and F10 also stop typing. A controller still plays. Esc never quits the emulator on this page, and a battle starting while you type doesn't switch the page away.
 - **Details.** The national dex number and a check if you've caught it, then every wild spot: Grass, Surf, Dive, Rock Smash and the Old, Good and Super Rod, each with levels and encounter chance. When floors of the same place differ, the chance is shown as a range.
 - **Special cases.** Feebas appears on Route 119 with any rod, on one of 6 hidden tiles. The Overworld X-Ray (F4) shows which ones. Wynaut on Mirage Island shows up only on days the island appears. Places that open after the Hall of Fame are listed under "After the Hall of Fame", and Shoal Cave's low tide spots are marked "Low tide".
 - **Not wild.** The page works back to the nearest Pokemon you can catch and lists the steps. For Gardevoir that is: evolve Kirlia at Lv 30, evolve Ralts at Lv 20, and Ralts is on Route 102. Pokemon that only hatch from eggs say so and tell you which evolved form to breed, and Azurill needs a parent holding Sea Incense. Anything else says "Not found in the wild in Emerald".
@@ -160,13 +160,13 @@ Gifts, legendaries, trades and roaming Pokemon aren't covered yet. Like the rest
 
 The story of your playthrough. It is always on: there is nothing to start, it keeps going whether the panel is open or not, and it runs alongside a Nuzlocke run if you have one. Open the Run page with F10.
 
-The dashboard shows:
+The dashboard shows your trainer name, play time, badge count and Pokedex totals at the top, then:
 
 - **Badges.** All eight, with the play time it took to earn each one. The first shows the time you got it, the rest show the time since the badge before ("+1:02").
 - **Journey.** Everything that happened, newest first: badges and the leader you beat, story moments such as choosing your starter, Mt. Chimney, Groudon and Kyogre, and the Hall of Fame, Pokemon you caught or were given, evolutions, faints with what knocked them out, times you whited out, and which of your Pokemon knocked out the last Pokemon of a gym leader, Elite Four member or the Champion. Each line has the play time, and lines for catches, faints and the like also say where. Use `[` and `]` to scroll.
 - **Highlights.** Pokemon caught, faints, steps and battles, plus an MVP (most knockouts), your closest call (one of your Pokemon still standing at the end of a won battle on 10% HP or less) and a fun fact from the game's own counters, such as ledges jumped or times rained on.
 
-Press **D** for the Details sheet: every Pokemon that has been in your team, with when and where it joined, its level then and now, its knockouts, faints and evolution. Party first, then the PC, then Pokemon no longer with you. Under it are the game's own counters for battles, Pokemon, exploring and a few just for fun, and at the bottom the species you ran into most and the balls you caught with. Press **D** again to go back.
+Press **D** for the Details sheet: every Pokemon that has been in your team, with when and where it joined, its level then and now, its knockouts, faints and evolution. Party first, then the PC, then Pokemon no longer with you. Under it are the game's own counters for battles, Pokemon, exploring and a few just for fun, and at the bottom the species you ran into most and the balls you caught with. `[` and `]` scroll this sheet too. Press **D** again to go back.
 
 The run is saved as `<rom>.<trainer id>.run` next to the ROM, one event per line, and is only ever added to. Loading a savestate, loading an older in-game save or rewinding more than about a second takes the run back with you, so nothing you undid stays on the page and nothing is counted twice. A shorter rewind is treated as a misread and changes nothing.
 
