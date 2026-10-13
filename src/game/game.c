@@ -106,7 +106,7 @@ void game_item_name(const GameMem* m, const GameProfile* p, uint16_t item, char*
     table_name(m, p->items, p->item_count, ITEM_SIZE, ITEM_NAME_LEN, item, out);
 }
 
-static void nature_name(const GameMem* m, const GameProfile* p, uint8_t nature, char* out) {
+void game_nature_name(const GameMem* m, const GameProfile* p, uint8_t nature, char* out) {
     uint32_t ptr;
     uint8_t raw[12];
     uint32_t n = 0;
@@ -197,7 +197,7 @@ static void fill_party_mon(const GameMem* m, const GameProfile* p, const MonData
     memcpy(out->ivs, d->ivs, 6);
     memcpy(out->evs, d->evs, 6);
     uint8_t nature = pokemon_nature(d->personality);
-    nature_name(m, p, nature, out->nature);
+    game_nature_name(m, p, nature, out->nature);
     pokemon_nature_effect(nature, &out->nature_up, &out->nature_down);
     type_name(m, p, pokemon_hidden_power_type(d->ivs), out->hp_type);
     out->hp_power = pokemon_hidden_power_power(d->ivs);
@@ -349,7 +349,7 @@ static void fill_enemy(const GameMem* m, const GameProfile* p, const uint8_t* mo
     e->gender = species_info(m, p, species, info)
                     ? pokemon_gender(info[SI_GENDER_RATIO], personality) : MON_GENDER_NONE;
     uint8_t nature = pokemon_nature(personality);
-    nature_name(m, p, nature, e->nature);
+    game_nature_name(m, p, nature, e->nature);
     pokemon_nature_effect(nature, &e->nature_up, &e->nature_down);
     pokemon_unpack_ivs(rd32(mon + BMON_IVS), e->ivs);
     e->hp = rd16(mon + BMON_HP);

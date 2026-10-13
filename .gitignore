@@ -27,6 +27,7 @@ roms/*.sav
 roms/*.ss[0-9]
 roms/*.nuzlocke
 roms/*.run
+roms/*.hunt
 roms/*.follow
 roms/*.cht
 roms/*.cheatbak*

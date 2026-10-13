@@ -5,6 +5,9 @@
 #include "ui/ui_widgets.h"
 #include "frontend/search_view.h"
 #include "frontend/run_panel.h"
+#include "frontend/hunt_panel.h"
+#include "game/wildgen.h"
+#include <stdio.h>
 #include "ui/ui_font.h"
 #include "screenshot/screenshot.h"
 #include <stdlib.h>
@@ -24,7 +27,8 @@ TEST(panel_page_cycles) {
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_ENCOUNTERS), GAME_PAGE_NUZLOCKE);
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_NUZLOCKE), GAME_PAGE_BERRIES);
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_BERRIES), GAME_PAGE_SEARCH);
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_SEARCH), GAME_PAGE_RUN);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_SEARCH), GAME_PAGE_HUNT);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_HUNT), GAME_PAGE_RUN);
     ASSERT_EQ(game_panel_next_page(GAME_PAGE_RUN), GAME_PAGE_AUTO);
 }
 
@@ -213,7 +217,7 @@ static bool draw_checked_full(float density, const GameSnapshot* snap, GamePage 
     UiCanvas c;
     ui_canvas_init(&c, s_buf, w, h, density);
     game_panel_draw(&c, snap, page, sel, nuz, (uint8_t)(sel % NUZ_SUB_COUNT), sel, true, search, NULL, 0,
-                    false);
+                    false, NULL);
     for (int i = 0; i < GUARD; i++)
         if (s_buf[w * h + i] != SENTINEL) return false;
     return (s_buf[w * h - 1] >> 24) == 0xFF;
@@ -331,7 +335,7 @@ TEST(panel_long_names_stay_in_columns) {
     snap.enemy_count = 1;
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL);
     /* Rows between the HP bar and the bottom of the enemy's move list; the gap between
      * the left column (ends at x 292) and the right one (starts at x 308),
      * minus a pixel either side for anti-aliasing. */
@@ -348,7 +352,7 @@ TEST(panel_invalid_snapshot_shows_reason) {
     game_strcpy(snap.reason, sizeof(snap.reason), "Waiting for save data");
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL);
     int lit = 0;
     for (int y = 220; y < 240; y++)
         for (int x = 0; x < 600; x++)
@@ -372,7 +376,7 @@ TEST(panel_unsupported_rom_explains_why) {
         snap.support = kinds[k];
         UiCanvas c;
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false);
+        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL);
         ASSERT_TRUE(lit_rows(160, 190) > 0);  /* heading */
         ASSERT_TRUE(lit_rows(200, 300) > 0);  /* explanation */
     }
@@ -396,7 +400,7 @@ static int lit_rect(int x0, int x1, int y0, int y1, bool tinted) {
 static void draw_1x(const GameSnapshot* snap) {
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false);
+    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL);
 }
 
 static GameMoveEff dmg_eff(DamageKind k, uint32_t lo, uint32_t hi) {
@@ -614,7 +618,7 @@ TEST(panel_route_overflow_keeps_whole_rows_and_counts_the_rest) {
     ASSERT_TRUE(l.height[0] <= l.avail && l.height[1] <= l.avail);
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0, NULL, 0, 0, true, NULL, NULL, 0, false);
+    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL);
 }
 
 static void fill_mirage(GameSnapshot* s, MirageWhere today) {
@@ -1090,11 +1094,11 @@ TEST(panel_search_detail_bottom_shows_last_line) {
         v.detail_top = tops[t];
         s_detail.row_total = 72;
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s, NULL, 0, false);
+        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s, NULL, 0, false, NULL);
         memcpy(a, s_buf, sizeof(a));
         s_detail.row_total = 99;  /* only the last line changes */
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s, NULL, 0, false);
+        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s, NULL, 0, false, NULL);
         ASSERT_EQ(memcmp(a, s_buf, sizeof(a)) != 0, last_shown[t]);
     }
 }
@@ -1154,7 +1158,7 @@ static bool draw_checked_run(float density, const GameSnapshot* snap, const RunV
     for (int i = 0; i < GUARD; i++) s_buf[w * h + i] = SENTINEL;
     UiCanvas c;
     ui_canvas_init(&c, s_buf, w, h, density);
-    game_panel_draw(&c, snap, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, run, scroll, details);
+    game_panel_draw(&c, snap, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, run, scroll, details, NULL);
     for (int i = 0; i < GUARD; i++)
         if (s_buf[w * h + i] != SENTINEL) return false;
     return (s_buf[w * h - 1] >> 24) == 0xFF;
@@ -1193,7 +1197,7 @@ TEST(panel_run_dashboard_columns_do_not_touch) {
     fill_run_full(&full);
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &full, 0, false);
+    game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &full, 0, false, NULL);
     int lit = 0;
     for (int y = 140; y < 448; y++)
         for (int x = 323; x < 335; x++)
@@ -1227,7 +1231,7 @@ TEST(panel_run_max_scroll) {
     ASSERT_EQ(run_panel_max_scroll(&v, false), 0);
 }
 
-/* R13: seven tabs, the Auto badge and the longest hint share one line. */
+/* R13: eight tabs, the Auto badge and the longest hint share one line. */
 TEST(panel_tab_bar_fits_every_hint) {
     static NuzView nuz;
     static RunView run;
@@ -1249,7 +1253,117 @@ TEST(panel_tab_bar_fits_every_hint) {
                     ASSERT_TRUE(16.0f + used + 12.0f <= 584.0f - hw);
                 }
     }
-    ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_RUN, NULL, false, &run, false), "F10 page   [ ] scroll   D details");
+    ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_RUN, NULL, false, &run, false), "[ ] scroll   D details");
+    ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_HUNT, NULL, false, NULL, false), "[ ] target   , . nature");
+    /* Pages with their own keys drop the F10 prefix; Battle and Route keep it. */
+    ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_PARTY, NULL, false, NULL, false), "[ ] select");
+    ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_ENCOUNTERS, NULL, false, NULL, false), "F10 page");
+    ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_COUNT, NULL, false, NULL, false), "F10 page");
+}
+
+TEST(panel_follow_battle_keeps_hunt_page) {
+    PanelBattleFollow f = { 0 };
+    GamePage page = game_panel_follow_battle(GAME_PAGE_HUNT, GAME_CTX_OVERWORLD, &f);
+    page = game_panel_follow_battle(page, GAME_CTX_BATTLE_WILD, &f);
+    ASSERT_EQ(page, GAME_PAGE_HUNT);
+    ASSERT_TRUE(f.in_battle);
+    ASSERT_TRUE(!f.restore);
+    page = game_panel_follow_battle(page, GAME_CTX_OVERWORLD, &f);
+    ASSERT_EQ(page, GAME_PAGE_HUNT);
+    ASSERT_TRUE(!f.in_battle);
+    /* Leaving Hunt by hand mid-battle does not bounce back or to Auto. */
+    page = game_panel_follow_battle(page, GAME_CTX_BATTLE_WILD, &f);
+    page = GAME_PAGE_PARTY;
+    page = game_panel_follow_battle(page, GAME_CTX_OVERWORLD, &f);
+    ASSERT_EQ(page, GAME_PAGE_PARTY);
+}
+
+static void fill_hunt_sample(HuntView* v, int mode) {
+    static const char* const seen[7] = {"ODDISH", "ZIGZAGOON", "LINOONE", "GLOOM", "TROPIUS", "KECLEON", "WURMPLE"};
+    static const uint32_t cnt[7] = {412, 380, 201, 183, 96, 12, 3};
+    static const char* const nat[6] = {"MODEST", "JOLLY", "BOLD", "HASTY", "CALM", "ADAMANT"};
+    memset(v, 0, sizeof(*v));
+    v->on = true;
+    strcpy(v->map, "Route 119");
+    strcpy(v->method, "Grass");
+    v->advance = 48213;
+    strcpy(v->target, mode == 1 ? "Any" : "TROPIUS");
+    v->any_target = mode == 1;
+    v->target_percent = 5;
+    v->target_types[0] = 12;
+    v->target_types[1] = 2;
+    v->total = 1284; v->session = 38;
+    v->chance = 0.145;
+    v->target_count = 96;
+    strcpy(v->nature_filter, mode == 2 ? "Any" : "TIMID");
+    if (mode == 1) strcpy(v->nature_filter, "Any");
+    v->predict = mode != 2;
+    strcpy(v->why_not, "Not predicted in battle");
+    v->match_found = mode == 0;
+    v->scanning = mode == 1;
+    v->match_in = 2431; v->match_seconds = 40.7f;
+    strcpy(v->match_nature, "TIMID");
+    v->match_up = 2; v->match_down = 0;
+    static const uint8_t ivs[6] = {31, 4, 18, 9, 27, 30}; /* HP Atk Def Spe SpA SpD */
+    memcpy(v->match_ivs, ivs, 6);
+    v->tally_n = 7;
+    for (int i = 0; i < 7; i++) { strcpy(v->tally_name[i], seen[i]); v->tally_count[i] = cnt[i]; }
+    for (int i = 0; i < HUNT_NEXT_ROWS; i++) {
+        v->rows[i].kind = WG_BATTLE;
+        v->rows[i].certain = true;
+        strcpy(v->row_name[i], seen[i]);
+        strcpy(v->row_nature[i], nat[i]);
+    }
+    v->rows[2].shiny = true;
+    v->rows[3].certain = false;
+    v->rows[4].kind = WG_NO_BATTLE;
+    v->rows[5].kind = WG_NONE;
+    v->reset_armed = mode == 3;
+    v->write_failed = mode == 3;
+}
+
+TEST(panel_hunt_views_stay_in_bounds) {
+    static GameSnapshot rest;
+    static HuntView v;
+    fill_party_and_route(&rest);
+    const float densities[] = {1.0f, 2.0f};
+    for (int d = 0; d < 2; d++)
+        for (int mode = -1; mode < 4; mode++) {
+            int w = (int)(600 * densities[d] + 0.5f), h = (int)(480 * densities[d] + 0.5f);
+            for (int i = 0; i < GUARD; i++) s_buf[w * h + i] = SENTINEL;
+            UiCanvas c;
+            ui_canvas_init(&c, s_buf, w, h, densities[d]);
+            if (mode >= 0) fill_hunt_sample(&v, mode);
+            game_panel_draw(&c, &rest, GAME_PAGE_HUNT, 0, NULL, 0, 0, true, NULL, NULL, 0, false,
+                            mode >= 0 ? &v : NULL);
+            for (int i = 0; i < GUARD; i++) ASSERT_TRUE(s_buf[w * h + i] == SENTINEL);
+        }
+}
+
+static void fill_run_sample(RunView* v);
+
+/* HUNT_PREVIEW=1 writes hunt_preview_*.png to the CWD. */
+TEST(panel_hunt_preview_png) {
+    if (!getenv("HUNT_PREVIEW")) return;
+    static GameSnapshot rest;
+    static HuntView v;
+    static const char* const names[4] = {"target", "any", "notpredicted", "armed"};
+    fill_party_and_route(&rest);
+    for (int mode = 0; mode < 4; mode++) {
+        UiCanvas c;
+        ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+        fill_hunt_sample(&v, mode);
+        game_panel_draw(&c, &rest, GAME_PAGE_HUNT, 0, NULL, 0, 0, true, NULL, NULL, 0, false, &v);
+        char path[48];
+        snprintf(path, sizeof(path), "hunt_preview_%s.png", names[mode]);
+        ASSERT_TRUE(screenshot_save_argb(s_buf, 600, 480, path));
+    }
+    UiCanvas c;
+    ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+    static RunView run;
+    fill_run_sample(&run);
+    game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &run, 0, false, NULL);
+    ASSERT_TRUE(screenshot_save_argb(s_buf, 600, 480, "hunt_preview_runtab.png"));
 }
 
 /* A sample run like the approved mockup. RUN_PREVIEW=1 writes run_preview_*.png to the CWD. */
@@ -1331,7 +1445,7 @@ TEST(panel_run_preview_png) {
         for (int det = 0; det < 2; det++) {
             UiCanvas c;
             ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-            game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, views[k], 0, det != 0);
+            game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, views[k], 0, det != 0, NULL);
             char path[48];
             snprintf(path, sizeof(path), "run_preview_%s_%s.png", k ? "full" : "sample", det ? "details" : "dashboard");
             ASSERT_TRUE(screenshot_save_argb(s_buf, 600, 480, path));
@@ -1344,6 +1458,9 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_run_max_scroll);
     RUN_TEST(panel_tab_bar_fits_every_hint);
     RUN_TEST(panel_run_preview_png);
+    RUN_TEST(panel_follow_battle_keeps_hunt_page);
+    RUN_TEST(panel_hunt_views_stay_in_bounds);
+    RUN_TEST(panel_hunt_preview_png);
     RUN_TEST(panel_berries_more_places_line_stays_above_footer);
     RUN_TEST(panel_berry_time_format);
     RUN_TEST(panel_berry_place_order_here_first);

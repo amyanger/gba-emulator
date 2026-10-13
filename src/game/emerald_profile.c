@@ -105,6 +105,35 @@ const GameProfile g_emerald_profile = {
     .cry_table = 0x0869DCF4,
     .hoenn_cry_ids = 0x0831F61C,
     .sprite_palette_tags = 0x03000CF0,
+
+    /* Shiny Hunt: values from the factcheck Addresses table and review F2 (sym, ROM, live there).
+     * Re-checked 2026-10-13 with a scratch probe running hunt_read at line 160 on a temp copy of
+     * the test save, walking into the Route 101 grass (factcheck recipe). */
+    .rng_value = 0x03005D80,          /* live: equals 0x41C64E6D/0x6073 LCG from 0 stepped
+                                       * rand_count times on all 2500 frames from boot */
+    .rand_count = 0x020249C0,         /* live: see rng_value */
+    .main_saved_callback = 0x030022C8, /* gMain 0x030022C0 + 8 (include/main.h) */
+    .cb2_end_wild_battle = 0x080B0AF9, /* sym 0x080B0AF8 | Thumb; live: set 95 frames before
+                                        * inBattle, held on the edge and through the battle */
+    .cb2_end_safari_battle = 0x080FC191,        /* sym 0x080FC190 | Thumb (not reached live) */
+    .cb2_end_scripted_wild_battle = 0x080B0B6D, /* sym 0x080B0B6C | Thumb (not reached live) */
+    .roamer_location = 0x0203BC86,    /* live: 0.33 (Route 118) */
+    .player_avatar_flags = 0x02037590, /* gPlayerAvatar + 0 (global.fieldmap.h); live 0x01 on foot */
+    .roamer_sb1_offset = 0x31DC,      /* live: Latios 408 lv 40, active */
+    .outbreak_sb1_offset = 0x2B90,    /* live: species 0, no outbreak */
+    .safari_flag = 0x88C,             /* SYSTEM_FLAGS 0x860 + 0x2C (flags.h); live: clear */
+    .repel_var = 0x4021,              /* VAR_REPEL_STEP_COUNT (vars.h); live: 0 */
+    .altering_cave_map = {24, 106},   /* data/maps/map_groups.json */
+    .prev_metatile_behavior = 0x020375D6, /* sym; field_control_avatar.c:39 */
+    .wild_immunity_steps = 0x020375D4,    /* sym; field_control_avatar.c:38 */
+    /* Step-script counters, checked live 2026-10-13 with a scratch probe walking the Route 101
+     * grass on a temp copy of the test save (one tick per step, Repel/poison gates at var 1/3). */
+    .friendship_step_var = 0x402A, /* VAR_FRIENDSHIP_STEP_COUNTER (vars.h); live: +1 per step */
+    .poison_step_var = 0x402B,     /* VAR_POISON_STEP_COUNTER (vars.h); live: 0-3 per step */
+    .match_call_flag = 0x12F,      /* FLAG_HAS_MATCH_CALL (flags.h); live: set */
+    .daycare_sb1_offset = 0x3030,  /* global.h SaveBlock1; next field at 0x3150 = size 0x120;
+                                    * live: empty, stepCounter (+0x11C) +1 per step */
+    .match_call_state = 0x0203CD80, /* sym (static); live: stepCounter +6 counts 0-9 per step */
 };
 
 uint32_t game_crc32_update(uint32_t crc, const uint8_t* data, uint32_t len) {

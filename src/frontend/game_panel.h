@@ -9,10 +9,11 @@
 #include "frontend/nuzlocke_session.h"
 #include "frontend/search_view.h"
 #include "frontend/run_session.h"
+#include "frontend/hunt_session.h"
 
 typedef enum {
     GAME_PAGE_AUTO, GAME_PAGE_PARTY, GAME_PAGE_ENCOUNTERS, GAME_PAGE_NUZLOCKE, GAME_PAGE_BERRIES,
-    GAME_PAGE_SEARCH, GAME_PAGE_RUN, GAME_PAGE_COUNT
+    GAME_PAGE_SEARCH, GAME_PAGE_HUNT, GAME_PAGE_RUN, GAME_PAGE_COUNT
 } GamePage;
 /* Views inside the Nuzlocke page, switched with [ and ]. */
 typedef enum { NUZ_SUB_ROUTES, NUZ_SUB_TEAM, NUZ_SUB_GRAVEYARD, NUZ_SUB_COUNT } NuzSubView;
@@ -42,11 +43,12 @@ typedef struct {
  * NULL (no tracking); nuz_sub is a NuzSubView. berry_sel picks the open place on the
  * Berries page (0 = the first, which is the current place when it has trees). search
  * may be NULL; the Search page then says it is unavailable. run may be NULL; run_scroll
- * scrolls its list and run_details shows the Details sheet. */
+ * scrolls its list and run_details shows the Details sheet. hunt may be NULL (the Hunt
+ * page then says it is unavailable). */
 void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel,
                      const NuzView* nuz, uint8_t nuz_sub, uint8_t berry_sel, bool berry_alerts,
                      const GamePanelSearch* search, const RunView* run, uint8_t run_scroll,
-                     bool run_details);
+                     bool run_details, const HuntView* hunt);
 /* Lines in the Search page's scrolling detail body and how many the drawer shows at once
  * (one fewer than fit when it needs the "N more below" footer). Feed both to
  * search_view_set_detail_lines. */
@@ -56,6 +58,12 @@ const char* game_panel_hint(GamePage shown, const NuzView* nuz, bool search_focu
                             bool run_details);
 /* Width in points of the tab labels, plus the Auto badge when auto_badge. */
 float game_panel_tabs_width(const UiCanvas* c, GamePage shown, bool auto_badge);
+
+/* Pieces the Hunt page shares with the Party page. */
+const char* game_panel_type_name(uint8_t type); /* "GRASS", or NULL when out of range */
+/* "Nature  Timid +Spe -Atk" kv row; the stat suffix is left out when up/down are not 0..4. */
+void game_panel_nature_row(UiCanvas* c, float x, float y, float label_w, float w, const char* nature,
+                           int8_t up, int8_t down);
 
 /* Berries page helpers, exposed for tests and the frontend. */
 /* "40m", "5h 10m", "1d 9h". */

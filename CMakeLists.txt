@@ -131,6 +131,10 @@ set(SOURCES
     src/game/pokemon.c
     src/game/battle_info.c
     src/game/damage.c
+    src/game/rng3.c
+    src/game/wildgen.c
+    src/game/hunt_read.c
+    src/game/hunt.c
     src/game/damage_read.c
     src/game/encounters.c
     src/game/game.c
@@ -176,8 +180,10 @@ set(SOURCES
     src/frontend/xbr.c
     src/frontend/super_xbr.c
     src/frontend/nuzlocke_session.c
+    src/frontend/hunt_session.c
     src/frontend/run_session.c
     src/frontend/run_panel.c
+    src/frontend/hunt_panel.c
     src/frontend/library.c
     src/frontend/library_view.c
     src/frontend/search_view.c
@@ -325,6 +331,10 @@ set(LIB_SOURCES
     src/game/pokemon.c
     src/game/battle_info.c
     src/game/damage.c
+    src/game/rng3.c
+    src/game/wildgen.c
+    src/game/hunt_read.c
+    src/game/hunt.c
     src/game/damage_read.c
     src/game/encounters.c
     src/game/game.c
@@ -370,8 +380,10 @@ set(LIB_SOURCES
     src/frontend/xbr.c
     src/frontend/super_xbr.c
     src/frontend/nuzlocke_session.c
+    src/frontend/hunt_session.c
     src/frontend/run_session.c
     src/frontend/run_panel.c
+    src/frontend/hunt_panel.c
     src/frontend/library.c
     src/frontend/library_view.c
     src/frontend/search_view.c
@@ -449,6 +461,10 @@ set(TEST_SOURCES
     tests/test_game_pokemon.c
     tests/test_game_battle.c
     tests/test_game_damage.c
+    tests/test_rng3.c
+    tests/test_wildgen.c
+    tests/test_hunt_read.c
+    tests/test_hunt.c
     tests/test_game_encounters.c
     tests/test_game_snapshot.c
     tests/test_mirage.c
@@ -488,6 +504,7 @@ set(TEST_SOURCES
     tests/test_run_track.c
     tests/test_nuzlocke.c
     tests/test_nuzlocke_session.c
+    tests/test_hunt_session.c
     tests/test_run_session.c
     tests/test_library.c
     tests/test_library_view.c

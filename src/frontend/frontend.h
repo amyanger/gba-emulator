@@ -60,6 +60,7 @@ typedef struct Frontend {
     uint8_t run_scroll;           /* Run page list scroll, [ and ] */
     bool run_details;             /* Run page Details sheet, D */
     const RunView* run_view;      /* set by main; clamps run_scroll */
+    HuntSession* hunt;            /* set by main; [ ] target, , . nature, R reset on the Hunt page */
     LayoutPlan plan;
     PxRect game_rect, panel_rect; /* drawable pixels */
 
@@ -72,6 +73,7 @@ typedef struct Frontend {
     uint32_t last_run_version;
     uint8_t last_run_scroll;
     bool last_run_details;
+    uint32_t last_hunt_version;
     bool panel_dirty;
 
     /* Toasts and status badges, drawn over the top of the game at full resolution. */

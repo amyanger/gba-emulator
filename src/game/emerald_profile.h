@@ -114,6 +114,29 @@ typedef struct {
     uint32_t cry_table;            /* 0x0869DCF4 ToneData[388] */
     uint32_t hoenn_cry_ids;        /* 0x0831F61C u16 sHoennSpeciesIdToCryId[135], index species-277 */
     uint32_t sprite_palette_tags;  /* 0x03000CF0 u16 sSpritePaletteTags[16], tag per OBJ palette slot, 0xFFFF free */
+
+    /* Shiny Hunt (docs/superpowers/specs/2026-10-13-shiny-hunt-factcheck.md, Addresses table) */
+    uint32_t rng_value;            /* u32 gRngValue */
+    uint32_t rand_count;           /* u32 sRandCount, Random() calls since boot */
+    uint32_t main_saved_callback;  /* gMain.savedCallback */
+    uint32_t cb2_end_wild_battle;  /* savedCallback values during a battle (Thumb bit set) */
+    uint32_t cb2_end_safari_battle;
+    uint32_t cb2_end_scripted_wild_battle;
+    uint32_t roamer_location;      /* u8[2] sRoamerLocation {group, num}, not saved */
+    uint32_t player_avatar_flags;  /* u8 gPlayerAvatar.flags */
+    uint16_t roamer_sb1_offset;    /* struct Roamer in SaveBlock1 */
+    uint16_t outbreak_sb1_offset;  /* outbreakPokemonSpecies, start of the outbreak fields */
+    uint16_t safari_flag;          /* FLAG_SYS_SAFARI_MODE */
+    uint16_t repel_var;            /* VAR_REPEL_STEP_COUNT */
+    uint8_t  altering_cave_map[2]; /* MAP_ALTERING_CAVE: wild header picked by a var */
+    uint32_t prev_metatile_behavior; /* u16 sPrevMetatileBehavior, last step tile's behavior */
+    uint32_t wild_immunity_steps;  /* u8 sWildEncounterImmunitySteps, 0-4 */
+    /* Step scripts that run before the wild check (field_control_avatar.c TryStartStepCountScript) */
+    uint16_t friendship_step_var;  /* VAR_FRIENDSHIP_STEP_COUNTER, 0-127 */
+    uint16_t poison_step_var;      /* VAR_POISON_STEP_COUNTER, 0-3 */
+    uint16_t match_call_flag;      /* FLAG_HAS_MATCH_CALL */
+    uint16_t daycare_sb1_offset;   /* struct DayCare in SaveBlock1 */
+    uint32_t match_call_state;     /* sMatchCallState: u32 minutes, u16 trainerId, u8 stepCounter */
 } GameProfile;
 
 extern const GameProfile g_emerald_profile;

@@ -1319,8 +1319,24 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                     int max = run_panel_max_scroll(fe->run_view, fe->run_details);
                     int sc = fe->run_scroll + delta;
                     fe->run_scroll = (uint8_t)(sc < 0 ? 0 : sc > max ? max : sc);
+                } else if (shown_page == GAME_PAGE_HUNT && fe->hunt && !fe->search.focused) {
+                    hunt_session_target(fe->hunt, delta);
                 }
             }
+            /* , and . pick the Hunt nature filter. Ctrl+, (settings) is taken earlier, but a held
+             * one repeats past it, so modified presses never count; neither does Cmd. */
+            if ((event.key.keysym.scancode == SDL_SCANCODE_COMMA ||
+                 event.key.keysym.scancode == SDL_SCANCODE_PERIOD) &&
+                fe->panel_visible && !fe->search.focused && shown_page == GAME_PAGE_HUNT && fe->hunt &&
+                (event.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) == 0 &&
+                keymap_lookup(event.key.keysym.scancode) == 0)
+                hunt_session_nature(fe->hunt, event.key.keysym.scancode == SDL_SCANCODE_COMMA ? -1 : 1);
+            /* R arms a reset of the hunt counts; a second R within 3 s confirms it. */
+            if (event.key.keysym.scancode == SDL_SCANCODE_R && !event.key.repeat && fe->panel_visible &&
+                !fe->search.focused && shown_page == GAME_PAGE_HUNT && fe->hunt &&
+                (event.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) == 0 && keymap_lookup(SDL_SCANCODE_R) == 0 &&
+                hunt_session_reset_key(fe->hunt, SDL_GetTicks()))
+                frontend_toast(fe, TOAST_OK, "Hunt counts reset", NULL);
             /* A focused Search box gets the 'd' instead (it normally swallows the key above). */
             if (event.key.keysym.scancode == SDL_SCANCODE_D && !event.key.repeat && fe->panel_visible &&
                 !fe->search.focused && shown_page == GAME_PAGE_RUN && keymap_lookup(SDL_SCANCODE_D) == 0) {

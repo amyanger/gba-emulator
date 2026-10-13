@@ -128,6 +128,7 @@ void game_update(GameState* gs, const GBA* gba);
 /* Just the berry trees, for alerts while the panel is closed (much cheaper than game_update). */
 void game_read_berries(GameState* gs, const GBA* gba, BerryView* out);
 void game_species_name(const GameMem* m, const GameProfile* p, uint16_t species, char* out);
+void game_nature_name(const GameMem* m, const GameProfile* p, uint8_t nature, char* out);
 void game_mapsec_name(const GameMem* m, const GameProfile* p, uint8_t sec, char* out);
 /* National dex number of a species, 0 when out of range or unreadable. */
 uint16_t game_species_national(const GameMem* m, const GameProfile* p, uint16_t species);
