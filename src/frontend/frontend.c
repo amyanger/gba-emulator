@@ -43,6 +43,7 @@ void frontend_set_hints(void) {
 bool frontend_init(Frontend* fe, int scale) {
     memset(fe, 0, sizeof(*fe));
     berry_alerts_reset(&fe->berry_watch);
+    daycare_alerts_reset(&fe->daycare_watch);
     frame_pacer_reset(&fe->pacer);
     fe->volume = 100;
     toast_init(&fe->toasts);
@@ -1306,7 +1307,8 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 fe->panel_visible && keymap_lookup(event.key.keysym.scancode) == 0) {
                 int delta = event.key.keysym.scancode == SDL_SCANCODE_LEFTBRACKET ? -1 : 1;
                 if (shown_page == GAME_PAGE_PARTY)
-                    fe->panel_sel = game_panel_select(fe->panel_sel, delta, fe->last_snap.party_count);
+                    fe->panel_sel = game_panel_select(fe->panel_sel, delta,
+                                                      game_panel_party_rows(&fe->last_snap, &fe->last_daycare));
                 else if (shown_page == GAME_PAGE_NUZLOCKE)
                     fe->nuz_sub = game_panel_nuz_sub(fe->nuz_sub, delta);
                 else if (shown_page == GAME_PAGE_BERRIES) {

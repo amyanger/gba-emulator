@@ -1,6 +1,7 @@
 #include "game/game.h"
 #include "game/battle_info.h"
 #include "game/damage_read.h"
+#include "game/daycare.h"
 #include "game/gen3_text.h"
 #include "gba.h"
 #include "cartridge/rtc.h"
@@ -11,9 +12,11 @@
 #define SB1_MAP_GROUP    0x04
 #define SB1_MAP_NUM      0x05
 #define SB1_BALL_POCKET  0x650
+#define SB1_FLAGS        0x1270
 #define SB1_DEX_SEEN1    0x988
 #define SB1_DEX_SEEN2    0x3B24
 #define SB1_MIN_SIZE     (SB1_DEX_SEEN2 + 52)
+#define SB2_TRAINER_ID   0x0A
 #define SB2_DEX_OWNED    0x28
 #define SB2_DEX_SEEN     0x5C
 #define SB2_ENCRYPT_KEY  0xAC
@@ -44,6 +47,8 @@
 #define SI_CATCH_RATE     0x08
 #define SI_GENDER_RATIO   0x10
 #define SI_GROWTH_RATE    0x13
+#define SI_EGG_GROUP1     0x14
+#define SI_EGG_GROUP2     0x15
 #define SI_ABILITY1       0x16
 #define SI_ABILITY2       0x17
 
@@ -178,8 +183,7 @@ static uint32_t exp_to_next(const GameMem* m, const GameProfile* p, uint8_t grow
     return next > exp ? next - exp : 0;
 }
 
-static void fill_party_mon(const GameMem* m, const GameProfile* p, const MonData* d,
-                           GamePartyMon* out) {
+void game_fill_mon(const GameMem* m, const GameProfile* p, const MonData* d, GamePartyMon* out) {
     uint8_t info[SPECIES_INFO_SIZE];
     memset(out, 0, sizeof(*out));
     out->present = true;
@@ -225,7 +229,7 @@ static void read_party(const GameMem* m, const GameProfile* p, GameSnapshot* s) 
         if (!game_mem_copy(m, p->player_party + (uint32_t)i * MON_PARTY_SIZE, raw, sizeof(raw)))
             break;
         if (!pokemon_decode(raw, true, &d)) continue;
-        fill_party_mon(m, p, &d, &s->party[s->party_count++]);
+        game_fill_mon(m, p, &d, &s->party[s->party_count++]);
     }
 }
 
@@ -540,6 +544,260 @@ void game_read_berries(GameState* gs, const GBA* gba, BerryView* out) {
     berry_read(&gs->places, gs->profile, &m, &gs->clock, out);
 }
 
+#define BOX_MON_SIZE 0x50 /* struct BoxPokemon, the start of a DaycareMon */
+
+/* Level for exp on a growth rate's row of gExperienceTables; false when unreadable. */
+static bool level_for_exp(const GameMem* m, const GameProfile* p, uint8_t growth, uint32_t exp,
+                          uint8_t* level) {
+    uint8_t raw[4 * 101];
+    uint32_t table[101];
+    if (growth > 5 ||
+        !game_mem_copy(m, p->experience_tables + 4u * 101u * growth, raw, sizeof(raw)))
+        return false;
+    for (int i = 0; i <= 100; i++) table[i] = rd32(raw + 4 * i);
+    *level = daycare_level_for_exp(table, exp);
+    return true;
+}
+
+typedef struct {
+    MonData d;
+    uint8_t info[SPECIES_INFO_SIZE];
+} DaycareRead;
+
+/* Egg guess from the two clean parents and offspringPersonality (CreateMon with that PID). */
+static void daycare_egg_guess(const GameState* gs, const GameMem* m, uint32_t sb2,
+                              const DaycareRead par[2], uint32_t pid, GameDaycare* out) {
+    const GameProfile* p = gs->profile;
+    uint16_t species[2], items[2];
+    MonGender gender[2];
+    uint8_t info[SPECIES_INFO_SIZE];
+    uint32_t tid;
+    if (!gs->search.ok) return;
+    for (uint8_t i = 0; i < 2; i++) {
+        species[i] = par[i].d.species;
+        items[i] = par[i].d.held_item;
+        gender[i] = pokemon_gender(par[i].info[SI_GENDER_RATIO], par[i].d.personality);
+    }
+    uint16_t egg =
+        daycare_egg_species(species, gender, items, pid, gs->search.parent, SPECIES_MAX, p);
+    if (egg == 0 || !species_info(m, p, egg, info) ||
+        !game_mem_read32(m, sb2 + SB2_TRAINER_ID, &tid))
+        return;
+    out->egg_known = true;
+    game_species_name(m, p, egg, out->egg_species);
+    out->egg_gender = pokemon_gender(info[SI_GENDER_RATIO], pid);
+    uint8_t nature = pokemon_nature(pid);
+    game_nature_name(m, p, nature, out->egg_nature);
+    pokemon_nature_effect(nature, &out->egg_nature_up, &out->egg_nature_down);
+    /* CreateBoxMon: the PID's low bit picks the slot only when the species has two abilities. */
+    ability_name(m, p, info[SI_ABILITY2] != 0 && (pid & 1) ? info[SI_ABILITY2] : info[SI_ABILITY1],
+                 out->egg_ability);
+    out->egg_shiny = ((tid >> 16) ^ (tid & 0xFFFF) ^ (pid >> 16) ^ (pid & 0xFFFF)) < 8;
+}
+
+/* Flame Body check and hatch countdown for the party's eggs. Left at zero when a party mon's
+ * ability can't be read, since the countdown would depend on it. pid/clean/torn: hold keys
+ * by party slot, as in daycare_read_once. */
+static void daycare_party(const GameMem* m, const GameProfile* p, uint8_t step_counter,
+                          uint32_t pid[6], bool clean[6], bool torn[6], GameDaycare* out) {
+    DaycareSlot slots[6];
+    uint8_t count, n = 0;
+    bool fire = false;
+    memset(slots, 0, sizeof(slots));
+    if (!game_mem_read8(m, p->player_party_count, &count)) return;
+    if (count > 6) count = 6;
+    for (uint8_t i = 0; i < count; i++) {
+        uint8_t raw[MON_PARTY_SIZE], info[SPECIES_INFO_SIZE];
+        MonData d;
+        if (!game_mem_copy(m, p->player_party + (uint32_t)i * MON_PARTY_SIZE, raw, sizeof(raw)))
+            return;
+        if (!pokemon_decode(raw, true, &d)) continue;
+        DaycareSlot* s = &slots[n++];
+        pid[i] = d.personality;
+        torn[i] = s->bad = d.bad;
+        if (d.bad) continue;
+        if (!species_info(m, p, d.species, info)) return;
+        clean[i] = true;
+        /* abilities[abilityNum] with no fallback (GetAbilityBySpecies) */
+        uint8_t ability = info[d.ability_num ? SI_ABILITY2 : SI_ABILITY1];
+        s->egg = d.is_egg;
+        s->cycles = d.friendship;
+        s->fire = ability == ABILITY_MAGMA_ARMOR || ability == ABILITY_FLAME_BODY;
+        if (!s->egg && s->fire) fire = true;
+    }
+    out->fire = fire;
+    daycare_hatch_steps(slots, n, step_counter, out->hatch_steps);
+}
+
+/* One read without the hold. Hold keys, daycare slots 0-1 then party slots: pid[] is the
+ * header personality, clean[] whether it decoded fully (parents: with a known level),
+ * torn[] whether it is present but not clean (party: failed its checksum). */
+static void daycare_read_once(const GameState* gs, const GameMem* m, GameDaycare* out,
+                              uint32_t* sb1_out, uint32_t pid[GAME_DC_KEYS],
+                              bool clean[GAME_DC_KEYS], bool torn[GAME_DC_KEYS]) {
+    const GameProfile* p = gs->profile;
+    uint32_t sb1, sb2, offspring = 0;
+    uint8_t flags = 0, counter = 0;
+    DaycareRead par[2];
+    memset(out, 0, sizeof(*out));
+    for (uint8_t i = 0; i < GAME_DC_KEYS; i++) {
+        pid[i] = 0;
+        clean[i] = torn[i] = false;
+    }
+    if (!p || !game_mem_read32(m, p->save_block1_ptr, &sb1) ||
+        !game_mem_read32(m, p->save_block2_ptr, &sb2) || !game_mem_in_ewram(sb1, SB1_MIN_SIZE) ||
+        !game_mem_in_ewram(sb2, SB2_MIN_SIZE))
+        return;
+    out->valid = true;
+    *sb1_out = sb1;
+    uint32_t dc = sb1 + p->daycare_sb1_offset;
+    for (uint8_t i = 0; i < 2; i++) {
+        uint8_t raw[BOX_MON_SIZE], lv_deposit, lv_now;
+        uint32_t at = dc + DAYCARE_MON_SIZE * i;
+        DaycareRead* r = &par[out->parent_count];
+        if (!game_mem_copy(m, at, raw, sizeof(raw))) continue;
+        bool present = pokemon_decode(raw, false, &r->d);
+        pid[i] = r->d.personality;
+        if (!present) continue;
+        uint8_t n = out->parent_count++;
+        out->slot[n] = i;
+        game_mem_read32(m, at + DAYCARE_MON_STEPS, &out->steps[n]);
+        uint32_t exp = r->d.experience;
+        uint32_t exp_now = exp + out->steps[n] < exp ? UINT32_MAX : exp + out->steps[n];
+        clean[i] = !r->d.bad && species_info(m, p, r->d.species, r->info) &&
+                   level_for_exp(m, p, r->info[SI_GROWTH_RATE], exp, &lv_deposit) &&
+                   level_for_exp(m, p, r->info[SI_GROWTH_RATE], exp_now, &lv_now);
+        torn[i] = !clean[i];
+        MonData shown = r->d;
+        if (clean[i]) {
+            shown.level = lv_now;
+            shown.experience = exp_now;
+            out->gained[n] = (uint8_t)(lv_now - lv_deposit);
+            out->cost[n] = daycare_cost(lv_now, lv_deposit);
+        }
+        game_fill_mon(m, p, &shown, &out->mon[n]);
+    }
+
+    game_mem_read32(m, dc + DAYCARE_OFFSPRING, &offspring);
+    game_mem_read8(m, dc + DAYCARE_STEP_COUNTER, &counter);
+    game_mem_read8(m, sb1 + SB1_FLAGS + p->pending_egg_flag / 8u, &flags);
+    out->egg_waiting = offspring != 0 && ((flags >> (p->pending_egg_flag % 8u)) & 1);
+    /* Both slots present means par[0] is slot 0 and par[1] slot 1. */
+    if (out->parent_count == 2 && clean[0] && clean[1]) {
+        DaycareParent dp[2];
+        for (uint8_t i = 0; i < 2; i++) {
+            dp[i].species = par[i].d.species;
+            dp[i].ot_id = par[i].d.ot_id;
+            dp[i].personality = par[i].d.personality;
+            dp[i].egg_group[0] = par[i].info[SI_EGG_GROUP1];
+            dp[i].egg_group[1] = par[i].info[SI_EGG_GROUP2];
+            dp[i].gender_ratio = par[i].info[SI_GENDER_RATIO];
+        }
+        DaycareCompatReason reason;
+        out->compat = daycare_compat(&dp[0], &dp[1], &reason);
+        out->compat_reason = (uint8_t)reason;
+        out->compat_known = true;
+        /* TryProduceOrHatchEgg rolls only while offspringPersonality is 0. */
+        if (offspring == 0 && out->compat > 0) out->next_roll = daycare_next_roll(out->steps[1]);
+        if (out->egg_waiting) daycare_egg_guess(gs, m, sb2, par, offspring, out);
+    }
+    daycare_party(m, p, counter, pid + 2, clean + 2, torn + 2, out);
+}
+
+/* R7: MoveSaveBlocks_ResetHeap moves the SB1 pointer before copying the data back, so the
+ * frame after a move can read garbage, and a copy in flight can tear a slot. F5: a party slot
+ * can tear too while GetEggCyclesToSubtract decrypts the party at a hatch check. */
+void game_read_daycare_mem(GameState* gs, const GameMem* m, GameDaycare* out) {
+    uint32_t sb1 = 0, pid[GAME_DC_KEYS];
+    bool clean[GAME_DC_KEYS], torn[GAME_DC_KEYS];
+    daycare_read_once(gs, m, out, &sb1, pid, clean, torn);
+    if (!out->valid) {
+        gs->dc_have = false;
+        return;
+    }
+    bool moved = gs->dc_have && sb1 != gs->dc_sb1;
+    bool tear = false;
+    for (uint8_t i = 0; i < GAME_DC_KEYS; i++)
+        if (gs->dc_have && torn[i] && gs->dc_pid[i] != 0 && pid[i] == gs->dc_pid[i]) tear = true;
+    gs->dc_sb1 = sb1;
+    if (moved || (tear && gs->dc_held == 0)) {
+        gs->dc_held++;
+        *out = gs->dc_last;
+        return;
+    }
+    gs->dc_held = 0;
+    gs->dc_last = *out;
+    gs->dc_have = true;
+    for (uint8_t i = 0; i < GAME_DC_KEYS; i++) gs->dc_pid[i] = clean[i] ? pid[i] : 0;
+}
+
+/* Drops the hold's history: while the Daycare is not read, SB1 keeps moving, so the next
+ * read would count as moved and return a stale view. */
+void game_daycare_forget(GameState* gs) {
+    gs->dc_have = false;
+    gs->dc_held = 0;
+}
+
+/* One read with no stability hold, and the hold state untouched: for the egg toast, which
+ * runs while the panel is closed and the hold's last view would be stale. */
+void game_read_daycare_now_mem(const GameState* gs, const GameMem* m, GameDaycare* out) {
+    uint32_t sb1, pid[GAME_DC_KEYS];
+    bool clean[GAME_DC_KEYS], torn[GAME_DC_KEYS];
+    daycare_read_once(gs, m, out, &sb1, pid, clean, torn);
+}
+
+void game_read_daycare_now(const GameState* gs, const GBA* gba, GameDaycare* out) {
+    GameMem m = { gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size };
+    game_read_daycare_now_mem(gs, &m, out);
+}
+
+void game_read_daycare(GameState* gs, const GBA* gba, GameDaycare* out) {
+    GameMem m = { gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size };
+    game_read_daycare_mem(gs, &m, out);
+}
+
+bool game_read_daycare_egg(const GameState* gs, const GBA* gba, uint32_t* pid, uint32_t* sb1) {
+    GameMem m = { gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size };
+    const GameProfile* p = gs->profile;
+    uint32_t sb2, offspring;
+    uint8_t flags;
+    *pid = 0;
+    *sb1 = 0;
+    if (!p || !game_mem_read32(&m, p->save_block1_ptr, sb1) ||
+        !game_mem_read32(&m, p->save_block2_ptr, &sb2) || !game_mem_in_ewram(*sb1, SB1_MIN_SIZE) ||
+        !game_mem_in_ewram(sb2, SB2_MIN_SIZE) ||
+        !game_mem_read32(&m, *sb1 + p->daycare_sb1_offset + DAYCARE_OFFSPRING, &offspring) ||
+        !game_mem_read8(&m, *sb1 + SB1_FLAGS + p->pending_egg_flag / 8u, &flags))
+        return false;
+    if ((flags >> (p->pending_egg_flag % 8u)) & 1) *pid = offspring;
+    return true;
+}
+
+bool game_dump_daycare(const GameDaycare* d, FILE* out) {
+    int ok = 1;
+    if (!d->valid) return fprintf(out, "daycare invalid\n") >= 0;
+    ok &= fprintf(out, "daycare parents %u compat %u reason %u next_roll %u egg %d known %d",
+                  d->parent_count, d->compat, d->compat_reason, d->next_roll, d->egg_waiting,
+                  d->egg_known) >= 0;
+    if (d->egg_known)
+        ok &= fprintf(out, " species %s gender %d nature %s ability %s shiny %d", d->egg_species,
+                      (int)d->egg_gender, d->egg_nature, d->egg_ability, d->egg_shiny) >= 0;
+    ok &= fprintf(out, " fire %d\n", d->fire) >= 0;
+    for (uint8_t i = 0; i < d->parent_count; i++) {
+        if (d->mon[i].bad) {
+            ok &= fprintf(out, "daycare parent %u bad\n", d->slot[i]) >= 0;
+            continue;
+        }
+        ok &= fprintf(out, "daycare parent %u %s lv %u gained %u steps %u cost %u\n", d->slot[i],
+                      d->mon[i].species, d->mon[i].level, d->gained[i], (unsigned)d->steps[i],
+                      (unsigned)d->cost[i]) >= 0;
+    }
+    for (uint8_t i = 0; i < 6; i++)
+        if (d->hatch_steps[i])
+            ok &= fprintf(out, "daycare hatch %u %u\n", i, (unsigned)d->hatch_steps[i]) >= 0;
+    return ok != 0;
+}
+
 const char* game_method_name(EncMethod method) {
     static const char* const names[ENC_METHOD_COUNT] = {
         "Grass", "Surf", "Rock Smash", "Old Rod", "Good Rod", "Super Rod",
@@ -613,4 +871,10 @@ bool game_dump(const GameSnapshot* s, FILE* out) {
                           s->enc[k][i].species, s->enc[k][i].min_level, s->enc[k][i].max_level,
                           s->enc[k][i].percent, s->enc[k][i].caught ? " caught" : "") >= 0;
     return ok != 0;
+}
+
+bool game_in_battle(const GameState* gs, const GBA* gba) {
+    GameMem m = { gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size };
+    uint8_t flags;
+    return gs->profile && game_mem_read8(&m, gs->profile->main_in_battle, &flags) && (flags & 0x02);
 }

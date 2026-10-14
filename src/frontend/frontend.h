@@ -11,6 +11,7 @@
 #include "frontend/settings.h"
 #include "frontend/prefs.h"
 #include "frontend/berry_alerts.h"
+#include "frontend/daycare_alerts.h"
 #include "frontend/frame_pacer.h"
 #include "frontend/video_filter.h"
 #include "frontend/follower_draw.h"
@@ -47,6 +48,7 @@ typedef struct Frontend {
     uint8_t berry_sel;            /* open place on the Berries page, [ and ] */
     bool berry_alerts;            /* berry toasts; B on the Berries page, prefs berry_alerts */
     BerryAlerts berry_watch;      /* reset on state load and rewind */
+    DaycareAlerts daycare_watch;  /* same */
     NuzSession* nuz;              /* set by main; N starts a run on the Nuzlocke page */
     /* Search page: query, focus and selection. While focused, typing goes to the box. */
     SearchView search;
@@ -66,6 +68,7 @@ typedef struct Frontend {
 
     /* What the panel buffer currently shows, so unchanged frames skip the redraw. */
     GameSnapshot last_snap;
+    GameDaycare last_daycare; /* zero unless the Party page was drawn with it */
     MirageArm mirage_arm;    /* J J clock jump on the Route page */
     uint8_t last_page, last_sel, last_nuz_sub, last_berry_sel;
     bool last_berry_alerts;

@@ -152,6 +152,7 @@ set(SOURCES
     src/game/follower_places.c
     src/game/mirage.c
     src/game/berry.c
+    src/game/daycare.c
     src/hgss/nds_fs.c
     src/hgss/hgss_msg.c
     src/hgss/hgss_gfx.c
@@ -172,6 +173,7 @@ set(SOURCES
     src/frontend/slot_picker.c
     src/frontend/game_panel.c
     src/frontend/berry_alerts.c
+    src/frontend/daycare_alerts.c
     src/frontend/panel_layout.c
     src/frontend/rom_picker.c
     src/frontend/toast.c
@@ -352,6 +354,7 @@ set(LIB_SOURCES
     src/game/follower_places.c
     src/game/mirage.c
     src/game/berry.c
+    src/game/daycare.c
     src/hgss/nds_fs.c
     src/hgss/hgss_msg.c
     src/hgss/hgss_gfx.c
@@ -371,6 +374,7 @@ set(LIB_SOURCES
     src/frontend/slot_picker.c
     src/frontend/game_panel.c
     src/frontend/berry_alerts.c
+    src/frontend/daycare_alerts.c
     src/frontend/panel_layout.c
     src/frontend/audio_out.c
     src/frontend/frame_pacer.c
@@ -469,6 +473,7 @@ set(TEST_SOURCES
     tests/test_game_snapshot.c
     tests/test_mirage.c
     tests/test_berry.c
+    tests/test_daycare.c
     tests/test_game_panel.c
     tests/test_overworld.c
     tests/test_feebas.c
@@ -493,6 +498,7 @@ set(TEST_SOURCES
     tests/test_panel_layout.c
     tests/test_toast.c
     tests/test_berry_alerts.c
+    tests/test_daycare_alerts.c
     tests/test_prefs.c
     tests/test_video_filter.c
     tests/test_hud.c

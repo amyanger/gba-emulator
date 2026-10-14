@@ -90,6 +90,26 @@ static void berry_tick(Frontend* fe, GBA* gba) {
         frontend_toast_keyed(fe, toasts[i].key, TOAST_INFO, toasts[i].title, toasts[i].detail);
 }
 
+/* "Egg ready" toast, checked once a second whether or not the panel is open. */
+static void daycare_tick(Frontend* fe, GBA* gba) {
+    static uint32_t frames;
+    static GameDaycare dc;   /* large: keep it off the stack */
+    if (!s_game.profile || ++frames % 60 != 0) return;
+    uint32_t pid = 0, sb1 = 0;
+    bool ok = game_read_daycare_egg(&s_game, gba, &pid, &sb1);
+    if (!daycare_alerts_update(&fe->daycare_watch, ok, pid, sb1, game_in_battle(&s_game, gba))) return;
+    char detail[48];
+    game_read_daycare_now(&s_game, gba, &dc);
+    if (dc.egg_known) {
+        char name[GAME_NAME_LEN];
+        game_panel_title_case(dc.egg_species, name, sizeof(name));
+        snprintf(detail, sizeof(detail), "%s%s", name, dc.egg_shiny ? ", shiny" : "");
+    } else {
+        snprintf(detail, sizeof(detail), "Talk to the old man on Route 117");
+    }
+    frontend_toast_keyed(fe, "daycare:egg", TOAST_INFO, "Egg ready at the Daycare", detail);
+}
+
 /* Following Pokemon around one emulated frame: place the follower before it runs and hold
  * game input during a talk; afterwards restore input and advance the talk. */
 static void follower_pre_frame(GBA* gba, void* ctx) {
@@ -185,6 +205,14 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
             GameMem m = { gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size };
             hunt_session_present(&s_hunt, &m, SDL_GetTicks(), 16384);
         }
+        /* Steps tick every step, so the Daycare is read (and compared) only while it shows. */
+        static GameDaycare daycare;
+        bool daycare_shown = shown == GAME_PAGE_PARTY;
+        if (daycare_shown) game_read_daycare(&s_game, gba, &daycare);
+        else {
+            memset(&daycare, 0, sizeof(daycare));
+            game_daycare_forget(&s_game);
+        }
         /* Redraw only when something on the panel can have changed. */
         if (fe->panel_dirty || fe->last_page != fe->panel_page || fe->last_sel != fe->panel_sel ||
             fe->last_nuz_sub != fe->nuz_sub || fe->last_nuz_version != s_nuz.view_version ||
@@ -193,6 +221,7 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
             (run_shown && (fe->last_run_version != s_run.view_version ||
                            fe->last_run_scroll != fe->run_scroll || fe->last_run_details != fe->run_details)) ||
             (hunt_shown && fe->last_hunt_version != hunt_session_view(&s_hunt)->version) ||
+            (daycare_shown && memcmp(&fe->last_daycare, &daycare, sizeof(daycare)) != 0) ||
             memcmp(&fe->last_snap, &s_game.snap, sizeof(s_game.snap)) != 0) {
             UiCanvas canvas;
             ui_canvas_init(&canvas, fe->panel_buffer, fe->panel_px_w, fe->panel_px_h,
@@ -202,7 +231,8 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
                                       caret_phase % 2 == 0};
             game_panel_draw(&canvas, &s_game.snap, (GamePage)fe->panel_page, fe->panel_sel,
                             &s_nuz.view, fe->nuz_sub, fe->berry_sel, fe->berry_alerts, &search,
-                            &s_run.view, fe->run_scroll, fe->run_details, hunt_session_view(&s_hunt));
+                            &s_run.view, fe->run_scroll, fe->run_details, hunt_session_view(&s_hunt),
+                            daycare_shown ? &daycare : NULL);
             fe->last_hunt_version = hunt_session_view(&s_hunt)->version;
             fe->last_search_version = fe->search.version;
             fe->last_caret_phase = caret_phase;
@@ -216,12 +246,14 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
             SDL_UpdateTexture(fe->panel_texture, NULL, fe->panel_buffer,
                               fe->panel_px_w * (int)sizeof(uint32_t));
             fe->last_snap = s_game.snap;
+            fe->last_daycare = daycare;
             fe->last_page = fe->panel_page;
             fe->last_sel = fe->panel_sel;
             fe->panel_dirty = false;
         }
     } else {
         hunt_session_set_shown(&s_hunt, false);
+        game_daycare_forget(&s_game);
     }
     frontend_update_settings(fe, gba);
     frontend_update_overworld(fe, fe->overworld_xray && fe->ow_feed ? &fe->ow_feed->shown : NULL);
@@ -250,7 +282,7 @@ static void print_usage(const char* prog) {
     printf("  --panel-page <p>       Headless: panel page, auto|party|route|nuzlocke|berries|search|hunt|run\n");
     printf("                         (default: auto)\n");
     printf("  --panel-search <q>     Headless: Search page with this query typed in (implies --panel-page search)\n");
-    printf("  --panel-select <n>     Headless: party slot, Nuzlocke view 0-2 (routes, team, graveyard),\n");
+    printf("  --panel-select <n>     Headless: party slot (0-8; Daycare rows follow the party), Nuzlocke view 0-2 (routes, team, graveyard),\n");
     printf("                         the selected Search result (0 is the first), or 1 for Run details\n");
     printf("  --nuzlocke-file <f>    Headless: track a Nuzlocke run in this file, starting one if it has none\n");
     printf("  --run-file <f>         Headless: keep the run log (Run page) in this file\n");
@@ -509,7 +541,7 @@ int main(int argc, char* argv[]) {
     if (panel_select_arg) {
         char* end = NULL;
         long v = strtol(panel_select_arg, &end, 10);
-        long max = panel_page == GAME_PAGE_SEARCH ? SPECIES_MAX - 1 : 5;
+        long max = panel_page == GAME_PAGE_SEARCH ? SPECIES_MAX - 1 : panel_page == GAME_PAGE_PARTY ? 8 : 5;
         if (end == panel_select_arg || *end != '\0' || v < 0 || v > max) {
             LOG_ERROR("--panel-select must be between 0 and %ld (got %s)", max, panel_select_arg);
             return 1;
@@ -829,9 +861,12 @@ int main(int argc, char* argv[]) {
         if (rc == 0 && game_dump_path) {
             FILE* f = fopen(game_dump_path, "w");
             static FeebasState feebas;
+            static GameDaycare daycare;
             GameMem gm = { gba.bus.ewram, gba.bus.iwram, gba.cart.rom, gba.cart.rom_size };
             feebas_read(s_game.profile, &gm, &feebas);
-            if (!f || !game_dump(&dump_state.snap, f) || (s_game.profile && !overworld_dump(&s_ow.shown, f)) ||
+            game_read_daycare(&dump_state, &gba, &daycare);
+            if (!f || !game_dump(&dump_state.snap, f) || (dump_state.profile && !game_dump_daycare(&daycare, f)) ||
+                (s_game.profile && !overworld_dump(&s_ow.shown, f)) ||
                 (s_game.profile && !feebas_dump(&feebas, f)) ||
                 (nuzlocke_file && !nuz_session_dump(&s_nuz, f)) || (run_file && !run_session_dump(&s_run, f)) ||
                 (hunt_file && !hunt_session_dump(&s_hunt, f))) {
@@ -878,13 +913,18 @@ int main(int argc, char* argv[]) {
                 /* Headless keeps no run log unless asked, so say what the Run page needs. */
                 static const RunView no_run_file = { .state = RUN_VIEW_OFF, .reason = "Needs --run-file" };
                 static const HuntView no_hunt_file = { .on = false, .reason = "Needs --hunt-file" };
+                static GameDaycare panel_daycare;
+                bool panel_party =
+                    game_panel_resolve_page(panel_page, dump_state.snap.context) == GAME_PAGE_PARTY;
+                if (panel_party) game_read_daycare(&dump_state, &gba, &panel_daycare);
                 UiCanvas canvas;
                 ui_canvas_init(&canvas, px, w, h, panel_density);
                 game_panel_draw(&canvas, &dump_state.snap, panel_page, panel_select,
                                 nuzlocke_file ? &s_nuz.view : NULL, (uint8_t)(panel_select % NUZ_SUB_COUNT),
                                 panel_select, true, &search, run_file ? &s_run.view : &no_run_file, 0,
                                 panel_page == GAME_PAGE_RUN && panel_select == 1,
-                                hunt_file ? hunt_session_view(&s_hunt) : &no_hunt_file);
+                                hunt_file ? hunt_session_view(&s_hunt) : &no_hunt_file,
+                                panel_party ? &panel_daycare : NULL);
                 if (rc == 0 && !screenshot_save_argb(px, w, h, panel_out_path)) {
                     LOG_ERROR("Failed to write --panel-out file: %s", panel_out_path);
                     rc = 1;
@@ -1132,6 +1172,8 @@ int main(int argc, char* argv[]) {
                     frontend_audio_stop(&fe, &gba.apu);
                     overworld_feed_clear(&s_ow);
                     berry_alerts_rebase(&fe.berry_watch);
+                    daycare_alerts_rebase(&fe.daycare_watch);
+                    game_daycare_forget(&s_game);
                     frontend_hq_reset(&fe);
                     frontend_follower_reset(&fe, &gba);
                     hunt_session_discontinuity(&s_hunt);
@@ -1180,6 +1222,8 @@ int main(int argc, char* argv[]) {
             }
             overworld_feed_clear(&s_ow);
             berry_alerts_rebase(&fe.berry_watch);
+            daycare_alerts_rebase(&fe.daycare_watch);
+            game_daycare_forget(&s_game);
             frontend_follower_reset(&fe, &gba);
             s_rewinding = true;
             nuz_tick(&gba, &s_nuz);
@@ -1204,6 +1248,7 @@ int main(int argc, char* argv[]) {
             trace_frame_tick();
             nuz_tick(&gba, &s_nuz);
             berry_tick(&fe, &gba);
+            daycare_tick(&fe, &gba);
             CartFlushResult flush = cartridge_save_tick(&gba.cart, time(NULL));
             if (toast_failure_edge(&save_fail_reported, flush != CART_FLUSH_NONE,
                                    flush == CART_FLUSH_OK))

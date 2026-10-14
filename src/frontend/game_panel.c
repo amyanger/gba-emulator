@@ -3,6 +3,7 @@
 #include "frontend/hunt_panel.h"
 #include "common.h"
 #include "game/damage.h"
+#include "game/daycare.h"
 #include "ui/ui_font.h"
 #include "ui/ui_theme.h"
 #include "ui/ui_widgets.h"
@@ -72,6 +73,29 @@ uint8_t game_panel_select(uint8_t sel, int delta, uint8_t party_count) {
     int s = sel >= party_count ? party_count - 1 : sel;
     s = ((s + delta) % party_count + party_count) % party_count;
     return (uint8_t)s;
+}
+
+#define PARTY_TOP 42.0f /* y of the page content: ui_tabs top 12 + 30 */
+
+static bool daycare_shown(const GameDaycare* dc) {
+    return dc && dc->valid && (dc->parent_count > 0 || dc->egg_waiting);
+}
+
+uint8_t game_panel_party_rows(const GameSnapshot* snap, const GameDaycare* dc) {
+    return (uint8_t)(snap->party_count + (daycare_shown(dc) ? dc->parent_count + 1 : 0));
+}
+
+/* Row y for a content top: party rows pack at a 44 pitch, the DAYCARE label sits 8 below
+ * the last one and its rows start 16 under the label. */
+static float party_row_y(float top, const GameSnapshot* snap, uint8_t row) {
+    uint8_t n = snap->party_count > 6 ? 6 : snap->party_count;
+    if (row < n) return top + 4.0f + row * 44.0f;
+    return top + 4.0f + n * 44.0f + 20.0f + (row - n) * 44.0f;
+}
+
+float game_panel_party_row_y(const GameSnapshot* snap, const GameDaycare* dc, uint8_t row) {
+    (void)dc;
+    return party_row_y(PARTY_TOP, snap, row);
 }
 
 static bool title_sep(char ch) { return ch == ' ' || ch == '-' || ch == '.'; }
@@ -258,11 +282,11 @@ static void title_meta(UiCanvas* c, float x, float y, float max_x, const char* p
         x += 1.0f;
         ui_gender(c, x, base - 10.0f, 11.0f, gender == MON_GENDER_FEMALE);
         x += 11.0f;
-        if (x < max_x)
+        if (x < max_x && suffix[0])
             x += ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, x, ty, max_x - x, UI_ALIGN_LEFT,
                          UI_MUTED, MDOT);
     }
-    if (x < max_x)
+    if (x < max_x && suffix[0])
         ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, x, ty, max_x - x, UI_ALIGN_LEFT, UI_MUTED,
                 suffix);
 }
@@ -587,11 +611,24 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
     if (rows >= 0 && rows < count) more_line(c, LEFT, y, (unsigned)(count - rows));
 }
 
-static void party_list_row(UiCanvas* c, float y, const GamePartyMon* m, bool selected) {
-    if (selected) {
-        ui_fill_round_rect(c, (UiRect){LEFT, y, 190.0f, 40.0f}, UI_RADIUS, UI_SELECTED);
-        ui_fill_round_rect(c, (UiRect){LEFT, y + 2.0f, 2.0f, 36.0f}, 1.0f, UI_ACCENT);
-    }
+static void row_bg(UiCanvas* c, float y, bool selected) {
+    if (!selected) return;
+    ui_fill_round_rect(c, (UiRect){LEFT, y, 190.0f, 40.0f}, UI_RADIUS, UI_SELECTED);
+    ui_fill_round_rect(c, (UiRect){LEFT, y + 2.0f, 2.0f, 36.0f}, 1.0f, UI_ACCENT);
+}
+
+/* 1234 -> "1,234" (up to 999,999,999). */
+static void fmt_num(char* out, size_t n, uint32_t v) {
+    if (v >= 1000000) snprintf(out, n, "%lu,%03lu,%03lu", (unsigned long)(v / 1000000),
+                               (unsigned long)(v / 1000 % 1000), (unsigned long)(v % 1000));
+    else if (v >= 1000) snprintf(out, n, "%lu,%03lu", (unsigned long)(v / 1000), (unsigned long)(v % 1000));
+    else snprintf(out, n, "%lu", (unsigned long)v);
+}
+
+/* hatch_steps > 0 adds the egg's step countdown at the right edge. */
+static void party_list_row(UiCanvas* c, float y, const GamePartyMon* m, bool selected,
+                           uint32_t hatch_steps) {
+    row_bg(c, y, selected);
     float tx = LEFT + 8.0f, ty = y + 8.0f, rx = LEFT + 182.0f;
     /* Rows without an HP bar center their text in the 40 point row. */
     float mid = y + 20.0f - ui_text_cap_middle(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY);
@@ -601,7 +638,14 @@ static void party_list_row(UiCanvas* c, float y, const GamePartyMon* m, bool sel
         return;
     }
     if (m->egg) {
-        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, tx, mid, 120.0f, UI_ALIGN_LEFT, UI_MUTED, "Egg");
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, tx, mid, 60.0f, UI_ALIGN_LEFT, UI_MUTED, "Egg");
+        if (hatch_steps > 0) {
+            char num[16], buf[24];
+            fmt_num(num, sizeof(num), hatch_steps);
+            snprintf(buf, sizeof(buf), "%s steps", num);
+            float sy = y + 20.0f - ui_text_cap_middle(c, UI_FONT_REGULAR, 11.5f);
+            ui_text(c, UI_FONT_REGULAR, 11.5f, rx, sy, 110.0f, UI_ALIGN_RIGHT, UI_MUTED, buf);
+        }
         return;
     }
     char buf[16];
@@ -614,7 +658,75 @@ static void party_list_row(UiCanvas* c, float y, const GamePartyMon* m, bool sel
            hp_color(m->hp, m->max_hp));
 }
 
-static void party_detail(UiCanvas* c, const GamePartyMon* m, float top) {
+/* Daycare parent: like a party row, with the levels gained and the pickup cost where the HP
+ * bar goes. A cost of 0 means the level is unknown, so the level and that line are left out. */
+static void daycare_parent_row(UiCanvas* c, float y, const GameDaycare* dc, uint8_t i,
+                               bool selected) {
+    row_bg(c, y, selected);
+    const GamePartyMon* m = &dc->mon[i];
+    float tx = LEFT + 8.0f, ty = y + 8.0f, rx = LEFT + 182.0f;
+    if (m->bad) {
+        float mid = y + 20.0f - ui_text_cap_middle(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY);
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, tx, mid, 120.0f, UI_ALIGN_LEFT, UI_BAD, "Bad data");
+        return;
+    }
+    ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, tx, ty, 120.0f, UI_ALIGN_LEFT, UI_TEXT, m->nickname);
+    if (dc->cost[i] == 0) return;
+    char buf[32];
+    snprintf(buf, sizeof(buf), "Lv %u", m->level);
+    float lvy = ty + ui_text_ascent(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY) -
+                ui_text_ascent(c, UI_FONT_REGULAR, 11.5f);
+    ui_text(c, UI_FONT_REGULAR, 11.5f, rx, lvy, 50.0f, UI_ALIGN_RIGHT, UI_MUTED, buf);
+    char cost[16];
+    fmt_num(cost, sizeof(cost), dc->cost[i]);
+    snprintf(buf, sizeof(buf), "+%u Lv" MDOT "cost %s", dc->gained[i], cost);
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, tx, y + 24.0f, 174.0f, UI_ALIGN_LEFT, UI_MUTED, buf);
+}
+
+static const char* compat_label(uint8_t compat) {
+    return compat >= 70 ? "Get along well" : compat >= 50 ? "Get along" : "Don't mix well";
+}
+
+static void breeding_row(UiCanvas* c, float y, const GameDaycare* dc, bool selected) {
+    row_bg(c, y, selected);
+    float tx = LEFT + 8.0f, rx = LEFT + 182.0f;
+    float mid = y + 20.0f - ui_text_cap_middle(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY);
+    float ty = y + 8.0f;
+    if (dc->egg_waiting) {
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, tx, mid, 174.0f, UI_ALIGN_LEFT, UI_GOOD,
+                "Egg ready");
+    } else if (dc->parent_count < 2) {
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, tx, mid, 174.0f, UI_ALIGN_LEFT, UI_MUTED,
+                "Leave a second Pok\xC3\xA9mon");
+    } else if (!dc->compat_known) {
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, tx, mid, 174.0f, UI_ALIGN_LEFT, UI_MUTED,
+                "Breeding");
+    } else if (dc->compat == 0) {
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, tx, mid, 174.0f, UI_ALIGN_LEFT, UI_MUTED,
+                "Can't breed");
+    } else {
+        char buf[24];
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, tx, ty, 130.0f, UI_ALIGN_LEFT, UI_TEXT,
+                compat_label(dc->compat));
+        snprintf(buf, sizeof(buf), "%u%%", dc->compat);
+        float lvy = ty + ui_text_ascent(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY) -
+                    ui_text_ascent(c, UI_FONT_REGULAR, 11.5f);
+        ui_text(c, UI_FONT_REGULAR, 11.5f, rx, lvy, 50.0f, UI_ALIGN_RIGHT, UI_MUTED, buf);
+        if (dc->next_roll > 0) {
+            ui_bar(c, (UiRect){tx, y + 30.0f, 96.0f, 4.0f}, (256 - dc->next_roll) / 256.0f,
+                   UI_ACCENT);
+            snprintf(buf, sizeof(buf), "roll in %u", dc->next_roll);
+            ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, rx, y + 26.0f, 70.0f, UI_ALIGN_RIGHT,
+                    UI_MUTED, buf);
+        }
+    }
+}
+
+/* Party member or Daycare parent. A parent passes daycare_line (and cost_line, NULL when its
+ * level is unknown), which replace the Next level row. A party egg passes its hatch_steps
+ * (0 = unknown) and whether a Flame Body mon is in the party. */
+static void party_detail(UiCanvas* c, const GamePartyMon* m, float top, const char* daycare_line,
+                         const char* cost_line, uint32_t hatch_steps, bool fire) {
     const float x = 220.0f, w = RIGHT - x;
     char buf[48];
     float y = top + 4.0f;
@@ -626,7 +738,19 @@ static void party_detail(UiCanvas* c, const GamePartyMon* m, float top) {
         ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, x, y, w, UI_ALIGN_LEFT, UI_TEXT, "Egg");
         y += 30.0f;
         nature_row(c, x, y, 96.0f, w, m->nature, m->nature_up, m->nature_down);
-        y += KV_LINE + 8.0f;
+        y += KV_LINE;
+        if (hatch_steps > 0) {
+            char num[16];
+            fmt_num(num, sizeof(num), hatch_steps);
+            snprintf(buf, sizeof(buf), "%s steps", num);
+            kv_row(c, x, y, 96.0f, w, "Hatches in", buf, UI_TEXT);
+            y += KV_LINE;
+            if (fire) {
+                kv_row(c, x, y, 96.0f, w, "Egg cycles", "2 per check (Flame Body or Magma Armor)", UI_TEXT);
+                y += KV_LINE;
+            }
+        }
+        y += 8.0f;
         section(c, x + 42.0f, y, 60.0f, "IV");
         y += SECTION_ADV;
         for (int i = 0; i < 6; i++) {
@@ -642,10 +766,13 @@ static void party_detail(UiCanvas* c, const GamePartyMon* m, float top) {
     float name_w = ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, x, y, 170.0f, UI_ALIGN_LEFT, UI_TEXT,
                            m->nickname);
     Name species = title(m->species);
-    snprintf(buf, sizeof(buf), "%s" MDOT, species.s);
+    bool no_lv = daycare_line && !cost_line;
+    /* Genderless with no level would leave the separator dangling. */
+    if (no_lv && m->gender == MON_GENDER_NONE) snprintf(buf, sizeof(buf), "%s", species.s);
+    else snprintf(buf, sizeof(buf), "%s" MDOT, species.s);
     char lv[16];
     snprintf(lv, sizeof(lv), "Lv %u", m->level);
-    title_meta(c, x + name_w + 8.0f, y, RIGHT, buf, m->gender, lv);
+    title_meta(c, x + name_w + 8.0f, y, RIGHT, buf, m->gender, no_lv ? "" : lv);
     y += 28.0f;
     if (pill_width(c, m->type_ids[0]) > 0 || pill_width(c, m->type_ids[1]) > 0) {
         type_pills(c, x, y, m->type_ids, false);
@@ -668,10 +795,20 @@ static void party_detail(UiCanvas* c, const GamePartyMon* m, float top) {
     snprintf(buf, sizeof(buf), "%u", m->friendship);
     kv_row(c, x, y, 96.0f, w, "Friendship", buf, UI_TEXT);
     y += KV_LINE;
-    if (m->level >= 100) snprintf(buf, sizeof(buf), "Max");
-    else snprintf(buf, sizeof(buf), "%lu exp", (unsigned long)m->exp_to_next);
-    kv_row(c, x, y, 96.0f, w, "Next level", buf, UI_TEXT);
-    y += KV_LINE + 8.0f;
+    if (daycare_line) {
+        kv_row(c, x, y, 96.0f, w, "Daycare", daycare_line, UI_TEXT);
+        y += KV_LINE;
+        if (cost_line) {
+            kv_row(c, x, y, 96.0f, w, "Pickup cost", cost_line, UI_TEXT);
+            y += KV_LINE;
+        }
+    } else {
+        if (m->level >= 100) snprintf(buf, sizeof(buf), "Max");
+        else snprintf(buf, sizeof(buf), "%lu exp", (unsigned long)m->exp_to_next);
+        kv_row(c, x, y, 96.0f, w, "Next level", buf, UI_TEXT);
+        y += KV_LINE;
+    }
+    y += 8.0f;
 
     /* IV / EV grid: label 34, then two (bar + value) columns of 157 with an 8 gap */
     section(c, x + 42.0f, y, 60.0f, "IV");
@@ -687,17 +824,119 @@ static void party_detail(UiCanvas* c, const GamePartyMon* m, float top) {
     }
 }
 
-static void draw_party(UiCanvas* c, const GameSnapshot* s, float top, uint8_t sel) {
+static const char* compat_reason_text(const GameDaycare* dc) {
+    switch (dc->compat_reason) {
+    case DAYCARE_SAME_GENDER: return "Same gender";
+    case DAYCARE_GENDERLESS: return "A genderless Pok\xC3\xA9mon needs Ditto";
+    case DAYCARE_UNDISCOVERED: return "Undiscovered egg group";
+    case DAYCARE_TWO_DITTO: return "Two Ditto can't breed";
+    case DAYCARE_NO_SHARED_GROUP: return "No shared egg group";
+    default: return "The two prefer to play with other Pok\xC3\xA9mon.";
+    }
+}
+
+static void breeding_detail(UiCanvas* c, const GameDaycare* dc, float top) {
+    const float x = 220.0f, w = RIGHT - x, lw = 96.0f;
+    char buf[48];
+    float y = top + 4.0f;
+    ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, x, y, w, UI_ALIGN_LEFT, UI_TEXT, "Breeding");
+    y += 30.0f;
+    if (dc->parent_count < 2) {
+        if (!dc->egg_waiting) {
+            ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, w, UI_ALIGN_LEFT, UI_MUTED,
+                    "Leave a second Pok\xC3\xA9mon to breed.");
+            return;
+        }
+    } else if (dc->compat_known) {
+        const char* msg = dc->compat >= 70 ? "The two seem to get along very well."
+                        : dc->compat >= 50 ? "The two seem to get along."
+                        : dc->compat >= 20 ? "The two don't seem to like each other much."
+                        : compat_reason_text(dc);
+        kv_row(c, x, y, lw, w, "Compatibility", msg, UI_TEXT);
+        y += KV_LINE;
+        if (dc->compat > 0) {
+            snprintf(buf, sizeof(buf), "%u%% each roll", dc->compat);
+            kv_row(c, x, y, lw, w, "Egg chance", buf, UI_TEXT);
+            y += KV_LINE;
+            if (!dc->egg_waiting && dc->next_roll > 0) {
+                snprintf(buf, sizeof(buf), "in %u steps", dc->next_roll);
+                kv_row(c, x, y, lw, w, "Next roll", buf, UI_TEXT);
+                y += KV_LINE;
+            }
+        }
+    }
+    y += 8.0f;
+    section(c, x, y, w, "EGG");
+    y += SECTION_ADV;
+    if (!dc->egg_waiting) {
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, w, UI_ALIGN_LEFT, UI_MUTED, "None yet");
+        return;
+    }
+    if (!dc->egg_known) {
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, w, UI_ALIGN_LEFT, UI_GOOD,
+                "Waiting at the Daycare");
+        return;
+    }
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, w, UI_ALIGN_LEFT, UI_GOOD, "Waiting at the Daycare");
+    y += KV_LINE;
+    Name sp = title(dc->egg_species);
+    float vw = kv_row(c, x, y, lw, w, "Species", sp.s, UI_TEXT);
+    if (dc->egg_gender != MON_GENDER_NONE) {
+        float gx = x + lw + vw;
+        gx += ui_text(c, UI_FONT_REGULAR, KV_SIZE, gx, y, 0, UI_ALIGN_LEFT, UI_MUTED, MDOT);
+        ui_gender(c, gx, y + 1.0f, 11.0f, dc->egg_gender == MON_GENDER_FEMALE);
+    }
+    y += KV_LINE;
+    nature_row(c, x, y, lw, w, dc->egg_nature, dc->egg_nature_up, dc->egg_nature_down);
+    y += KV_LINE;
+    Name ab = title(dc->egg_ability);
+    kv_row(c, x, y, lw, w, "Ability", ab.s, UI_TEXT);
+    y += KV_LINE;
+    if (dc->egg_shiny) {
+        kv_row(c, x, y, lw, w, "Shiny", "Yes", UI_GOOD);
+        y += KV_LINE;
+    }
+    y += 6.0f;
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, x, y, w, UI_ALIGN_LEFT, UI_MUTED,
+            "IVs are rolled when you pick it up.");
+}
+
+static void draw_party(UiCanvas* c, const GameSnapshot* s, float top, uint8_t sel,
+                       const GameDaycare* dc) {
     uint8_t count = s->party_count > 6 ? 6 : s->party_count;
     if (count == 0) {
         ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT, top + 8.0f, 190.0f, UI_ALIGN_LEFT, UI_MUTED,
                 "No Pok\xC3\xA9mon in party");
         return;
     }
-    sel = game_panel_select(sel, 0, count);
+    bool show_dc = daycare_shown(dc);
+    bool eggs = dc && dc->valid; /* party eggs get their countdown even with an empty Daycare */
+    uint8_t rows = count + (show_dc ? dc->parent_count + 1 : 0);
+    sel = game_panel_select(sel, 0, rows);
     for (uint8_t i = 0; i < count; i++)
-        party_list_row(c, top + 4.0f + i * 44.0f, &s->party[i], i == sel);
-    party_detail(c, &s->party[sel], top);
+        party_list_row(c, party_row_y(top, s, i), &s->party[i], i == sel,
+                       eggs ? dc->hatch_steps[i] : 0);
+    if (show_dc) {
+        section(c, LEFT, party_row_y(top, s, count) - 16.0f, 190.0f, "DAYCARE");
+        for (uint8_t i = 0; i < dc->parent_count; i++)
+            daycare_parent_row(c, party_row_y(top, s, count + i), dc, i, count + i == sel);
+        breeding_row(c, party_row_y(top, s, count + dc->parent_count), dc,
+                     count + dc->parent_count == sel);
+    }
+    if (sel < count) {
+        party_detail(c, &s->party[sel], top, NULL, NULL, eggs ? dc->hatch_steps[sel] : 0,
+                     eggs && dc->fire);
+    } else if (sel - count < dc->parent_count) {
+        uint8_t i = sel - count;
+        char num[16], steps[48], cost[16];
+        fmt_num(num, sizeof(num), dc->steps[i]);
+        if (dc->cost[i]) snprintf(steps, sizeof(steps), "%s steps" MDOT "+%u Lv", num, dc->gained[i]);
+        else snprintf(steps, sizeof(steps), "%s steps", num);
+        fmt_num(cost, sizeof(cost), dc->cost[i]);
+        party_detail(c, &dc->mon[i], top, steps, dc->cost[i] ? cost : NULL, 0, false);
+    } else {
+        breeding_detail(c, dc, top);
+    }
 }
 
 static bool rod_method(int k) { return k >= ENC_OLD_ROD; }
@@ -1871,7 +2110,7 @@ float game_panel_tabs_width(const UiCanvas* c, GamePage shown, bool auto_badge) 
 void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel,
                      const NuzView* nuz, uint8_t nuz_sub, uint8_t berry_sel, bool berry_alerts,
                      const GamePanelSearch* search, const RunView* run, uint8_t run_scroll,
-                     bool run_details, const HuntView* hunt) {
+                     bool run_details, const HuntView* hunt, const GameDaycare* daycare) {
     GamePage shown = game_panel_resolve_page(page, snap->context);
     int active = tab_index(shown);
     bool search_focused = search && search->view && search->view->focused;
@@ -1899,7 +2138,7 @@ void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8
     } else if (active == 4) {
         draw_berries(c, &snap->berries, berry_sel, berry_alerts);
     } else if (active == 1) {
-        draw_party(c, snap, top, party_sel);
+        draw_party(c, snap, top, party_sel, daycare);
     } else if (active == 2) {
         draw_route(c, snap, top);
     } else {

@@ -44,11 +44,11 @@ typedef struct {
  * Berries page (0 = the first, which is the current place when it has trees). search
  * may be NULL; the Search page then says it is unavailable. run may be NULL; run_scroll
  * scrolls its list and run_details shows the Details sheet. hunt may be NULL (the Hunt
- * page then says it is unavailable). */
+ * page then says it is unavailable). daycare may be NULL (no Daycare block on the Party page). */
 void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel,
                      const NuzView* nuz, uint8_t nuz_sub, uint8_t berry_sel, bool berry_alerts,
                      const GamePanelSearch* search, const RunView* run, uint8_t run_scroll,
-                     bool run_details, const HuntView* hunt);
+                     bool run_details, const HuntView* hunt, const GameDaycare* daycare);
 /* Lines in the Search page's scrolling detail body and how many the drawer shows at once
  * (one fewer than fit when it needs the "N more below" footer). Feed both to
  * search_view_set_detail_lines. */
@@ -99,6 +99,11 @@ uint32_t game_panel_damage_color(const GameMoveEff* e, uint16_t hp, bool against
                                  bool* semibold);
 /* Moves the party selection by delta; wraps, and returns 0 when the party is empty. */
 uint8_t game_panel_select(uint8_t sel, int delta, uint8_t party_count);
+/* Rows on the Party page: party, then (when the daycare has a parent or an egg waits) one per
+ * parent and one breeding row. dc may be NULL. */
+uint8_t game_panel_party_rows(const GameSnapshot* snap, const GameDaycare* dc);
+/* Top y of a Party page row (rows are 40 tall). */
+float game_panel_party_row_y(const GameSnapshot* snap, const GameDaycare* dc, uint8_t row);
 /* "WATER GUN" -> "Water Gun". The whole words POKE, HP and PP become "Poké", "HP" and
  * "PP", so the ROM's "POKe BALL" (decoded as "POKE BALL") reads "Poké Ball"; longer
  * words such as "POKEMON" are only title-cased. */

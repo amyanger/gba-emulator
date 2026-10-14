@@ -210,6 +210,93 @@ static void fill_party_and_route(GameSnapshot* s) {
     }
 }
 
+static void fill_daycare(GameDaycare* d, uint8_t parents, bool egg) {
+    memset(d, 0, sizeof(*d));
+    d->valid = true;
+    d->parent_count = parents;
+    for (int i = 0; i < parents; i++) {
+        GamePartyMon* m = &d->mon[i];
+        m->present = true;
+        game_strcpy(m->species, GAME_NAME_LEN, "WWWWWWWWWW");
+        game_strcpy(m->nickname, GAME_NAME_LEN, "WWWWWWWWWW");
+        game_strcpy(m->nature, GAME_NAME_LEN, "WWWWWWW");
+        game_strcpy(m->ability, GAME_NAME_LEN, "WWWWWWWWWWWW");
+        game_strcpy(m->item, GAME_NAME_LEN, "WWWWWWWWWWWW");
+        m->level = 55;
+        d->steps[i] = 123456; d->gained[i] = 99; d->cost[i] = i ? 0 : 9900;
+    }
+    d->compat_known = parents == 2;
+    d->compat = 70;
+    d->next_roll = 37;
+    d->egg_waiting = egg;
+    d->egg_known = egg;
+    d->fire = true;
+    game_strcpy(d->egg_species, GAME_NAME_LEN, "WWWWWWWWWW");
+    game_strcpy(d->egg_nature, GAME_NAME_LEN, "WWWWWWW");
+    game_strcpy(d->egg_ability, GAME_NAME_LEN, "WWWWWWWWWWWW");
+    d->egg_gender = MON_GENDER_FEMALE;
+    d->egg_shiny = true;
+    for (int i = 0; i < 6; i++) d->hatch_steps[i] = 1024;
+}
+
+TEST(panel_party_daycare_rows) {
+    GameSnapshot snap;
+    fill_party_and_route(&snap);
+    GameDaycare dc;
+    ASSERT_EQ(game_panel_party_rows(&snap, NULL), snap.party_count);
+    fill_daycare(&dc, 0, false);
+    ASSERT_EQ(game_panel_party_rows(&snap, &dc), snap.party_count);
+    fill_daycare(&dc, 1, false);
+    ASSERT_EQ(game_panel_party_rows(&snap, &dc), snap.party_count + 2);
+    ASSERT_EQ(game_panel_select(8, 0, game_panel_party_rows(&snap, &dc)), snap.party_count + 1);
+    fill_daycare(&dc, 2, false);
+    ASSERT_EQ(game_panel_party_rows(&snap, &dc), snap.party_count + 3);
+    ASSERT_TRUE(game_panel_party_row_y(&snap, &dc, 8) + 40.0f <= 476.0f);
+    fill_daycare(&dc, 0, true);
+    ASSERT_EQ(game_panel_party_rows(&snap, &dc), snap.party_count + 1);
+}
+
+TEST(panel_party_egg_steps_with_empty_daycare) {
+    GameSnapshot snap;
+    fill_party_and_route(&snap);
+    GameDaycare dc;
+    fill_daycare(&dc, 0, false);
+    ASSERT_EQ(game_panel_party_rows(&snap, &dc), snap.party_count);
+    static uint32_t a[600 * 480];
+    UiCanvas c;
+    ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+    game_panel_draw(&c, &snap, GAME_PAGE_PARTY, 4, NULL, 0, 0, true, NULL, NULL, 0, false, NULL, NULL);
+    memcpy(a, s_buf, sizeof(a));
+    game_panel_draw(&c, &snap, GAME_PAGE_PARTY, 4, NULL, 0, 0, true, NULL, NULL, 0, false, NULL, &dc);
+    ASSERT_TRUE(memcmp(a, s_buf, sizeof(a)) != 0);
+    dc.hatch_steps[4] = 0; dc.fire = false;
+    game_panel_draw(&c, &snap, GAME_PAGE_PARTY, 4, NULL, 0, 0, true, NULL, NULL, 0, false, NULL, &dc);
+    ASSERT_TRUE(memcmp(a, s_buf, sizeof(a)) == 0);
+}
+
+TEST(panel_party_daycare_draw_smoke) {
+    GameSnapshot snap;
+    fill_party_and_route(&snap);
+    GameDaycare dc;
+    for (int parents = 0; parents < 3; parents++)
+        for (int egg = 0; egg < 2; egg++) {
+            fill_daycare(&dc, (uint8_t)parents, egg);
+            for (int known = 0; known < 2; known++) {
+                dc.compat_known = known && parents == 2;
+                dc.egg_known = known && egg;
+                for (uint8_t sel = 0; sel < game_panel_party_rows(&snap, &dc); sel++) {
+                    int w = 600, h = 480;
+                    for (int i = 0; i < GUARD; i++) s_buf[w * h + i] = SENTINEL;
+                    UiCanvas c;
+                    ui_canvas_init(&c, s_buf, w, h, 1.0f);
+                    game_panel_draw(&c, &snap, GAME_PAGE_PARTY, sel, NULL, 0, 0, true, NULL, NULL, 0,
+                                    false, NULL, &dc);
+                    for (int i = 0; i < GUARD; i++) ASSERT_TRUE(s_buf[w * h + i] == SENTINEL);
+                }
+            }
+        }
+}
+
 static bool draw_checked_full(float density, const GameSnapshot* snap, GamePage page, uint8_t sel,
                               const NuzView* nuz, const GamePanelSearch* search) {
     int w = (int)(600 * density + 0.5f), h = (int)(480 * density + 0.5f);
@@ -217,7 +304,7 @@ static bool draw_checked_full(float density, const GameSnapshot* snap, GamePage 
     UiCanvas c;
     ui_canvas_init(&c, s_buf, w, h, density);
     game_panel_draw(&c, snap, page, sel, nuz, (uint8_t)(sel % NUZ_SUB_COUNT), sel, true, search, NULL, 0,
-                    false, NULL);
+                    false, NULL, NULL);
     for (int i = 0; i < GUARD; i++)
         if (s_buf[w * h + i] != SENTINEL) return false;
     return (s_buf[w * h - 1] >> 24) == 0xFF;
@@ -335,7 +422,7 @@ TEST(panel_long_names_stay_in_columns) {
     snap.enemy_count = 1;
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL, NULL);
     /* Rows between the HP bar and the bottom of the enemy's move list; the gap between
      * the left column (ends at x 292) and the right one (starts at x 308),
      * minus a pixel either side for anti-aliasing. */
@@ -352,7 +439,7 @@ TEST(panel_invalid_snapshot_shows_reason) {
     game_strcpy(snap.reason, sizeof(snap.reason), "Waiting for save data");
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL, NULL);
     int lit = 0;
     for (int y = 220; y < 240; y++)
         for (int x = 0; x < 600; x++)
@@ -376,7 +463,7 @@ TEST(panel_unsupported_rom_explains_why) {
         snap.support = kinds[k];
         UiCanvas c;
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL);
+        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL, NULL);
         ASSERT_TRUE(lit_rows(160, 190) > 0);  /* heading */
         ASSERT_TRUE(lit_rows(200, 300) > 0);  /* explanation */
     }
@@ -400,7 +487,7 @@ static int lit_rect(int x0, int x1, int y0, int y1, bool tinted) {
 static void draw_1x(const GameSnapshot* snap) {
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL);
+    game_panel_draw(&c, snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL, NULL);
 }
 
 static GameMoveEff dmg_eff(DamageKind k, uint32_t lo, uint32_t hi) {
@@ -618,7 +705,7 @@ TEST(panel_route_overflow_keeps_whole_rows_and_counts_the_rest) {
     ASSERT_TRUE(l.height[0] <= l.avail && l.height[1] <= l.avail);
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL);
+    game_panel_draw(&c, &snap, GAME_PAGE_ENCOUNTERS, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL, NULL);
 }
 
 static void fill_mirage(GameSnapshot* s, MirageWhere today) {
@@ -1094,11 +1181,11 @@ TEST(panel_search_detail_bottom_shows_last_line) {
         v.detail_top = tops[t];
         s_detail.row_total = 72;
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s, NULL, 0, false, NULL);
+        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s, NULL, 0, false, NULL, NULL);
         memcpy(a, s_buf, sizeof(a));
         s_detail.row_total = 99;  /* only the last line changes */
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s, NULL, 0, false, NULL);
+        game_panel_draw(&c, &snap, GAME_PAGE_SEARCH, 0, NULL, 0, 0, true, &s, NULL, 0, false, NULL, NULL);
         ASSERT_EQ(memcmp(a, s_buf, sizeof(a)) != 0, last_shown[t]);
     }
 }
@@ -1158,7 +1245,7 @@ static bool draw_checked_run(float density, const GameSnapshot* snap, const RunV
     for (int i = 0; i < GUARD; i++) s_buf[w * h + i] = SENTINEL;
     UiCanvas c;
     ui_canvas_init(&c, s_buf, w, h, density);
-    game_panel_draw(&c, snap, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, run, scroll, details, NULL);
+    game_panel_draw(&c, snap, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, run, scroll, details, NULL, NULL);
     for (int i = 0; i < GUARD; i++)
         if (s_buf[w * h + i] != SENTINEL) return false;
     return (s_buf[w * h - 1] >> 24) == 0xFF;
@@ -1197,7 +1284,7 @@ TEST(panel_run_dashboard_columns_do_not_touch) {
     fill_run_full(&full);
     UiCanvas c;
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-    game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &full, 0, false, NULL);
+    game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &full, 0, false, NULL, NULL);
     int lit = 0;
     for (int y = 140; y < 448; y++)
         for (int x = 323; x < 335; x++)
@@ -1335,7 +1422,7 @@ TEST(panel_hunt_views_stay_in_bounds) {
             ui_canvas_init(&c, s_buf, w, h, densities[d]);
             if (mode >= 0) fill_hunt_sample(&v, mode);
             game_panel_draw(&c, &rest, GAME_PAGE_HUNT, 0, NULL, 0, 0, true, NULL, NULL, 0, false,
-                            mode >= 0 ? &v : NULL);
+                            mode >= 0 ? &v : NULL, NULL);
             for (int i = 0; i < GUARD; i++) ASSERT_TRUE(s_buf[w * h + i] == SENTINEL);
         }
 }
@@ -1353,7 +1440,7 @@ TEST(panel_hunt_preview_png) {
         UiCanvas c;
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
         fill_hunt_sample(&v, mode);
-        game_panel_draw(&c, &rest, GAME_PAGE_HUNT, 0, NULL, 0, 0, true, NULL, NULL, 0, false, &v);
+        game_panel_draw(&c, &rest, GAME_PAGE_HUNT, 0, NULL, 0, 0, true, NULL, NULL, 0, false, &v, NULL);
         char path[48];
         snprintf(path, sizeof(path), "hunt_preview_%s.png", names[mode]);
         ASSERT_TRUE(screenshot_save_argb(s_buf, 600, 480, path));
@@ -1362,7 +1449,7 @@ TEST(panel_hunt_preview_png) {
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
     static RunView run;
     fill_run_sample(&run);
-    game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &run, 0, false, NULL);
+    game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &run, 0, false, NULL, NULL);
     ASSERT_TRUE(screenshot_save_argb(s_buf, 600, 480, "hunt_preview_runtab.png"));
 }
 
@@ -1445,7 +1532,7 @@ TEST(panel_run_preview_png) {
         for (int det = 0; det < 2; det++) {
             UiCanvas c;
             ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-            game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, views[k], 0, det != 0, NULL);
+            game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, views[k], 0, det != 0, NULL, NULL);
             char path[48];
             snprintf(path, sizeof(path), "run_preview_%s_%s.png", k ? "full" : "sample", det ? "details" : "dashboard");
             ASSERT_TRUE(screenshot_save_argb(s_buf, 600, 480, path));
@@ -1476,6 +1563,9 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_battle_from_auto_stays_auto);
     RUN_TEST(panel_title_case);
     RUN_TEST(panel_select_wraps);
+    RUN_TEST(panel_party_daycare_rows);
+    RUN_TEST(panel_party_egg_steps_with_empty_daycare);
+    RUN_TEST(panel_party_daycare_draw_smoke);
     RUN_TEST(panel_pages_stay_in_bounds_at_all_densities);
     RUN_TEST(panel_long_names_stay_in_columns);
     RUN_TEST(panel_invalid_snapshot_shows_reason);

@@ -1,6 +1,7 @@
 #include "game/hunt_read.h"
 #include "game/encounters.h"
 #include "game/pokemon.h"
+#include "game/daycare.h"
 #include <string.h>
 
 /* SaveBlock1 (include/global.h) */
@@ -53,11 +54,6 @@
 #define TILE_FLAG_HAS_ENCOUNTERS 0x01
 #define TILE_FLAG_SURFABLE 0x02
 #define WILD_IMMUNITY_STEPS 4
-/* struct DayCare (include/global.h): mons[2] of 0x8C bytes {BoxPokemon, DaycareMail, u32 steps} */
-#define DAYCARE_MON_SIZE 0x8C
-#define DAYCARE_MON_STEPS 0x88
-#define DAYCARE_OFFSPRING 0x118
-#define DAYCARE_STEP_COUNTER 0x11C
 #define BOX_FLAGS 0x13 /* isBadEgg:1, hasSpecies:1, isEgg:1 */
 #define BOX_HAS_SPECIES 0x02
 #define PARTY_STATUS 0x50

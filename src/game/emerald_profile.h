@@ -100,6 +100,9 @@ typedef struct {
     uint8_t  postgame_map[5][2];                 /* Safari NE/SE, Desert Underpass, Artisan B1F/1F */
     uint8_t  low_tide_mapsec;                    /* MAPSEC_SHOAL_CAVE */
     uint16_t incense_baby[2], incense_item[2];   /* AlterEggSpeciesWithIncenseItem */
+    uint16_t species_ditto, species_nidoran_f, species_nidoran_m;   /* include/constants/species.h */
+    uint16_t species_volbeat, species_illumise;
+    uint16_t pending_egg_flag;                   /* FLAG_PENDING_DAYCARE_EGG */
 
     /* Following Pokemon */
     uint32_t player_avatar;        /* 0x02037590 struct PlayerAvatar */

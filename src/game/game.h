@@ -104,6 +104,35 @@ typedef struct {
     uint8_t dex_caught[52]; /* bit (national-1): owned per FLAG_GET_CAUGHT, zero when !valid */
 } GameSnapshot;
 
+#define GAME_DC_KEYS 8 /* stability hold keys: 2 daycare slots + 6 party slots */
+
+/* Daycare view, read only while the Party page shows (steps change every step). */
+typedef struct {
+    bool valid;                 /* save data readable */
+    uint8_t parent_count;       /* slots with hasSpecies, packed in slot order */
+    GamePartyMon mon[2];        /* level = level now (exp + steps) */
+    uint8_t slot[2];            /* daycare slot (0/1) of mon[i] */
+    uint32_t steps[2];
+    uint8_t gained[2];
+    uint32_t cost[2];           /* 0: level unknown (bad slot or unreadable species/growth);
+                                   hide level, gained and cost then */
+    bool compat_known;          /* both parents decoded cleanly; false: compat, reason and
+                                   next_roll are unknown, not "can't breed" */
+    uint8_t compat;             /* 0/20/50/70 */
+    uint8_t compat_reason;      /* DaycareCompatReason */
+    uint16_t next_roll;         /* 0 when no roll will happen */
+    bool egg_waiting;           /* offspringPersonality != 0 && pending flag */
+    bool egg_known;             /* both parents decoded cleanly: guess fields valid */
+    char egg_species[GAME_NAME_LEN];
+    MonGender egg_gender;
+    char egg_nature[GAME_NAME_LEN];
+    int8_t egg_nature_up, egg_nature_down;
+    char egg_ability[GAME_NAME_LEN];
+    bool egg_shiny;
+    bool fire;                  /* Flame Body / Magma Armor in party now */
+    uint32_t hatch_steps[6];    /* by party index, 0 for non-eggs */
+} GameDaycare;
+
 typedef struct {
     const GameProfile* profile;
     GameSupport support;
@@ -113,6 +142,14 @@ typedef struct {
     BerryPlaces places;  /* berry tree places, built from the ROM by game_init */
     SpeciesIndex search; /* species search index, built from the ROM by game_init */
     DamageTables dmg_tables; /* damage calculator ROM tables, copied by game_init */
+    /* Daycare stability hold: SB1 pointer of the last read, consecutive held reads, last
+     * adopted view and the personality of each of its clean slots (0 = none), daycare
+     * slots 0-1 then party slots. */
+    uint32_t dc_sb1;
+    uint8_t dc_held;
+    GameDaycare dc_last;
+    bool dc_have;
+    uint32_t dc_pid[GAME_DC_KEYS];
 } GameState;
 
 /* Item name from the ROM's item table ("--" for 0, "???" when out of range). */
@@ -132,6 +169,22 @@ void game_nature_name(const GameMem* m, const GameProfile* p, uint8_t nature, ch
 void game_mapsec_name(const GameMem* m, const GameProfile* p, uint8_t sec, char* out);
 /* National dex number of a species, 0 when out of range or unreadable. */
 uint16_t game_species_national(const GameMem* m, const GameProfile* p, uint16_t species);
+/* Party-style view of a decoded mon (party rows and Daycare parents). */
+void game_fill_mon(const GameMem* m, const GameProfile* p, const MonData* d, GamePartyMon* out);
+/* Daycare view with the stability hold: a read where the SB1 pointer just moved, or where a
+ * slot fails its checksum with the personality it had last time, returns the last view once. */
+void game_read_daycare(GameState* gs, const GBA* gba, GameDaycare* out);
+void game_read_daycare_mem(GameState* gs, const GameMem* m, GameDaycare* out);
+void game_daycare_forget(GameState* gs);
+/* Same read without the hold (and without touching its state). */
+void game_read_daycare_now(const GameState* gs, const GBA* gba, GameDaycare* out);
+void game_read_daycare_now_mem(const GameState* gs, const GameMem* m, GameDaycare* out);
+/* Cheap, for the egg toast: pid = offspringPersonality when the pending-egg flag is set,
+ * else 0. False when the save data is unreadable. */
+bool game_read_daycare_egg(const GameState* gs, const GBA* gba, uint32_t* pid, uint32_t* sb1);
+/* Cheap main_in_battle check; the snapshot is stale while the panel is closed. */
+bool game_in_battle(const GameState* gs, const GBA* gba);
+bool game_dump_daycare(const GameDaycare* d, FILE* out);
 /* Plain-text dump of a snapshot (used by --game-dump). */
 bool game_dump(const GameSnapshot* snap, FILE* out);
 /* "Grass", "Surf", "Rock Smash", "Old Rod", "Good Rod", "Super Rod" */

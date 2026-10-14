@@ -92,6 +92,9 @@ const GameProfile g_emerald_profile = {
     .postgame_map = {{26, 12}, {26, 13}, {24, 98}, {24, 99}, {24, 100}},
     .low_tide_mapsec = 67,
     .incense_baby = {350, 360}, .incense_item = {220, 221},
+    .species_ditto = 132, .species_nidoran_f = 29, .species_nidoran_m = 32,
+    .species_volbeat = 386, .species_illumise = 387,
+    .pending_egg_flag = 0x86,
 
     .player_avatar = 0x02037590,
     .camera = 0x02037334,
