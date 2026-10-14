@@ -652,7 +652,7 @@ static void daycare_read_once(const GameState* gs, const GameMem* m, GameDaycare
     *sb1_out = sb1;
     uint32_t dc = sb1 + p->daycare_sb1_offset;
     for (uint8_t i = 0; i < 2; i++) {
-        uint8_t raw[BOX_MON_SIZE], lv_deposit, lv_now;
+        uint8_t raw[BOX_MON_SIZE], lv_deposit = 0, lv_now = 0;
         uint32_t at = dc + DAYCARE_MON_SIZE * i;
         DaycareRead* r = &par[out->parent_count];
         if (!game_mem_copy(m, at, raw, sizeof(raw))) continue;
