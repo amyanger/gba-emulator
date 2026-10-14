@@ -88,6 +88,8 @@ Steps here are the steps the game counts. Walking and biking count. Steps on ice
 
 **Egg alert.** While you play, with or without the panel open, a toast says "Egg ready at the Daycare". Its second line is the species, followed by ", shiny" when it is. If the species can't be worked out, it says "Talk to the old man on Route 117" instead. It appears once per egg, waits until a battle is over, and stays quiet for an egg that was already waiting when you opened the game.
 
+![The Party page with two Pokemon at the Daycare and an egg waiting: the breeding row is selected and shows they get along very well (70% each roll), and the egg will be a female Ralts with a Rash nature and Synchronize. Two eggs in the party show 517 and 1,029 steps to hatch](screenshots/panel-daycare.png)
+
 ## Route
 
 The name of the route, town or city you're in, read from the game's region map, and its wild encounter table with level ranges and odds. Pokemon you've caught are marked with a check.
