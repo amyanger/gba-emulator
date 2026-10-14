@@ -270,7 +270,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--panel-density <f>` | Panel pixels per point, 0.5 to 4.0 (default 1.0). Requires `--headless`. |
 | `--panel-page <p>` | Panel page: `auto`, `party`, `route`, `nuzlocke`, `berries`, `search`, `hunt` or `run` (default `auto`). Requires `--headless`. |
 | `--panel-search <text>` | Open the Search page with this text typed in. Implies `--panel-page search`, and is an error with any other page. Requires `--headless`. |
-| `--panel-select <n>` | Selected party slot, 0 to 5, for the party page, the Nuzlocke view: 0 routes, 1 team, 2 graveyard, the open place on the Berries page, the Nth result on the Search page, 0 being the first, or 1 for the Details sheet on the Run page (default 0). Requires `--headless`. |
+| `--panel-select <n>` | Selected row on the party page, 0 to 5 for the party, then the Daycare rows (the two parents, then the breeding row) right after the last party Pokemon, which is 6 to 8 with a full party, the Nuzlocke view: 0 routes, 1 team, 2 graveyard, the open place on the Berries page, the Nth result on the Search page, 0 being the first, or 1 for the Details sheet on the Run page (default 0). Requires `--headless`. |
 | `--library-folder <dir>` | Game folder for the library, used only when none has been chosen yet. |
 | `--library-out <file>` | Render the library for `--library-folder` to a PNG and exit. Takes no ROM and never reads or writes `library.txt`. |
 | `--nuzlocke-file <file>` | Track a Nuzlocke run in `file` during the run, starting one if the file has none. `--game-dump` then adds `nuz` lines. Requires `--headless`. |

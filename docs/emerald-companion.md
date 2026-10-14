@@ -75,6 +75,19 @@ Each Pokemon's nature, ability, held item, Hidden Power type and power, friendsh
 
 ![Party page showing a Torchic's stats, IVs and EVs](screenshots/panel-party.png)
 
+### Daycare
+
+When you have Pokemon at the Daycare, or an egg is waiting there, a Daycare block appears under the party rows. Otherwise the Party page looks as it always has. Select a row with `[` and `]`, or step past the last party Pokemon.
+
+- **Parents.** One row per Pokemon at the Daycare. Its detail view is the usual party view, except that the next-level line becomes how many steps it has spent there, how many levels that is worth, and its "Pickup cost" (100 plus 100 per level gained).
+- **Breeding row.** How well the two get along, as the game's own message and a percentage, which is the chance of an egg on each roll. It also shows how many steps are left until the next roll, and the row in the list reads "Egg ready" once an egg is waiting. A roll happens every 256 steps, and only when the pair can breed and no egg is already waiting. If they can't breed it says why: two of the same gender, a genderless Pokemon, no shared egg group, two Ditto, or a Pokemon that can't breed at all.
+- **The waiting egg.** Once an egg is ready, the row shows what it will be: species, gender, nature, ability and whether it is shiny ("Shiny  Yes"). All of this is already decided when the egg appears, even though you haven't picked it up. IVs are not shown, because the game rolls them when you take the egg.
+- **Eggs in your party.** An egg's row and detail view show the steps until it hatches. If a Magma Armor or Flame Body Pokemon is in the party, the detail view adds an "Egg cycles" row reading "2 per check". The game only checks every 256 steps and hatches one egg per check, so with two eggs the second one's count includes the extra check the first one used.
+
+Steps here are the steps the game counts. Walking and biking count. Steps on ice, steps carried by water currents or spin tiles, and steps where a script fires don't count, so the numbers on this page don't move for those.
+
+**Egg alert.** While you play, with or without the panel open, a toast says "Egg ready at the Daycare". Its second line is the species, followed by ", shiny" when it is. If the species can't be worked out, it says "Talk to the old man on Route 117" instead. It appears once per egg, waits until a battle is over, and stays quiet for an egg that was already waiting when you opened the game.
+
 ## Route
 
 The name of the route, town or city you're in, read from the game's region map, and its wild encounter table with level ranges and odds. Pokemon you've caught are marked with a check.
