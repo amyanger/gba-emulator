@@ -86,6 +86,59 @@ TEST(square_retrigger_reloads_envelope_volume) {
     free(gba);
 }
 
+TEST(psg_register_writes) {
+    GBA* gba = make_gba();
+    Bus* bus = &gba->bus;
+    APU* apu = &gba->apu;
+
+    /* Master sound off: PSG writes are dropped, register mirror included. */
+    apu->soundcnt_x = 0;
+    bus_write8(bus, 0x04000069, 0xA9);
+    ASSERT_EQ(apu->ch2.volume, 0);
+    ASSERT_EQ(bus->io_regs[0x69], 0);
+
+    apu->soundcnt_x = 0x80;
+    /* Unused bytes never store. */
+    bus_write8(bus, 0x04000061, 0x55);
+    bus_write8(bus, 0x0400007F, 0x55);
+    ASSERT_EQ(bus->io_regs[0x61], 0);
+    ASSERT_EQ(bus->io_regs[0x7F], 0);
+
+    /* NRx2 envelope: volume bits 4-7, direction bit 3, period bits 0-2. */
+    bus_write8(bus, 0x04000069, 0xA9);   /* ch2: vol 10, up, period 1 */
+    ASSERT_EQ(apu->ch2.volume, 10);
+    ASSERT_TRUE(apu->ch2.vol_dir);
+    ASSERT_EQ(apu->ch2.vol_period, 1);
+    ASSERT_EQ(bus->io_regs[0x69], 0xA9);
+    bus_write8(bus, 0x04000079, 0x56);   /* ch4: vol 5, down, period 6 */
+    ASSERT_EQ(apu->ch4.volume, 5);
+    ASSERT_TRUE(!apu->ch4.vol_dir);
+    ASSERT_EQ(apu->ch4.vol_period, 6);
+
+    /* Triggers reload the initial volume from the last envelope byte. */
+    apu->ch2.volume = 0;
+    bus_write8(bus, 0x0400006D, 0x80);
+    ASSERT_EQ(apu->ch2.volume, 10);
+    apu->ch4.volume = 0;
+    bus_write8(bus, 0x0400007D, 0xC0);   /* trigger + length enable */
+    ASSERT_EQ(apu->ch4.volume, 5);
+    ASSERT_TRUE(apu->ch4.length_enable);
+
+    /* Noise parameters and the wave channel's off bit. */
+    bus_write8(bus, 0x0400007C, 0x3D);   /* r 5, width 7-bit, s 3 */
+    ASSERT_EQ(apu->ch4.divisor_code, 5);
+    ASSERT_TRUE(apu->ch4.width_mode);
+    ASSERT_EQ(apu->ch4.shift, 3);
+    apu->ch3.enabled = true;
+    bus_write8(bus, 0x04000070, 0x60);   /* bank mode + select, channel off */
+    ASSERT_TRUE(apu->ch3.bank_mode);
+    ASSERT_TRUE(apu->ch3.bank_select);
+    ASSERT_TRUE(!apu->ch3.enabled);
+
+    gba_destroy(gba);
+    free(gba);
+}
+
 TEST(noise_period_uses_gba_cycles) {
     /* GBATEK: noise freq = 524288 Hz / r / 2^(s+1), r=0 treated as 0.5.
      * In 16.78 MHz CPU cycles that is a period of (64 * r) << s, or
@@ -230,4 +283,5 @@ void run_apu_tests(void) {
     RUN_TEST(psg_mixes_at_quarter_of_output_range);
     RUN_TEST(fifo_omit_silences_fifos_and_counts_samples);
     RUN_TEST(master_disabled_samples_are_counted);
+    RUN_TEST(psg_register_writes);
 }

@@ -327,6 +327,125 @@ static uint8_t io_read8(Bus* bus, uint32_t addr) {
 }
 
 /* ----- I/O write (byte-level) ----- */
+/* NRx2 envelope byte: initial volume, direction, step period. */
+static void envelope_write(uint8_t* volume, bool* dir, uint8_t* period, uint8_t val) {
+    *period = val & 7;
+    *dir = BIT(val, 3);
+    *volume = (val >> 4) & 0xF;
+}
+
+/* PSG channel registers 0x60-0x7F. Unused bytes ignore writes; the rest are
+ * ignored while master sound (SOUNDCNT_X bit 7) is off. */
+static void psg_write8(Bus* bus, uint32_t offset, uint8_t val) {
+    switch (offset) {
+    case 0x61: case 0x66: case 0x67: case 0x6A: case 0x6B: case 0x6E: case 0x6F:
+    case 0x71: case 0x76: case 0x77: case 0x7A: case 0x7B: case 0x7E: case 0x7F:
+        return;
+    default:
+        break;
+    }
+    if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
+    bus->io_regs[offset] = val;
+    if (!bus->apu) return;
+    APU* apu = bus->apu;
+
+    switch (offset) {
+    case 0x60:  /* SOUND1CNT_L — sweep */
+        apu->ch1.sweep_shift = val & 7;
+        apu->ch1.sweep_dir = BIT(val, 3);
+        apu->ch1.sweep_period = BITS(val, 6, 4);
+        return;
+    case 0x62:  /* SOUND1CNT_H low byte — length + duty */
+        apu->ch1.length_counter = 64 - (val & 0x3F);
+        apu->ch1.duty_cycle = (val >> 6) & 3;
+        return;
+    case 0x63:  /* SOUND1CNT_H high byte — envelope */
+        envelope_write(&apu->ch1.volume, &apu->ch1.vol_dir, &apu->ch1.vol_period, val);
+        return;
+    case 0x64:  /* SOUND1CNT_X low byte — frequency low 8 bits */
+        apu->ch1.frequency = (apu->ch1.frequency & 0x700) | val;
+        return;
+    case 0x65:  /* SOUND1CNT_X high byte — freq hi + length flag + trigger */
+        apu->ch1.frequency = (apu->ch1.frequency & 0xFF) | ((uint16_t)(val & 7) << 8);
+        apu->ch1.length_enable = BIT(val, 6);
+        if (BIT(val, 7)) {
+            /* Trigger reloads the envelope initial volume (NRx2 bits
+             * 4-7); io_regs holds the last-written envelope byte. */
+            apu->ch1.volume = (bus->io_regs[0x63] >> 4) & 0xF;
+            square_channel_trigger(&apu->ch1, true);
+        }
+        return;
+    case 0x68:  /* SOUND2CNT_L low byte — length + duty */
+        apu->ch2.length_counter = 64 - (val & 0x3F);
+        apu->ch2.duty_cycle = (val >> 6) & 3;
+        return;
+    case 0x69:  /* SOUND2CNT_L high byte — envelope */
+        envelope_write(&apu->ch2.volume, &apu->ch2.vol_dir, &apu->ch2.vol_period, val);
+        return;
+    case 0x6C:  /* SOUND2CNT_H low byte — frequency low 8 bits */
+        apu->ch2.frequency = (apu->ch2.frequency & 0x700) | val;
+        return;
+    case 0x6D:  /* SOUND2CNT_H high byte — freq hi + length flag + trigger */
+        apu->ch2.frequency = (apu->ch2.frequency & 0xFF) | ((uint16_t)(val & 7) << 8);
+        apu->ch2.length_enable = BIT(val, 6);
+        if (BIT(val, 7)) {
+            apu->ch2.volume = (bus->io_regs[0x69] >> 4) & 0xF;
+            square_channel_trigger(&apu->ch2, false);
+        }
+        return;
+    case 0x70:  /* SOUND3CNT_L — wave channel on/off + bank */
+        apu->ch3.bank_mode = BIT(val, 5);
+        apu->ch3.bank_select = BIT(val, 6);
+        if (!BIT(val, 7)) {
+            apu->ch3.enabled = false;
+        }
+        return;
+    case 0x72:  /* SOUND3CNT_H low byte — length */
+        apu->ch3.length_counter = 256 - val;
+        return;
+    case 0x73:  /* SOUND3CNT_H high byte — volume */
+        apu->ch3.volume_code = BITS(val, 6, 5);
+        apu->ch3.force_volume = BIT(val, 7);
+        return;
+    case 0x74:  /* SOUND3CNT_X low byte — frequency low 8 bits */
+        apu->ch3.frequency = (apu->ch3.frequency & 0x700) | val;
+        return;
+    case 0x75:  /* SOUND3CNT_X high byte — freq hi + length flag + trigger */
+        apu->ch3.frequency = (apu->ch3.frequency & 0xFF) | ((uint16_t)(val & 7) << 8);
+        apu->ch3.length_enable = BIT(val, 6);
+        if (BIT(val, 7)) {
+            wave_channel_trigger(&apu->ch3);
+        }
+        return;
+    case 0x78:  /* SOUND4CNT_L low byte — length */
+        apu->ch4.length_counter = 64 - (val & 0x3F);
+        return;
+    case 0x79:  /* SOUND4CNT_L high byte — envelope */
+        envelope_write(&apu->ch4.volume, &apu->ch4.vol_dir, &apu->ch4.vol_period, val);
+        return;
+    case 0x7C:  /* SOUND4CNT_H low byte — noise params */
+        apu->ch4.divisor_code = val & 7;
+        apu->ch4.width_mode = BIT(val, 3);
+        apu->ch4.shift = (val >> 4) & 0xF;
+        return;
+    case 0x7D:  /* SOUND4CNT_H high byte — length flag + trigger */
+        apu->ch4.length_enable = BIT(val, 6);
+        if (BIT(val, 7)) {
+            apu->ch4.volume = (bus->io_regs[0x79] >> 4) & 0xF;
+            noise_channel_trigger(&apu->ch4);
+        }
+        return;
+    default:
+        return;
+    }
+}
+
+/* Merges one byte into a 16-bit register mirror (hi: the odd address). */
+static inline void set_byte16(uint16_t* reg, bool hi, uint8_t val) {
+    *reg = hi ? (uint16_t)((*reg & 0x00FF) | ((uint16_t)val << 8))
+              : (uint16_t)((*reg & 0xFF00) | val);
+}
+
 static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
     uint32_t offset = addr & 0x3FF;
 
@@ -336,14 +455,13 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
     case 0x00:  /* REG_DISPCNT low byte */
         bus->io_regs[offset] = val;
         if (bus->ppu) {
-            bus->ppu->dispcnt = (bus->ppu->dispcnt & 0xFF00) | (uint16_t)val;
+            set_byte16(&bus->ppu->dispcnt, false, val);
         }
         return;
     case 0x01:  /* REG_DISPCNT high byte */
         bus->io_regs[offset] = val;
         if (bus->ppu) {
-            bus->ppu->dispcnt = (bus->ppu->dispcnt & 0x00FF)
-                              | ((uint16_t)val << 8);
+            set_byte16(&bus->ppu->dispcnt, true, val);
         }
         return;
     case 0x04:  /* REG_DISPSTAT low byte — bits 0-2 are read-only */
@@ -362,8 +480,7 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
     {
         bus->io_regs[offset] = val;
         if (bus->ppu) {
-            bus->ppu->dispstat = (bus->ppu->dispstat & 0x00FF)
-                               | ((uint16_t)val << 8);
+            set_byte16(&bus->ppu->dispstat, true, val);
         }
         return;
     }
@@ -380,13 +497,7 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         bus->io_regs[offset] = val;
         if (!bus->ppu) return;
         uint32_t bg_idx = (offset - 0x08) >> 1;
-        if (offset & 1) {
-            bus->ppu->bg_cnt[bg_idx] = (bus->ppu->bg_cnt[bg_idx] & 0x00FF)
-                                     | ((uint16_t)val << 8);
-        } else {
-            bus->ppu->bg_cnt[bg_idx] = (bus->ppu->bg_cnt[bg_idx] & 0xFF00)
-                                     | (uint16_t)val;
-        }
+        set_byte16(&bus->ppu->bg_cnt[bg_idx], offset & 1, val);
         return;
     }
 
@@ -413,11 +524,7 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         bool is_vofs = (rel >> 1) & 1;
         uint16_t* reg = is_vofs ? &bus->ppu->bg_vofs[bg_idx]
                                 : &bus->ppu->bg_hofs[bg_idx];
-        if (offset & 1) {
-            *reg = (*reg & 0x00FF) | ((uint16_t)val << 8);
-        } else {
-            *reg = (*reg & 0xFF00) | (uint16_t)val;
-        }
+        set_byte16(reg, offset & 1, val);
         return;
     }
 
@@ -450,13 +557,7 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         case 2: target = &bus->ppu->bg_pc[affine_idx]; break;
         default: target = &bus->ppu->bg_pd[affine_idx]; break;
         }
-        if (offset & 1) {
-            *target = (int16_t)(((uint16_t)*target & 0x00FF)
-                              | ((uint16_t)val << 8));
-        } else {
-            *target = (int16_t)(((uint16_t)*target & 0xFF00)
-                              | (uint16_t)val);
-        }
+        set_byte16((uint16_t*)target, offset & 1, val);
         return;
     }
 
@@ -521,47 +622,28 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
         uint32_t win_idx = (rel >> 1) & 1;
         uint16_t* target = is_v ? &bus->ppu->win_v[win_idx]
                                 : &bus->ppu->win_h[win_idx];
-        if (offset & 1) {
-            *target = (*target & 0x00FF) | ((uint16_t)val << 8);
-        } else {
-            *target = (*target & 0xFF00) | (uint16_t)val;
-        }
+        set_byte16(target, offset & 1, val);
         return;
     }
     case 0x48: case 0x49:  /* WININ */
     {
         bus->io_regs[offset] = val;
         if (!bus->ppu) return;
-        if (offset & 1) {
-            bus->ppu->winin = (bus->ppu->winin & 0x00FF)
-                            | ((uint16_t)val << 8);
-        } else {
-            bus->ppu->winin = (bus->ppu->winin & 0xFF00) | (uint16_t)val;
-        }
+        set_byte16(&bus->ppu->winin, offset & 1, val);
         return;
     }
     case 0x4A: case 0x4B:  /* WINOUT */
     {
         bus->io_regs[offset] = val;
         if (!bus->ppu) return;
-        if (offset & 1) {
-            bus->ppu->winout = (bus->ppu->winout & 0x00FF)
-                             | ((uint16_t)val << 8);
-        } else {
-            bus->ppu->winout = (bus->ppu->winout & 0xFF00) | (uint16_t)val;
-        }
+        set_byte16(&bus->ppu->winout, offset & 1, val);
         return;
     }
     case 0x4C: case 0x4D:  /* MOSAIC */
     {
         bus->io_regs[offset] = val;
         if (!bus->ppu) return;
-        if (offset & 1) {
-            bus->ppu->mosaic = (bus->ppu->mosaic & 0x00FF)
-                             | ((uint16_t)val << 8);
-        } else {
-            bus->ppu->mosaic = (bus->ppu->mosaic & 0xFF00) | (uint16_t)val;
-        }
+        set_byte16(&bus->ppu->mosaic, offset & 1, val);
         return;
     }
 
@@ -570,265 +652,53 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
     {
         bus->io_regs[offset] = val;
         if (!bus->ppu) return;
-        if (offset & 1) {
-            bus->ppu->bldcnt = (bus->ppu->bldcnt & 0x00FF)
-                             | ((uint16_t)val << 8);
-        } else {
-            bus->ppu->bldcnt = (bus->ppu->bldcnt & 0xFF00) | (uint16_t)val;
-        }
+        set_byte16(&bus->ppu->bldcnt, offset & 1, val);
         return;
     }
     case 0x52: case 0x53:  /* BLDALPHA */
     {
         bus->io_regs[offset] = val;
         if (!bus->ppu) return;
-        if (offset & 1) {
-            bus->ppu->bldalpha = (bus->ppu->bldalpha & 0x00FF)
-                               | ((uint16_t)val << 8);
-        } else {
-            bus->ppu->bldalpha = (bus->ppu->bldalpha & 0xFF00) | (uint16_t)val;
-        }
+        set_byte16(&bus->ppu->bldalpha, offset & 1, val);
         return;
     }
     case 0x54: case 0x55:  /* BLDY — write-only */
     {
         bus->io_regs[offset] = val;
         if (!bus->ppu) return;
-        if (offset & 1) {
-            bus->ppu->bldy = (bus->ppu->bldy & 0x00FF)
-                           | ((uint16_t)val << 8);
-        } else {
-            bus->ppu->bldy = (bus->ppu->bldy & 0xFF00) | (uint16_t)val;
-        }
+        set_byte16(&bus->ppu->bldy, offset & 1, val);
         return;
     }
 
     /* --- Sound Channel Registers (0x60-0x7F) --- */
-    case 0x60:  /* SOUND1CNT_L low byte — sweep */
-    {
-        /* Ignore writes if master sound is off */
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch1.sweep_shift = val & 7;
-        bus->apu->ch1.sweep_dir = BIT(val, 3);
-        bus->apu->ch1.sweep_period = BITS(val, 6, 4);
-        return;
-    }
-    case 0x61:
-        return;
-    case 0x62:  /* SOUND1CNT_H low byte — length + duty */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch1.length_counter = 64 - (val & 0x3F);
-        bus->apu->ch1.duty_cycle = (val >> 6) & 3;
-        return;
-    }
-    case 0x63:  /* SOUND1CNT_H high byte — envelope */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch1.vol_period = val & 7;
-        bus->apu->ch1.vol_dir = BIT(val, 3);
-        bus->apu->ch1.volume = (val >> 4) & 0xF;
-        return;
-    }
-    case 0x64:  /* SOUND1CNT_X low byte — frequency low 8 bits */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch1.frequency = (bus->apu->ch1.frequency & 0x700) | val;
-        return;
-    }
-    case 0x65:  /* SOUND1CNT_X high byte — freq hi + length flag + trigger */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch1.frequency = (bus->apu->ch1.frequency & 0xFF)
-                                | ((uint16_t)(val & 7) << 8);
-        bus->apu->ch1.length_enable = BIT(val, 6);
-        if (BIT(val, 7)) {
-            /* Trigger reloads the envelope initial volume (NRx2 bits
-             * 4-7); io_regs holds the last-written envelope byte. */
-            bus->apu->ch1.volume = (bus->io_regs[0x63] >> 4) & 0xF;
-            square_channel_trigger(&bus->apu->ch1, true);
-        }
-        return;
-    }
-    case 0x66: case 0x67:
-        return;
-    case 0x68:  /* SOUND2CNT_L low byte — length + duty */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch2.length_counter = 64 - (val & 0x3F);
-        bus->apu->ch2.duty_cycle = (val >> 6) & 3;
-        return;
-    }
-    case 0x69:  /* SOUND2CNT_L high byte — envelope */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch2.vol_period = val & 7;
-        bus->apu->ch2.vol_dir = BIT(val, 3);
-        bus->apu->ch2.volume = (val >> 4) & 0xF;
-        return;
-    }
-    case 0x6A: case 0x6B:
-        return;
-    case 0x6C:  /* SOUND2CNT_H low byte — frequency low 8 bits */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch2.frequency = (bus->apu->ch2.frequency & 0x700) | val;
-        return;
-    }
-    case 0x6D:  /* SOUND2CNT_H high byte — freq hi + length flag + trigger */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch2.frequency = (bus->apu->ch2.frequency & 0xFF)
-                                | ((uint16_t)(val & 7) << 8);
-        bus->apu->ch2.length_enable = BIT(val, 6);
-        if (BIT(val, 7)) {
-            bus->apu->ch2.volume = (bus->io_regs[0x69] >> 4) & 0xF;
-            square_channel_trigger(&bus->apu->ch2, false);
-        }
-        return;
-    }
-    case 0x6E: case 0x6F:
-        return;
-    case 0x70:  /* SOUND3CNT_L — wave channel on/off + bank */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch3.bank_mode = BIT(val, 5);
-        bus->apu->ch3.bank_select = BIT(val, 6);
-        if (!BIT(val, 7)) {
-            bus->apu->ch3.enabled = false;
-        }
-        return;
-    }
-    case 0x71:
-        return;
-    case 0x72:  /* SOUND3CNT_H low byte — length */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch3.length_counter = 256 - val;
-        return;
-    }
-    case 0x73:  /* SOUND3CNT_H high byte — volume */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch3.volume_code = BITS(val, 6, 5);
-        bus->apu->ch3.force_volume = BIT(val, 7);
-        return;
-    }
-    case 0x74:  /* SOUND3CNT_X low byte — frequency low 8 bits */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch3.frequency = (bus->apu->ch3.frequency & 0x700) | val;
-        return;
-    }
-    case 0x75:  /* SOUND3CNT_X high byte — freq hi + length flag + trigger */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch3.frequency = (bus->apu->ch3.frequency & 0xFF)
-                                | ((uint16_t)(val & 7) << 8);
-        bus->apu->ch3.length_enable = BIT(val, 6);
-        if (BIT(val, 7)) {
-            wave_channel_trigger(&bus->apu->ch3);
-        }
-        return;
-    }
-    case 0x76: case 0x77:
-        return;
-    case 0x78:  /* SOUND4CNT_L low byte — length */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch4.length_counter = 64 - (val & 0x3F);
-        return;
-    }
-    case 0x79:  /* SOUND4CNT_L high byte — envelope */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch4.vol_period = val & 7;
-        bus->apu->ch4.vol_dir = BIT(val, 3);
-        bus->apu->ch4.volume = (val >> 4) & 0xF;
-        return;
-    }
-    case 0x7A: case 0x7B:
-        return;
-    case 0x7C:  /* SOUND4CNT_H low byte — noise params */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch4.divisor_code = val & 7;
-        bus->apu->ch4.width_mode = BIT(val, 3);
-        bus->apu->ch4.shift = (val >> 4) & 0xF;
-        return;
-    }
-    case 0x7D:  /* SOUND4CNT_H high byte — length flag + trigger */
-    {
-        if (bus->apu && !BIT(bus->apu->soundcnt_x, 7)) return;
-        bus->io_regs[offset] = val;
-        if (!bus->apu) return;
-        bus->apu->ch4.length_enable = BIT(val, 6);
-        if (BIT(val, 7)) {
-            bus->apu->ch4.volume = (bus->io_regs[0x79] >> 4) & 0xF;
-            noise_channel_trigger(&bus->apu->ch4);
-        }
-        return;
-    }
-    case 0x7E: case 0x7F:
+    case 0x60: case 0x61: case 0x62: case 0x63: case 0x64: case 0x65: case 0x66: case 0x67:
+    case 0x68: case 0x69: case 0x6A: case 0x6B: case 0x6C: case 0x6D: case 0x6E: case 0x6F:
+    case 0x70: case 0x71: case 0x72: case 0x73: case 0x74: case 0x75: case 0x76: case 0x77:
+    case 0x78: case 0x79: case 0x7A: case 0x7B: case 0x7C: case 0x7D: case 0x7E: case 0x7F:
+        psg_write8(bus, offset, val);
         return;
 
     /* --- Sound Control (0x80-0x89) --- */
     case 0x80:  /* SOUNDCNT_L low byte — always writable per GBATEK */
         bus->io_regs[offset] = val;
         if (!bus->apu) return;
-        bus->apu->soundcnt_l = (bus->apu->soundcnt_l & 0xFF00) | val;
+        set_byte16(&bus->apu->soundcnt_l, false, val);
         return;
     case 0x81:  /* SOUNDCNT_L high byte — always writable per GBATEK */
         bus->io_regs[offset] = val;
         if (!bus->apu) return;
-        bus->apu->soundcnt_l = (bus->apu->soundcnt_l & 0x00FF)
-                              | ((uint16_t)val << 8);
+        set_byte16(&bus->apu->soundcnt_l, true, val);
         return;
     case 0x82:  /* SOUNDCNT_H low byte */
         bus->io_regs[offset] = val;
         if (!bus->apu) return;
-        bus->apu->soundcnt_h = (bus->apu->soundcnt_h & 0xFF00) | val;
+        set_byte16(&bus->apu->soundcnt_h, false, val);
         return;
     case 0x83:  /* SOUNDCNT_H high byte — includes FIFO timer select and reset */
     {
         bus->io_regs[offset] = val;
         if (!bus->apu) return;
-        bus->apu->soundcnt_h = (bus->apu->soundcnt_h & 0x00FF)
-                              | ((uint16_t)val << 8);
+        set_byte16(&bus->apu->soundcnt_h, true, val);
         /* Bit 2 (of high byte, bit 10 overall): FIFO A timer select */
         bus->apu->fifo_a.timer_id = BIT(val, 2);
         /* Bit 6 (of high byte, bit 14 overall): FIFO B timer select */
@@ -876,13 +746,12 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
     case 0x88:  /* SOUNDBIAS low byte */
         bus->io_regs[offset] = val;
         if (!bus->apu) return;
-        bus->apu->soundbias = (bus->apu->soundbias & 0xFF00) | val;
+        set_byte16(&bus->apu->soundbias, false, val);
         return;
     case 0x89:  /* SOUNDBIAS high byte */
         bus->io_regs[offset] = val;
         if (!bus->apu) return;
-        bus->apu->soundbias = (bus->apu->soundbias & 0x00FF)
-                             | ((uint16_t)val << 8);
+        set_byte16(&bus->apu->soundbias, true, val);
         return;
     case 0x8A: case 0x8B: case 0x8C: case 0x8D:
     case 0x8E: case 0x8F:
@@ -930,15 +799,14 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
     case 0x200:  /* REG_IE low byte */
         bus->io_regs[offset] = val;
         if (bus->interrupts) {
-            bus->interrupts->ie = (bus->interrupts->ie & 0xFF00) | (uint16_t)val;
+            set_byte16(&bus->interrupts->ie, false, val);
             bus_test_irq(bus);
         }
         return;
     case 0x201:  /* REG_IE high byte */
         bus->io_regs[offset] = val;
         if (bus->interrupts) {
-            bus->interrupts->ie = (bus->interrupts->ie & 0x00FF)
-                                | ((uint16_t)val << 8);
+            set_byte16(&bus->interrupts->ie, true, val);
             bus_test_irq(bus);
         }
         return;
@@ -1121,14 +989,13 @@ static void io_write8(Bus* bus, uint32_t addr, uint8_t val) {
     case 0x132:
         bus->io_regs[offset] = val;
         if (bus->input) {
-            bus->input->keycnt = (bus->input->keycnt & 0xFF00) | (uint16_t)val;
+            set_byte16(&bus->input->keycnt, false, val);
         }
         return;
     case 0x133:
         bus->io_regs[offset] = val;
         if (bus->input) {
-            bus->input->keycnt = (bus->input->keycnt & 0x00FF)
-                               | ((uint16_t)val << 8);
+            set_byte16(&bus->input->keycnt, true, val);
             /* Halfword/word writes land here last, so the check sees the
              * complete KEYCNT. A lone low-byte write is caught by the
              * per-frame sample in gba_run_frame. */
