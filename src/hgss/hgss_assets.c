@@ -28,6 +28,7 @@ static void set_error(HgssAssets* a, const char* msg) {
 }
 
 bool hgss_assets_open(HgssAssets* a, const char* path) {
+    hgss_assets_close(a);   /* re-picking a ROM: don't leak the old handle */
     memset(a, 0, sizeof(*a));
     FILE* probe = fopen(path, "rb");
     if (!probe) {

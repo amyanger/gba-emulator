@@ -3,6 +3,7 @@
 #include "game/damage_read.h"
 #include "game/daycare.h"
 #include "game/gen3_text.h"
+#include "game/hunt_read.h"
 #include "gba.h"
 #include "cartridge/rtc.h"
 #include <string.h>
@@ -427,9 +428,10 @@ static void read_catch_rows(const GameMem* m, const GameProfile* p, uint32_t sb1
 static void read_encounters(const GameMem* m, const GameProfile* p, uint32_t sb1,
                             uint32_t sb2, GameSnapshot* s) {
     EncounterList lists[ENC_METHOD_COUNT];
-    s->has_encounters = encounters_find(m, p->wild_mon_headers, p->wild_header_cap,
-                                        p->species_count, s->map_group, s->map_num, lists);
+    uint16_t header;
+    s->has_encounters = hunt_wild_header(p, m, sb1, s->map_group, s->map_num, &header);
     if (!s->has_encounters) return;
+    encounters_read_header(m, p->wild_mon_headers, header, p->species_count, lists);
     for (int k = 0; k < ENC_METHOD_COUNT; k++) {
         s->enc_count[k] = lists[k].count;
         for (uint8_t i = 0; i < lists[k].count; i++) {

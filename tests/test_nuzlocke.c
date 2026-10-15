@@ -395,6 +395,8 @@ TEST(nuz_parse_rejects_malformed_lines) {
     ASSERT_TRUE(!nuz_parse("wipe", &e));                    /* no pt */
     ASSERT_TRUE(!nuz_parse("wipe pt=abc", &e));
     ASSERT_TRUE(!nuz_parse("wipe pt=-1", &e));
+    ASSERT_TRUE(!nuz_parse("wipe pt=99999999999", &e));       /* > u32: rejected, not clamped */
+    ASSERT_TRUE(!nuz_parse("wipe pt=4294967296", &e));
     ASSERT_TRUE(!nuz_parse("wipe pt", &e));
     ASSERT_TRUE(!nuz_parse("enc pt=1 sec=999", &e));
     ASSERT_TRUE(!nuz_parse("enc pt=1 kind=sideways", &e));

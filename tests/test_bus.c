@@ -4,11 +4,12 @@
 #include "interrupt/interrupt.h"
 #include "memory/io_regs.h"
 
-/* Helper: create a fully wired GBA on the heap and return it.
- * The caller owns the pointer (but these are short-lived tests,
- * so we don't bother freeing). */
+/* Helper: a freshly initialized, fully wired GBA. One heap instance is reused,
+ * torn down before each re-init (gba_init allocates the rewind buffers). */
 static GBA* make_gba(void) {
-    GBA* gba = calloc(1, sizeof(GBA));
+    static GBA* gba;
+    if (gba) gba_destroy(gba);
+    else gba = calloc(1, sizeof(GBA));
     gba_init(gba);
     return gba;
 }
@@ -44,7 +45,6 @@ TEST(sram_wide_reads_repeat_byte) {
     ASSERT_EQ_HEX(bus_read16(&gba->bus, 0x0E000011), 0x6E6E);
     ASSERT_EQ_HEX(bus_read32(&gba->bus, 0x0E000010), 0x61616161);
     ASSERT_EQ_HEX(bus_read32(&gba->bus, 0x0E000013), 0x0E0E0E0E);
-    free(gba);
 }
 
 /* ---- IWRAM -------------------------------------------------------- */
@@ -620,7 +620,6 @@ TEST(tm0_ignores_count_up_bit) {
     timer_tick(gba->timers, 10, &gba->interrupts, &gba->apu);
     ASSERT_EQ(gba->timers[0].counter, 10);
     ASSERT_EQ(timer_cycles_until_irq(gba->timers), INT32_MAX);
-    free(gba);
 }
 
 void run_bus_tests(void) {

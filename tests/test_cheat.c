@@ -7,7 +7,8 @@
 
 static GBA* make_gba(void) {
     static GBA* gba;
-    if (!gba) gba = calloc(1, sizeof(GBA));
+    if (gba) gba_destroy(gba);   /* gba_init allocates the rewind buffers */
+    else gba = calloc(1, sizeof(GBA));
     gba_init(gba);
     cheat_set_game_code(&gba->cheats, EMERALD_ID);
     return gba;

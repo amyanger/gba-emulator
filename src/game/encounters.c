@@ -69,6 +69,20 @@ int encounters_header_slots(const GameMem* mem, uint32_t headers, uint16_t index
     return n;
 }
 
+void encounters_read_header(const GameMem* mem, uint32_t headers, uint16_t index,
+                            uint16_t species_count, EncounterList out[ENC_METHOD_COUNT]) {
+    memset(out, 0, sizeof(EncounterList) * ENC_METHOD_COUNT);
+    for (int m = 0; m < ENC_METHOD_COUNT; m++) {
+        uint8_t group, num;
+        EncSlot slots[12];
+        int n = encounters_header_slots(mem, headers, index, species_count, (EncMethod)m,
+                                        &group, &num, slots);
+        for (int k = 0; k < n; k++)
+            enc_add(&out[m], slots[k].species, slots[k].min_level, slots[k].max_level,
+                    slots[k].percent);
+    }
+}
+
 bool encounters_find(const GameMem* mem, uint32_t headers, uint16_t cap,
                      uint16_t species_count, uint8_t map_group, uint8_t map_num,
                      EncounterList out[ENC_METHOD_COUNT]) {
@@ -80,13 +94,7 @@ bool encounters_find(const GameMem* mem, uint32_t headers, uint16_t cap,
                                     slots) < 0)
             return false;
         if (group != map_group || num != map_num) continue;
-        for (int m = 0; m < ENC_METHOD_COUNT; m++) {
-            int n = encounters_header_slots(mem, headers, i, species_count, (EncMethod)m,
-                                            &group, &num, slots);
-            for (int k = 0; k < n; k++)
-                enc_add(&out[m], slots[k].species, slots[k].min_level, slots[k].max_level,
-                        slots[k].percent);
-        }
+        encounters_read_header(mem, headers, i, species_count, out);
         return true;
     }
     return false;

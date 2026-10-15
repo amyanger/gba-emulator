@@ -119,7 +119,11 @@ static bool commit_label(Frontend* fe, GBA* gba) {
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
-    if (size <= 0) { fclose(f); return false; }
+    if (size < 8) {   /* too short for magic + version: truncated or not a savestate */
+        fclose(f);
+        snprintf(p->status, sizeof(p->status), "Slot %d file is damaged", p->edit_slot);
+        return false;
+    }
     uint8_t* buf = (uint8_t*)malloc((size_t)size);
     if (!buf) { fclose(f); return false; }
     size_t got = fread(buf, 1, (size_t)size, f);

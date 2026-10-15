@@ -5,7 +5,10 @@
 #include <sys/stat.h>
 #include <time.h>
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <direct.h>
+#include <windows.h>
 #define mkdir(path, mode) _mkdir(path)
 #endif
 
@@ -1286,10 +1289,13 @@ SaveStateResult savestate_write_file_atomic(const char* path, const uint8_t* buf
     }
 
 #ifdef _WIN32
-    /* MSVC rename() cannot replace an existing file; drop atomicity there. */
-    remove(path);
+    /* MSVC rename() cannot replace an existing file; MoveFileEx does it in one
+     * step, so the old slot survives a crash before the new one lands. */
+    bool replaced = MoveFileExA(tmp_path, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+#else
+    bool replaced = rename(tmp_path, path) == 0;
 #endif
-    if (rename(tmp_path, path) != 0) {
+    if (!replaced) {
         LOG_ERROR("Save state: cannot commit '%s'", path);
         remove(tmp_path);
         return SS_ERR_FILE_WRITE;

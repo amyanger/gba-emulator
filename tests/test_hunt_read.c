@@ -469,6 +469,10 @@ TEST(hunt_read_altering_cave_uses_var) {
     fixture_put16(at(SB1 + 0x139C + 2 * 0x3E), 1); /* VAR_ALTERING_CAVE_WILD_SET */
     read(&nf, &hf);
     ASSERT_EQ(hf.wild.rate, 8 * 16 * 2);
+    uint16_t header = 0;
+    GameMem m = mem();
+    ASSERT_TRUE(hunt_wild_header(&k_profile, &m, SB1, 24, 106, &header));
+    ASSERT_EQ(header, 1);   /* the Route page reads this same header */
 }
 
 TEST(hunt_read_enemy_incomplete_until_checksum) {

@@ -30,7 +30,8 @@ typedef struct {
 } HgssAssets;
 
 /* Opens the ROM, checks IPKE (IPGE only if every path resolves), loads all
- * small tables, the frame, font, emotes and message bank. */
+ * small tables, the frame, font, emotes and message bank. `a` must be zeroed
+ * or previously opened: an open ROM is closed first. */
 bool hgss_assets_open(HgssAssets* a, const char* path);
 void hgss_assets_close(HgssAssets* a);
 /* Follower sprite for a national dex species. form: Unown letter 0..27 else 0. */

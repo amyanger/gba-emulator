@@ -1,4 +1,5 @@
 #include "game/nuzlocke.h"
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -185,9 +186,11 @@ int nuz_format(const NuzEvent* ev, char* out, size_t out_size) {
 
 static bool parse_u32(const char* s, int base, uint32_t max, uint32_t* out) {
     char* end;
-    if (*s == '\0' || *s == '-' || *s == '+' || *s == ' ') return false;
+    /* 10 digits covers any u32; also guards against strtoul wrapping on 32-bit long. */
+    if (*s == '\0' || *s == '-' || *s == '+' || *s == ' ' || strlen(s) > 10) return false;
+    errno = 0;
     unsigned long v = strtoul(s, &end, base);
-    if (*end != '\0' || v > max) return false;
+    if (*end != '\0' || errno == ERANGE || v > max) return false;
     *out = (uint32_t)v;
     return true;
 }

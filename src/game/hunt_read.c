@@ -102,8 +102,8 @@ static uint8_t battle_kind(const GameProfile* p, const GameMem* m, const NuzFact
 
 /* GetCurrentMapWildMonHeaderId (wild_encounter.c:304): first header for the map; Altering Cave
  * adds VAR_ALTERING_CAVE_WILD_SET. Returns false when the map has no header. */
-static bool find_header(const GameProfile* p, const GameMem* m, uint32_t sb1, uint8_t group,
-                        uint8_t num, uint16_t* index) {
+bool hunt_wild_header(const GameProfile* p, const GameMem* m, uint32_t sb1, uint8_t group, uint8_t num,
+                      uint16_t* index) {
     for (uint16_t i = 0; i < p->wild_header_cap; i++) {
         uint8_t g, n;
         if (!game_mem_read8(m, p->wild_mon_headers + (uint32_t)i * WILD_HEADER_SIZE, &g) ||
@@ -265,7 +265,7 @@ static const char* read_prediction(const GameProfile* p, const GameMem* m, const
         return "Not predicted while surfing";
     if (flag_get(m, sb1, p->safari_flag))
         return "Not predicted in the Safari Zone";
-    if (!find_header(p, m, sb1, out->map_group, out->map_num, &header) ||
+    if (!hunt_wild_header(p, m, sb1, out->map_group, out->map_num, &header) ||
         !read_land(p, m, header, w, &rate_byte))
         return "Not predicted here: no grass";
     /* DoMassOutbreakEncounterTest (:481) */

@@ -161,6 +161,22 @@ TEST(nuz_session_leaves_foreign_file_alone) {
     remove(FILE_A);
 }
 
+/* A crash between creating the file and the first write leaves it empty: still ours. */
+TEST(nuz_session_adopts_empty_file) {
+    FILE* f = fopen(FILE_A, "w");
+    ASSERT_TRUE(f != NULL);
+    fclose(f);
+    build();
+    nuz_session_init(&s_a, &k_profile, ROM, NULL);
+    frames(&s_a, 40);
+    nuz_session_request_start(&s_a);
+    frames(&s_a, 2);
+    ASSERT_EQ(s_a.view.state, NUZ_VIEW_RUN);
+    ASSERT_TRUE(!s_a.view.write_failed);
+    ASSERT_EQ(file_lines(FILE_A), 3);  /* header, start, owned */
+    remove(FILE_A);
+}
+
 TEST(nuz_session_start_reads_boxes_fresh) {
     remove(FILE_A);
     build();
@@ -191,6 +207,7 @@ void run_nuzlocke_session_tests(void) {
     RUN_TEST(nuz_session_replays_file_into_same_run);
     RUN_TEST(nuz_session_switches_runs_with_trainer_id);
     RUN_TEST(nuz_session_leaves_foreign_file_alone);
+    RUN_TEST(nuz_session_adopts_empty_file);
     RUN_TEST(nuz_session_start_reads_boxes_fresh);
     RUN_TEST(nuz_session_off_without_profile);
 }

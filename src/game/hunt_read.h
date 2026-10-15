@@ -42,4 +42,9 @@ typedef struct {
 bool hunt_read(const GameProfile* p, const GameMem* m, const NuzFacts* nf, bool predict,
                HuntFacts* out);
 
+/* GetCurrentMapWildMonHeaderId: the map's wild header index, with Altering Cave's
+ * VAR_ALTERING_CAVE_WILD_SET added. sb1 is the SaveBlock1 address. False when the map has none. */
+bool hunt_wild_header(const GameProfile* p, const GameMem* m, uint32_t sb1, uint8_t group, uint8_t num,
+                      uint16_t* index);
+
 #endif // HUNT_READ_H

@@ -36,9 +36,14 @@ int encounters_header_slots(const GameMem* mem, uint32_t headers, uint16_t index
                             uint16_t species_count, EncMethod method,
                             uint8_t* group, uint8_t* num, EncSlot out[12]);
 
-/* Look up the wild encounter header for a map in the ROM's
+/* Merged slots of wild header `index`, per method (empty lists for methods it lacks). */
+void encounters_read_header(const GameMem* mem, uint32_t headers, uint16_t index,
+                            uint16_t species_count, EncounterList out[ENC_METHOD_COUNT]);
+
+/* Look up the first wild encounter header for a map in the ROM's
  * gWildMonHeaders and merge slots of the same species within each method.
- * Returns false when the map has no header. */
+ * Returns false when the map has no header. Ignores Altering Cave's
+ * wild set: use hunt_wild_header for the header the game actually rolls from. */
 bool encounters_find(const GameMem* mem, uint32_t headers, uint16_t cap,
                      uint16_t species_count, uint8_t map_group, uint8_t map_num,
                      EncounterList out[ENC_METHOD_COUNT]);

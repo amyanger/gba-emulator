@@ -50,7 +50,11 @@ static void load_file(NuzSession* s) {
     char line[512];
     uint32_t bad = 0;
     if (!f) return;
-    if (!fgets(line, sizeof(line), f) || strncmp(line, NUZ_HEADER, strlen(NUZ_HEADER)) != 0) {
+    if (!fgets(line, sizeof(line), f)) {   /* empty (crash before the first write): ours to start */
+        fclose(f);
+        return;
+    }
+    if (strncmp(line, NUZ_HEADER, strlen(NUZ_HEADER)) != 0) {
         LOG_WARN("Nuzlocke: %s is not a run file; leaving it alone", s->path);
         s->path_ok = false;
         fclose(f);
