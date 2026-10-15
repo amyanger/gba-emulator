@@ -83,8 +83,9 @@ option(ENABLE_XRAY "Enable Hardware X-Ray Mode (F2 hotkey)" ON)
 # Rewind playback (default ON)
 option(ENABLE_REWIND "Enable hold-Backspace-to-rewind playback" ON)
 
-set(SOURCES
-    src/main.c
+# Everything the emulator and gba_tests both link. savestate.c is app-only because
+# tests/test_savestate.c #includes it to reach its static helpers.
+set(CORE_SOURCES
     src/gba.c
     src/cpu/arm7tdmi.c
     src/cpu/arm_instr.c
@@ -120,7 +121,6 @@ set(SOURCES
     src/cheat/cheat_backup.c
     src/cheat/cheat_report.c
     src/cheat/cheat_session.c
-    src/savestate/savestate.c
     src/screenshot/screenshot.c
     src/sio/sio.c
     src/sio/sio_link.c
@@ -165,10 +165,9 @@ set(SOURCES
     src/ui/ui_widgets.c
     src/ui/ui_input.c
     src/ui/ui_controls.c
-    src/frontend/frontend.c
-    src/frontend/follower_glue.c
-    src/frontend/audio_out.c
-    src/frontend/frame_pacer.c
+    src/headless/fb_hash.c
+    src/headless/headless.c
+    src/headless/input_script.c
     src/frontend/frame_advance.c
     src/frontend/input_display.c
     src/frontend/slot_picker.c
@@ -176,7 +175,8 @@ set(SOURCES
     src/frontend/berry_alerts.c
     src/frontend/daycare_alerts.c
     src/frontend/panel_layout.c
-    src/frontend/rom_picker.c
+    src/frontend/audio_out.c
+    src/frontend/frame_pacer.c
     src/frontend/toast.c
     src/frontend/prefs.c
     src/frontend/video_filter.c
@@ -191,7 +191,6 @@ set(SOURCES
     src/frontend/library.c
     src/frontend/library_view.c
     src/frontend/search_view.c
-    src/frontend/library_run.c
     src/frontend/settings.c
     src/frontend/settings_cheats.c
     src/frontend/settings_video.c
@@ -206,32 +205,39 @@ set(SOURCES
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
     src/frontend/overlay_draw.c
-    src/headless/fb_hash.c
-    src/headless/headless.c
-    src/headless/input_script.c
 )
-
-# X-Ray source files (only compiled when ENABLE_XRAY is ON)
-set(XRAY_SOURCES
-    src/frontend/xray/xray_draw.c
-    src/frontend/xray/xray.c
-    src/frontend/xray/xray_cpu.c
-    src/frontend/xray/xray_activity.c
-    src/frontend/xray/xray_ppu.c
-    src/frontend/xray/xray_tiles.c
-    src/frontend/xray/xray_audio.c
-)
-
-if(ENABLE_XRAY AND ENABLE_REWIND)
-    list(APPEND XRAY_SOURCES src/frontend/xray/xray_rewind.c)
-endif()
-
-if(ENABLE_XRAY)
-    list(APPEND SOURCES ${XRAY_SOURCES})
-endif()
 
 if(ENABLE_REWIND)
-    list(APPEND SOURCES src/rewind/rewind.c src/rewind/rewind_lz4.c)
+    list(APPEND CORE_SOURCES src/rewind/rewind.c src/rewind/rewind_lz4.c)
+endif()
+
+# X-Ray drawing is pure C (no SDL window), so the tests link it too; xray.c is the window.
+if(ENABLE_XRAY)
+    list(APPEND CORE_SOURCES
+        src/frontend/xray/xray_draw.c
+        src/frontend/xray/xray_ppu.c
+        src/frontend/xray/xray_tiles.c
+        src/frontend/xray/xray_audio.c
+        src/frontend/xray/xray_cpu.c
+        src/frontend/xray/xray_activity.c
+    )
+    if(ENABLE_REWIND)
+        list(APPEND CORE_SOURCES src/frontend/xray/xray_rewind.c)
+    endif()
+endif()
+
+set(SOURCES
+    ${CORE_SOURCES}
+    src/main.c
+    src/savestate/savestate.c
+    src/frontend/frontend.c
+    src/frontend/follower_glue.c
+    src/frontend/rom_picker.c
+    src/frontend/library_run.c
+)
+
+if(ENABLE_XRAY)
+    list(APPEND SOURCES src/frontend/xray/xray.c)
 endif()
 
 add_executable(gba_emulator ${SOURCES})
@@ -278,157 +284,8 @@ if(MACOS_APP_BUNDLE)
     )
 endif()
 
-if(ENABLE_XRAY)
-    target_compile_definitions(gba_emulator PRIVATE ENABLE_XRAY)
-endif()
-
-if(ENABLE_REWIND)
-    target_compile_definitions(gba_emulator PRIVATE ENABLE_REWIND)
-endif()
-
 # ── Test suite ──────────────────────────────────────────────────────
 enable_testing()
-
-set(LIB_SOURCES
-    src/gba.c
-    src/cpu/arm7tdmi.c
-    src/cpu/arm_instr.c
-    src/cpu/thumb_instr.c
-    src/cpu/bios_hle.c
-    src/memory/bus.c
-    src/memory/dma.c
-    src/ppu/ppu.c
-    src/ppu/background.c
-    src/ppu/bitmap.c
-    src/ppu/sprites.c
-    src/ppu/effects.c
-    src/apu/apu.c
-    src/apu/channel.c
-    src/apu/fifo.c
-    src/mp2k/mp2k_detect.c
-    src/mp2k/mp2k_mixer.c
-    src/timer/timer.c
-    src/interrupt/interrupt.c
-    src/cartridge/cartridge.c
-    src/cartridge/flash.c
-    src/cartridge/sram.c
-    src/cartridge/eeprom.c
-    src/cartridge/rtc.c
-    src/cartridge/gpio.c
-    src/input/input.c
-    src/input/keymap.c
-    src/cheat/cheat.c
-    src/cheat/cheat_file.c
-    src/cheat/cheat_crypto.c
-    src/cheat/cheat_parse.c
-    src/cheat/cheat_decode.c
-    src/cheat/cheat_backup.c
-    src/cheat/cheat_report.c
-    src/cheat/cheat_session.c
-    src/screenshot/screenshot.c
-    src/sio/sio.c
-    src/sio/sio_link.c
-    src/trace/trace.c
-    src/game/game_mem.c
-    src/game/emerald_profile.c
-    src/game/gen3_text.c
-    src/game/pokemon.c
-    src/game/battle_info.c
-    src/game/damage.c
-    src/game/rng3.c
-    src/game/wildgen.c
-    src/game/hunt_read.c
-    src/game/hunt.c
-    src/game/damage_read.c
-    src/game/encounters.c
-    src/game/game.c
-    src/game/overworld.c
-    src/game/feebas.c
-    src/game/nuzlocke_read.c
-    src/game/species_search.c
-    src/game/runlog_read.c
-    src/game/runlog.c
-    src/game/run_track.c
-    src/game/nuzlocke.c
-    src/game/logline.c
-    src/game/script_walk.c
-    src/game/follower.c
-    src/game/follower_ctx.c
-    src/game/follower_places.c
-    src/game/mirage.c
-    src/game/berry.c
-    src/game/daycare.c
-    src/hgss/nds_fs.c
-    src/hgss/hgss_msg.c
-    src/hgss/hgss_gfx.c
-    src/hgss/hgss_talk.c
-    src/hgss/hgss_assets.c
-    src/ui/ui_stb.c
-    src/ui/ui_canvas.c
-    src/ui/ui_font.c
-    src/ui/ui_widgets.c
-    src/ui/ui_input.c
-    src/ui/ui_controls.c
-    src/headless/fb_hash.c
-    src/headless/headless.c
-    src/headless/input_script.c
-    src/frontend/frame_advance.c
-    src/frontend/input_display.c
-    src/frontend/slot_picker.c
-    src/frontend/game_panel.c
-    src/frontend/berry_alerts.c
-    src/frontend/daycare_alerts.c
-    src/frontend/panel_layout.c
-    src/frontend/audio_out.c
-    src/frontend/frame_pacer.c
-    src/frontend/toast.c
-    src/frontend/prefs.c
-    src/frontend/video_filter.c
-    src/frontend/xbr.c
-    src/frontend/super_xbr.c
-    src/frontend/nuzlocke_session.c
-    src/frontend/hunt_session.c
-    src/frontend/run_session.c
-    src/frontend/session_log.c
-    src/frontend/run_panel.c
-    src/frontend/hunt_panel.c
-    src/frontend/library.c
-    src/frontend/library_view.c
-    src/frontend/search_view.c
-    src/frontend/settings.c
-    src/frontend/settings_cheats.c
-    src/frontend/settings_video.c
-    src/frontend/settings_audio.c
-    src/frontend/settings_general.c
-    src/frontend/settings_controls.c
-    src/frontend/hud_draw.c
-    src/frontend/overworld_draw.c
-    src/frontend/follower_draw.c
-    src/frontend/follower_talk_ui.c
-    src/frontend/cry_player.c
-    # Shared overlay drawing primitives (used by input_display, slot_picker,
-    # and the X-Ray panels regardless of ENABLE_XRAY).
-    src/frontend/overlay_draw.c
-)
-
-if(ENABLE_REWIND)
-    list(APPEND LIB_SOURCES src/rewind/rewind.c src/rewind/rewind_lz4.c)
-endif()
-
-# X-Ray drawing is pure C (no SDL window), so the tests link it directly.
-if(ENABLE_XRAY)
-    list(APPEND LIB_SOURCES
-        src/frontend/xray/xray_draw.c
-        src/frontend/xray/xray_ppu.c
-        src/frontend/xray/xray_tiles.c
-        src/frontend/xray/xray_audio.c
-        src/frontend/xray/xray_cpu.c
-        src/frontend/xray/xray_activity.c
-    )
-    if(ENABLE_REWIND)
-        list(APPEND LIB_SOURCES src/frontend/xray/xray_rewind.c)
-    endif()
-endif()
 
 set(TEST_SOURCES
     tests/test_runner.c
@@ -537,7 +394,7 @@ if(ENABLE_XRAY)
     list(APPEND TEST_SOURCES tests/test_xray.c)
 endif()
 
-add_executable(gba_tests ${TEST_SOURCES} ${LIB_SOURCES})
+add_executable(gba_tests ${TEST_SOURCES} ${CORE_SOURCES})
 
 target_include_directories(gba_tests PRIVATE
     ${CMAKE_SOURCE_DIR}/src
@@ -556,13 +413,15 @@ if(MSVC)
     target_link_options(gba_tests PRIVATE /STACK:8388608)
 endif()
 
-if(ENABLE_REWIND)
-    target_compile_definitions(gba_tests PRIVATE ENABLE_REWIND)
-endif()
-
-if(ENABLE_XRAY)
-    target_compile_definitions(gba_tests PRIVATE ENABLE_XRAY)
-endif()
+# Both targets must agree: these change the GBA struct layout (gba.h).
+foreach(target gba_emulator gba_tests)
+    if(ENABLE_XRAY)
+        target_compile_definitions(${target} PRIVATE ENABLE_XRAY)
+    endif()
+    if(ENABLE_REWIND)
+        target_compile_definitions(${target} PRIVATE ENABLE_REWIND)
+    endif()
+endforeach()
 
 add_test(NAME gba_tests COMMAND gba_tests)
 
