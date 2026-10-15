@@ -13,6 +13,15 @@ static void put(const char* text) {
     }
 }
 
+static int last_byte(void) {
+    FILE* f = fopen(PATH, "rb");
+    if (!f) return -1;
+    fseek(f, -1, SEEK_END);
+    int c = fgetc(f);
+    fclose(f);
+    return c;
+}
+
 static long file_size(void) {
     FILE* f = fopen(PATH, "rb");
     if (!f) return -1;
@@ -59,15 +68,15 @@ TEST(session_log_skips_and_repairs_torn_tail) {
     ASSERT_STR_EQ(line, "second\n");
     ASSERT_TRUE(!session_log_next(&r, line, sizeof(line)));
     ASSERT_EQ(r.bad, 1);
-    long before = file_size();
     ASSERT_TRUE(session_log_close(&r, PATH));
-    ASSERT_EQ(file_size(), before + 1);   /* newline added after the torn line */
+    ASSERT_EQ(last_byte(), '\n');   /* torn line ended (Windows text mode writes \r\n) */
+    long repaired = file_size();
 
     ASSERT_EQ(session_log_open(&r, PATH, "log 1"), SESSION_LOG_OK);
     while (session_log_next(&r, line, sizeof(line))) {}
     ASSERT_EQ(r.bad, 0);   /* the torn line is now whole (and the caller's parser rejects it) */
     ASSERT_TRUE(session_log_close(&r, PATH));
-    ASSERT_EQ(file_size(), before + 1);   /* nothing to repair the second time */
+    ASSERT_EQ(file_size(), repaired);   /* nothing to repair the second time */
     remove(PATH);
 }
 
