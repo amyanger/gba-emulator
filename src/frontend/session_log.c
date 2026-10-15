@@ -32,6 +32,10 @@ SessionLogOpen session_log_open(SessionLogReader* r, const char* path, const cha
 bool session_log_next(SessionLogReader* r, char* buf, size_t n) {
     while (fgets(buf, (int)n, r->f)) {
         size_t len = strlen(buf);
+        if (len == 0) {   /* starts with a NUL byte: corrupt, and there's no last char to look at */
+            r->bad++;
+            continue;
+        }
         if (len + 1 == n && buf[len - 1] != '\n') {   /* overlong: skip the rest of it */
             int c;
             while ((c = fgetc(r->f)) != EOF && c != '\n') {}

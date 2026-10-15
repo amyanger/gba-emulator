@@ -84,6 +84,21 @@ TEST(session_log_skips_overlong_lines) {
     remove(PATH);
 }
 
+TEST(session_log_skips_nul_lines) {
+    SessionLogReader r;
+    char line[16];
+    FILE* f = fopen(PATH, "wb");
+    ASSERT_TRUE(f != NULL);
+    fwrite("log 1\n\0junk\nok\n", 1, 15, f);
+    fclose(f);
+    ASSERT_EQ(session_log_open(&r, PATH, "log 1"), SESSION_LOG_OK);
+    ASSERT_TRUE(session_log_next(&r, line, sizeof(line)));
+    ASSERT_STR_EQ(line, "ok\n");
+    ASSERT_EQ(r.bad, 1);
+    ASSERT_TRUE(session_log_close(&r, PATH));
+    remove(PATH);
+}
+
 TEST(session_tid_gate_debounces) {
     SessionTidGate g = {0, 0};
     for (int i = 1; i < SESSION_ATTACH_FRAMES; i++) ASSERT_TRUE(!session_tid_step(&g, false, 0, 0xA));
@@ -101,5 +116,6 @@ void run_session_log_tests(void) {
     RUN_TEST(session_log_open_states);
     RUN_TEST(session_log_skips_and_repairs_torn_tail);
     RUN_TEST(session_log_skips_overlong_lines);
+    RUN_TEST(session_log_skips_nul_lines);
     RUN_TEST(session_tid_gate_debounces);
 }
