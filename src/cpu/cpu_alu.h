@@ -6,6 +6,7 @@
  * sets — keeping a single copy here prevents silent divergence. */
 
 #include "arm7tdmi.h"
+#include "memory/bus.h"
 
 /* Set N and Z flags from a 32-bit result */
 static inline void set_nz_flags(ARM7TDMI* cpu, uint32_t result) {
@@ -48,6 +49,34 @@ static inline bool add_overflow(uint32_t a, uint32_t b, uint32_t result) {
  * For SUB a - b, where result = a - b */
 static inline bool sub_overflow(uint32_t a, uint32_t b, uint32_t result) {
     return BIT((a ^ b) & (a ^ result), 31);
+}
+
+/* a + b + carry_in (0 or 1). With set_flags, N Z from the result, C from the
+ * 33-bit sum, V from add_overflow. ADD/CMN pass 0, ADC passes C. */
+static inline uint32_t alu_add(ARM7TDMI* cpu, uint32_t a, uint32_t b, uint32_t carry_in,
+                               bool set_flags) {
+    uint64_t res64 = (uint64_t)a + (uint64_t)b + (uint64_t)carry_in;
+    uint32_t result = (uint32_t)res64;
+    if (set_flags) {
+        set_nz_flags(cpu, result);
+        set_c_flag(cpu, res64 > 0xFFFFFFFF);
+        set_v_flag(cpu, add_overflow(a, b, result));
+    }
+    return result;
+}
+
+/* a - b - !carry_in, computed as a + ~b + carry_in so C is "no borrow".
+ * SUB/CMP/NEG pass 1, SBC/RSC pass C. */
+static inline uint32_t alu_sub(ARM7TDMI* cpu, uint32_t a, uint32_t b, uint32_t carry_in,
+                               bool set_flags) {
+    uint64_t res64 = (uint64_t)a + (uint64_t)~b + (uint64_t)carry_in;
+    uint32_t result = (uint32_t)res64;
+    if (set_flags) {
+        set_nz_flags(cpu, result);
+        set_c_flag(cpu, res64 > 0xFFFFFFFF);
+        set_v_flag(cpu, sub_overflow(a, b, result));
+    }
+    return result;
 }
 
 /*
@@ -170,6 +199,26 @@ static inline uint32_t barrel_shift(uint32_t value, uint8_t shift_type,
 static inline uint32_t barrel_shift_reg(uint32_t value, uint8_t shift_type,
                                         uint8_t amount, bool* carry_out) {
     return barrel_shift(value, shift_type, amount, carry_out, true);
+}
+
+/* Misaligned loads, shared by ARM and Thumb (GBATEK "ARM Opcodes: Memory").
+ * LDR/SWP: the aligned word, rotated right by 8 * (addr & 3). */
+static inline uint32_t cpu_load32_rot(ARM7TDMI* cpu, uint32_t addr) {
+    uint32_t word = bus_read32(cpu->bus, addr & ~3u);
+    uint8_t rot = (uint8_t)((addr & 3u) * 8);
+    return rot ? (word >> rot) | (word << (32 - rot)) : word;
+}
+
+/* LDRH: the aligned halfword, rotated right by 8 when addr is odd. */
+static inline uint32_t cpu_load16_rot(ARM7TDMI* cpu, uint32_t addr) {
+    uint32_t val = bus_read16(cpu->bus, addr & ~1u);
+    return (addr & 1u) ? (val >> 8) | (val << 24) : val;
+}
+
+/* LDRSH: at an odd address it loads and sign-extends the byte instead. */
+static inline uint32_t cpu_load16_signed(ARM7TDMI* cpu, uint32_t addr) {
+    if (addr & 1u) return (uint32_t)(int32_t)(int8_t)bus_read8(cpu->bus, addr);
+    return (uint32_t)(int32_t)(int16_t)bus_read16(cpu->bus, addr);
 }
 
 #endif // CPU_ALU_H

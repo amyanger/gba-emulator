@@ -25,44 +25,10 @@ static int thumb_move_shifted(ARM7TDMI* cpu, uint16_t instr) {
     uint8_t rs = BITS(instr, 5, 3);
     uint8_t rd = BITS(instr, 2, 0);
 
-    uint32_t value = cpu->regs[rs];
+    /* op is 0..2 here: op 3 is Format 2, decoded first. Same rules as an ARM
+     * immediate shift (LSL #0 keeps C, LSR/ASR #0 mean #32). */
     bool carry = BIT(cpu->cpsr, CPSR_C);
-
-    switch (op) {
-    case 0: /* LSL */
-        if (offset5 == 0) {
-            /* LSL #0: value unchanged, carry preserved */
-        } else {
-            carry = BIT(value, 32 - offset5);
-            value = value << offset5;
-        }
-        break;
-
-    case 1: /* LSR */
-        if (offset5 == 0) {
-            /* LSR #0 encodes LSR #32 */
-            carry = BIT(value, 31);
-            value = 0;
-        } else {
-            carry = BIT(value, offset5 - 1);
-            value = value >> offset5;
-        }
-        break;
-
-    case 2: /* ASR */
-        if (offset5 == 0) {
-            /* ASR #0 encodes ASR #32 */
-            carry = BIT(value, 31);
-            value = BIT(value, 31) ? 0xFFFFFFFF : 0;
-        } else {
-            carry = BIT(value, offset5 - 1);
-            value = (uint32_t)((int32_t)value >> offset5);
-        }
-        break;
-
-    default:
-        break;
-    }
+    uint32_t value = barrel_shift(cpu->regs[rs], op, offset5, &carry, false);
 
     cpu->regs[rd] = value;
     set_nz_flags(cpu, value);
@@ -85,24 +51,8 @@ static int thumb_add_subtract(ARM7TDMI* cpu, uint16_t instr) {
     uint32_t operand1 = cpu->regs[rs];
     uint32_t operand2 = is_imm ? (uint32_t)rn_or_imm3 : cpu->regs[rn_or_imm3];
 
-    uint32_t result;
-    if (is_sub) {
-        /* SUB */
-        uint64_t res64 = (uint64_t)operand1 + (uint64_t)~operand2 + 1ULL;
-        result = (uint32_t)res64;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, sub_overflow(operand1, operand2, result));
-    } else {
-        /* ADD */
-        uint64_t res64 = (uint64_t)operand1 + (uint64_t)operand2;
-        result = (uint32_t)res64;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, add_overflow(operand1, operand2, result));
-    }
-
-    cpu->regs[rd] = result;
+    cpu->regs[rd] = is_sub ? alu_sub(cpu, operand1, operand2, 1, true)
+                           : alu_add(cpu, operand1, operand2, 0, true);
     return 1; /* 1S */
 }
 
@@ -124,34 +74,17 @@ static int thumb_mov_cmp_add_sub_imm(ARM7TDMI* cpu, uint16_t instr) {
         /* C and V unchanged */
         break;
 
-    case 1: { /* CMP: Rd - imm8, flags only */
-        uint64_t res64 = (uint64_t)rd_val + (uint64_t)~imm8 + 1ULL;
-        uint32_t result = (uint32_t)res64;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, sub_overflow(rd_val, imm8, result));
+    case 1: /* CMP: Rd - imm8, flags only */
+        alu_sub(cpu, rd_val, imm8, 1, true);
         break;
-    }
 
-    case 2: { /* ADD */
-        uint64_t res64 = (uint64_t)rd_val + (uint64_t)imm8;
-        uint32_t result = (uint32_t)res64;
-        cpu->regs[rd] = result;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, add_overflow(rd_val, imm8, result));
+    case 2: /* ADD */
+        cpu->regs[rd] = alu_add(cpu, rd_val, imm8, 0, true);
         break;
-    }
 
-    case 3: { /* SUB */
-        uint64_t res64 = (uint64_t)rd_val + (uint64_t)~imm8 + 1ULL;
-        uint32_t result = (uint32_t)res64;
-        cpu->regs[rd] = result;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, sub_overflow(rd_val, imm8, result));
+    case 3: /* SUB */
+        cpu->regs[rd] = alu_sub(cpu, rd_val, imm8, 1, true);
         break;
-    }
     }
 
     return 1; /* 1S */
@@ -214,29 +147,13 @@ static int thumb_alu(ARM7TDMI* cpu, uint16_t instr) {
         break;
     }
 
-    case 0x5: { /* ADC: Rd = Rd + Rs + C */
-        uint32_t old_c = BIT(cpu->cpsr, CPSR_C);
-        uint64_t res64 = (uint64_t)rd_val + (uint64_t)rs_val +
-                         (uint64_t)old_c;
-        result = (uint32_t)res64;
-        cpu->regs[rd] = result;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, add_overflow(rd_val, rs_val, result));
+    case 0x5: /* ADC: Rd = Rd + Rs + C */
+        cpu->regs[rd] = alu_add(cpu, rd_val, rs_val, BIT(cpu->cpsr, CPSR_C), true);
         break;
-    }
 
-    case 0x6: { /* SBC: Rd = Rd - Rs - !C = Rd + ~Rs + C */
-        uint32_t old_c = BIT(cpu->cpsr, CPSR_C);
-        uint64_t res64 = (uint64_t)rd_val + (uint64_t)~rs_val +
-                         (uint64_t)old_c;
-        result = (uint32_t)res64;
-        cpu->regs[rd] = result;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, sub_overflow(rd_val, rs_val, result));
+    case 0x6: /* SBC: Rd = Rd - Rs - !C */
+        cpu->regs[rd] = alu_sub(cpu, rd_val, rs_val, BIT(cpu->cpsr, CPSR_C), true);
         break;
-    }
 
     case 0x7: { /* ROR: Rd = Rd ROR (Rs & 0xFF) */
         uint8_t amount = (uint8_t)(rs_val & 0xFF);
@@ -253,33 +170,17 @@ static int thumb_alu(ARM7TDMI* cpu, uint16_t instr) {
         set_nz_flags(cpu, result);
         break;
 
-    case 0x9: { /* NEG: Rd = 0 - Rs */
-        uint64_t res64 = (uint64_t)~rs_val + 1ULL;
-        result = (uint32_t)res64;
-        cpu->regs[rd] = result;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, sub_overflow(0, rs_val, result));
+    case 0x9: /* NEG: Rd = 0 - Rs */
+        cpu->regs[rd] = alu_sub(cpu, 0, rs_val, 1, true);
         break;
-    }
 
-    case 0xA: { /* CMP: Rd - Rs, flags only */
-        uint64_t res64 = (uint64_t)rd_val + (uint64_t)~rs_val + 1ULL;
-        result = (uint32_t)res64;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, sub_overflow(rd_val, rs_val, result));
+    case 0xA: /* CMP: Rd - Rs, flags only */
+        alu_sub(cpu, rd_val, rs_val, 1, true);
         break;
-    }
 
-    case 0xB: { /* CMN: Rd + Rs, flags only */
-        uint64_t res64 = (uint64_t)rd_val + (uint64_t)rs_val;
-        result = (uint32_t)res64;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, add_overflow(rd_val, rs_val, result));
+    case 0xB: /* CMN: Rd + Rs, flags only */
+        alu_add(cpu, rd_val, rs_val, 0, true);
         break;
-    }
 
     case 0xC: /* ORR: Rd = Rd | Rs */
         result = rd_val | rs_val;
@@ -342,15 +243,9 @@ static int thumb_hi_reg_bx(ARM7TDMI* cpu, uint16_t instr) {
         }
         return 1; /* 1S */
 
-    case 1: { /* CMP: Rd - Rs, sets all flags */
-        uint32_t rd_val = cpu->regs[rd];
-        uint64_t res64 = (uint64_t)rd_val + (uint64_t)~rs_val + 1ULL;
-        uint32_t result = (uint32_t)res64;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, sub_overflow(rd_val, rs_val, result));
+    case 1: /* CMP: Rd - Rs, sets all flags */
+        alu_sub(cpu, cpu->regs[rd], rs_val, 1, true);
         return 1; /* 1S */
-    }
 
     case 2: /* MOV: Rd = Rs (no flag change) */
         cpu->regs[rd] = rs_val;
@@ -413,14 +308,7 @@ static int thumb_load_store_reg(ARM7TDMI* cpu, uint16_t instr) {
         if (byte) {
             cpu->regs[rd] = bus_read8(cpu->bus, addr);
         } else {
-            /* Word load with rotation for unaligned addresses */
-            uint32_t aligned = addr & ~3u;
-            uint32_t word = bus_read32(cpu->bus, aligned);
-            uint8_t rot = (uint8_t)((addr & 3u) * 8);
-            if (rot != 0) {
-                word = (word >> rot) | (word << (32 - rot));
-            }
-            cpu->regs[rd] = word;
+            cpu->regs[rd] = cpu_load32_rot(cpu, addr);
         }
         return 3; /* 1S+1N+1I */
     } else {
@@ -453,13 +341,7 @@ static int thumb_load_store_sign_ext(ARM7TDMI* cpu, uint16_t instr) {
         return 2; /* 2N */
     } else if (!s_bit && h_bit) {
         /* LDRH: unsigned halfword load */
-        if (addr & 1u) {
-            /* Misaligned: rotated read */
-            uint32_t val = bus_read16(cpu->bus, addr & ~1u);
-            cpu->regs[rd] = (val >> 8) | (val << 24);
-        } else {
-            cpu->regs[rd] = bus_read16(cpu->bus, addr);
-        }
+        cpu->regs[rd] = cpu_load16_rot(cpu, addr);
         return 3; /* 1S+1N+1I */
     } else if (s_bit && !h_bit) {
         /* LDSB: signed byte load */
@@ -467,14 +349,7 @@ static int thumb_load_store_sign_ext(ARM7TDMI* cpu, uint16_t instr) {
         return 3; /* 1S+1N+1I */
     } else {
         /* LDSH: signed halfword load */
-        if (addr & 1u) {
-            /* Misaligned LDSH: loads byte, sign-extends to 32 */
-            cpu->regs[rd] = (uint32_t)(int32_t)(int8_t)bus_read8(
-                cpu->bus, addr);
-        } else {
-            cpu->regs[rd] = (uint32_t)(int32_t)(int16_t)bus_read16(
-                cpu->bus, addr);
-        }
+        cpu->regs[rd] = cpu_load16_signed(cpu, addr);
         return 3; /* 1S+1N+1I */
     }
 }
@@ -499,14 +374,7 @@ static int thumb_load_store_imm(ARM7TDMI* cpu, uint16_t instr) {
         if (byte) {
             cpu->regs[rd] = bus_read8(cpu->bus, addr);
         } else {
-            /* Word load with rotation for unaligned addresses */
-            uint32_t aligned = addr & ~3u;
-            uint32_t word = bus_read32(cpu->bus, aligned);
-            uint8_t rot = (uint8_t)((addr & 3u) * 8);
-            if (rot != 0) {
-                word = (word >> rot) | (word << (32 - rot));
-            }
-            cpu->regs[rd] = word;
+            cpu->regs[rd] = cpu_load32_rot(cpu, addr);
         }
         return 3; /* 1S+1N+1I */
     } else {
@@ -533,13 +401,7 @@ static int thumb_load_store_halfword(ARM7TDMI* cpu, uint16_t instr) {
 
     if (load) {
         /* LDRH */
-        if (addr & 1u) {
-            /* Misaligned: rotated read */
-            uint32_t val = bus_read16(cpu->bus, addr & ~1u);
-            cpu->regs[rd] = (val >> 8) | (val << 24);
-        } else {
-            cpu->regs[rd] = bus_read16(cpu->bus, addr);
-        }
+        cpu->regs[rd] = cpu_load16_rot(cpu, addr);
         return 3; /* 1S+1N+1I */
     } else {
         /* STRH */
@@ -560,14 +422,7 @@ static int thumb_sp_relative_load_store(ARM7TDMI* cpu, uint16_t instr) {
     uint32_t addr = cpu->regs[REG_SP] + (imm8 << 2);
 
     if (load) {
-        /* Word load with rotation for unaligned addresses */
-        uint32_t aligned = addr & ~3u;
-        uint32_t word = bus_read32(cpu->bus, aligned);
-        uint8_t rot = (uint8_t)((addr & 3u) * 8);
-        if (rot != 0) {
-            word = (word >> rot) | (word << (32 - rot));
-        }
-        cpu->regs[rd] = word;
+        cpu->regs[rd] = cpu_load32_rot(cpu, addr);
         return 3; /* 1S+1N+1I */
     } else {
         bus_write32(cpu->bus, addr & ~3u, cpu->regs[rd]);

@@ -312,14 +312,7 @@ static int arm_single_transfer(ARM7TDMI* cpu, uint32_t instr) {
         if (byte) {
             cpu->regs[rd] = bus_read8(cpu->bus, addr);
         } else {
-            /* LDR: word load with rotation for unaligned addresses */
-            uint32_t aligned_addr = addr & ~3u;
-            uint32_t word = bus_read32(cpu->bus, aligned_addr);
-            uint8_t rot = (uint8_t)((addr & 3u) * 8);
-            if (rot != 0) {
-                word = (word >> rot) | (word << (32 - rot));
-            }
-            cpu->regs[rd] = word;
+            cpu->regs[rd] = cpu_load32_rot(cpu, addr);
         }
         cycles = 3; /* 1S + 1N + 1I */
 
@@ -396,13 +389,8 @@ static int arm_swap(ARM7TDMI* cpu, uint32_t instr) {
         cpu->regs[rd] = temp;
     } else {
         /* SWP: word swap with LDR-style rotation for misaligned */
-        uint32_t aligned = addr & ~3u;
-        uint32_t word = bus_read32(cpu->bus, aligned);
-        uint8_t rot = (uint8_t)((addr & 3u) * 8);
-        if (rot != 0) {
-            word = (word >> rot) | (word << (32 - rot));
-        }
-        bus_write32(cpu->bus, aligned, cpu->regs[rm]);
+        uint32_t word = cpu_load32_rot(cpu, addr);
+        bus_write32(cpu->bus, addr & ~3u, cpu->regs[rm]);
         cpu->regs[rd] = word;
     }
 
@@ -521,13 +509,7 @@ static int arm_halfword_transfer(ARM7TDMI* cpu, uint32_t instr) {
     if (load) {
         switch (sh) {
         case 1: /* LDRH: unsigned halfword */
-            if (addr & 1u) {
-                /* Misaligned halfword load: rotated read */
-                uint32_t val = bus_read16(cpu->bus, addr & ~1u);
-                cpu->regs[rd] = (val >> 8) | (val << 24);
-            } else {
-                cpu->regs[rd] = bus_read16(cpu->bus, addr);
-            }
+            cpu->regs[rd] = cpu_load16_rot(cpu, addr);
             break;
 
         case 2: /* LDRSB: signed byte */
@@ -536,14 +518,7 @@ static int arm_halfword_transfer(ARM7TDMI* cpu, uint32_t instr) {
             break;
 
         case 3: /* LDRSH: signed halfword */
-            if (addr & 1u) {
-                /* Misaligned LDRSH: loads byte, sign-extends to 32 */
-                cpu->regs[rd] = (uint32_t)(int32_t)(int8_t)bus_read8(
-                    cpu->bus, addr);
-            } else {
-                cpu->regs[rd] = (uint32_t)(int32_t)(int16_t)bus_read16(
-                    cpu->bus, addr);
-            }
+            cpu->regs[rd] = cpu_load16_signed(cpu, addr);
             break;
 
         default: /* SH=0: should not reach here */
@@ -704,74 +679,29 @@ static int arm_data_processing(ARM7TDMI* cpu, uint32_t instr) {
         is_logical = true;
         break;
 
-    case 0x2: { /* SUB: Rd = Rn - Op2 */
-        uint64_t res64 = (uint64_t)rn_val + (uint64_t)~op2 + 1ULL;
-        result = (uint32_t)res64;
-        if (set_flags) {
-            set_nz_flags(cpu, result);
-            set_c_flag(cpu, res64 > 0xFFFFFFFF);
-            set_v_flag(cpu, sub_overflow(rn_val, op2, result));
-        }
+    case 0x2: /* SUB: Rd = Rn - Op2 */
+        result = alu_sub(cpu, rn_val, op2, 1, set_flags);
         break;
-    }
 
-    case 0x3: { /* RSB: Rd = Op2 - Rn */
-        uint64_t res64 = (uint64_t)op2 + (uint64_t)~rn_val + 1ULL;
-        result = (uint32_t)res64;
-        if (set_flags) {
-            set_nz_flags(cpu, result);
-            set_c_flag(cpu, res64 > 0xFFFFFFFF);
-            set_v_flag(cpu, sub_overflow(op2, rn_val, result));
-        }
+    case 0x3: /* RSB: Rd = Op2 - Rn */
+        result = alu_sub(cpu, op2, rn_val, 1, set_flags);
         break;
-    }
 
-    case 0x4: { /* ADD: Rd = Rn + Op2 */
-        uint64_t res64 = (uint64_t)rn_val + (uint64_t)op2;
-        result = (uint32_t)res64;
-        if (set_flags) {
-            set_nz_flags(cpu, result);
-            set_c_flag(cpu, res64 > 0xFFFFFFFF);
-            set_v_flag(cpu, add_overflow(rn_val, op2, result));
-        }
+    case 0x4: /* ADD: Rd = Rn + Op2 */
+        result = alu_add(cpu, rn_val, op2, 0, set_flags);
         break;
-    }
 
-    case 0x5: { /* ADC: Rd = Rn + Op2 + C */
-        uint64_t res64 = (uint64_t)rn_val + (uint64_t)op2 +
-                         (uint64_t)old_c;
-        result = (uint32_t)res64;
-        if (set_flags) {
-            set_nz_flags(cpu, result);
-            set_c_flag(cpu, res64 > 0xFFFFFFFF);
-            set_v_flag(cpu, add_overflow(rn_val, op2, result));
-        }
+    case 0x5: /* ADC: Rd = Rn + Op2 + C */
+        result = alu_add(cpu, rn_val, op2, old_c, set_flags);
         break;
-    }
 
-    case 0x6: { /* SBC: Rd = Rn - Op2 - !C = Rn + ~Op2 + C */
-        uint64_t res64 = (uint64_t)rn_val + (uint64_t)~op2 +
-                         (uint64_t)old_c;
-        result = (uint32_t)res64;
-        if (set_flags) {
-            set_nz_flags(cpu, result);
-            set_c_flag(cpu, res64 > 0xFFFFFFFF);
-            set_v_flag(cpu, sub_overflow(rn_val, op2, result));
-        }
+    case 0x6: /* SBC: Rd = Rn - Op2 - !C */
+        result = alu_sub(cpu, rn_val, op2, old_c, set_flags);
         break;
-    }
 
-    case 0x7: { /* RSC: Rd = Op2 - Rn - !C = Op2 + ~Rn + C */
-        uint64_t res64 = (uint64_t)op2 + (uint64_t)~rn_val +
-                         (uint64_t)old_c;
-        result = (uint32_t)res64;
-        if (set_flags) {
-            set_nz_flags(cpu, result);
-            set_c_flag(cpu, res64 > 0xFFFFFFFF);
-            set_v_flag(cpu, sub_overflow(op2, rn_val, result));
-        }
+    case 0x7: /* RSC: Rd = Op2 - Rn - !C */
+        result = alu_sub(cpu, op2, rn_val, old_c, set_flags);
         break;
-    }
 
     case 0x8: /* TST: Rn & Op2, flags only */
         result = rn_val & op2;
@@ -787,25 +717,15 @@ static int arm_data_processing(ARM7TDMI* cpu, uint32_t instr) {
         set_flags = true;
         break;
 
-    case 0xA: { /* CMP: Rn - Op2, flags only */
-        uint64_t res64 = (uint64_t)rn_val + (uint64_t)~op2 + 1ULL;
-        result = (uint32_t)res64;
+    case 0xA: /* CMP: Rn - Op2, flags only */
+        result = alu_sub(cpu, rn_val, op2, 1, true);
         write_result = false;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, sub_overflow(rn_val, op2, result));
         break;
-    }
 
-    case 0xB: { /* CMN: Rn + Op2, flags only */
-        uint64_t res64 = (uint64_t)rn_val + (uint64_t)op2;
-        result = (uint32_t)res64;
+    case 0xB: /* CMN: Rn + Op2, flags only */
+        result = alu_add(cpu, rn_val, op2, 0, true);
         write_result = false;
-        set_nz_flags(cpu, result);
-        set_c_flag(cpu, res64 > 0xFFFFFFFF);
-        set_v_flag(cpu, add_overflow(rn_val, op2, result));
         break;
-    }
 
     case 0xC: /* ORR: Rd = Rn | Op2 */
         result = rn_val | op2;
