@@ -1343,7 +1343,7 @@ TEST(panel_tab_bar_fits_every_hint) {
     ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_RUN, NULL, false, &run, false), "[ ] scroll   D details");
     ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_HUNT, NULL, false, NULL, false), "[ ] target   , . nature");
     /* Pages with their own keys drop the F10 prefix; Battle and Route keep it. */
-    ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_PARTY, NULL, false, NULL, false), "[ ] select");
+    ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_PARTY, NULL, false, NULL, false), "[ ] select   C card");
     ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_ENCOUNTERS, NULL, false, NULL, false), "F10 page");
     ASSERT_STR_EQ(game_panel_hint(GAME_PAGE_COUNT, NULL, false, NULL, false), "F10 page");
 }

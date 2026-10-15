@@ -17,6 +17,7 @@
 #include "frontend/overworld_draw.h"
 #include "frontend/prefs.h"
 #include "frontend/video_filter.h"
+#include "frontend/trainer_card_draw.h"
 #include "game/feebas.h"
 #include "game/follower.h"
 #include "game/game.h"
@@ -162,6 +163,52 @@ static void settings_toast(void* user, ToastKind kind, const char* title, const 
     frontend_toast((Frontend*)user, kind, title, detail);
 }
 
+/* Serves a C / Shift+C press. Save blocks move on warps, so the card is only made from a
+ * read that matches the previous pass; paused, the second pass reads the same memory. */
+static void card_tick(Frontend* fe, GBA* gba) {
+    static TrainerCardData prev, cur;
+    static uint8_t tries;
+    GameMem gm = {gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size};
+    CardStatus st = trainer_card_read(&s_game, &gm, &cur);
+    const char* warn = st == CARD_NOT_EMERALD ? "Trainer cards need Pokemon Emerald"
+                     : st == CARD_NO_TEAM     ? "No team to show yet"
+                     : st == CARD_FACILITY    ? "Not available here"
+                                              : NULL;
+    if (warn) {
+        frontend_toast(fe, TOAST_WARN, warn, NULL);
+        fe->card_requested = 0;
+        tries = 0;
+        return;
+    }
+    if (tries == 0 || cur.sig != prev.sig) {
+        prev = cur;
+        if (++tries > 10) {
+            frontend_toast(fe, TOAST_ERROR, "Couldn't read your team", "Try again in a moment");
+            fe->card_requested = 0;
+            tries = 0;
+        }
+        return;
+    }
+    int sel = -1;
+    if (fe->panel_visible &&
+        game_panel_resolve_page((GamePage)fe->panel_page, s_game.snap.context) == GAME_PAGE_PARTY)
+        sel = fe->panel_sel;
+    NuzKey mvp;
+    bool has_mvp = run_session_mvp_key(&s_run, &mvp);
+    int ace = trainer_card_pick_ace(&cur, sel, has_mvp ? &mvp : NULL);
+    CardStyle style = (CardStyle)(fe->card_requested - 1);
+    char path[512];
+    trainer_card_path(fe->rom_path, time(NULL), path, sizeof(path));
+    if (trainer_card_save(&s_game, &gm, &cur, style, ace, path)) {
+        LOG_INFO("Trainer card saved: %s", path);
+        frontend_toast(fe, TOAST_OK, "Trainer card saved", path_base(path));
+    } else {
+        frontend_toast(fe, TOAST_ERROR, "Couldn't save trainer card", NULL);
+    }
+    fe->card_requested = 0;
+    tries = 0;
+}
+
 /* Runs the query and the selected species' detail again after the Search view changed.
  * Both come from the ROM only; caught marks are drawn from the snapshot. */
 static void search_rebuild(Frontend* fe, GBA* gba) {
@@ -291,6 +338,8 @@ static void print_usage(const char* prog) {
     printf("  --library-out <file>   Render the library for --library-folder to a PNG and exit (no ROM)\n");
     printf("  --xray-out <file>      Headless: render the Hardware X-Ray window to a PNG after the run\n");
     printf("  --overworld-out <f>    Headless: final frame at 3x with the Overworld X-Ray drawn, as PNG\n");
+    printf("  --card-out <file>      Headless: render the trainer card (team PNG, 1200x630) after the run\n");
+    printf("  --card-style <s>       Headless: trainer card style, grid|ace (default: grid; --panel-select picks the ace)\n");
     printf("  --video-filter <name>  Screen filter, sharp|smooth|soft (overrides Settings for this run)\n");
     printf("  --color-correct        LCD color correction (overrides Settings for this run)\n");
     printf("  --video-out <file>     Headless: final frame through the screen filter for --scale, as PNG\n");
@@ -338,6 +387,8 @@ int main(int argc, char* argv[]) {
     const char* panel_search_arg = NULL;
     const char* xray_out_path = NULL;
     const char* overworld_out_path = NULL;
+    const char* card_out_path = NULL;
+    const char* card_style_arg = NULL;
     const char* video_filter_arg = NULL;
     const char* video_out_path = NULL;
     bool color_correct_arg = false;
@@ -397,6 +448,10 @@ int main(int argc, char* argv[]) {
             xray_out_path = argv[++i];
         } else if (strcmp(argv[i], "--overworld-out") == 0 && i + 1 < argc) {
             overworld_out_path = argv[++i];
+        } else if (strcmp(argv[i], "--card-out") == 0 && i + 1 < argc) {
+            card_out_path = argv[++i];
+        } else if (strcmp(argv[i], "--card-style") == 0 && i + 1 < argc) {
+            card_style_arg = argv[++i];
         } else if (strcmp(argv[i], "--video-filter") == 0 && i + 1 < argc) {
             video_filter_arg = argv[++i];
         } else if (strcmp(argv[i], "--color-correct") == 0) {
@@ -473,6 +528,15 @@ int main(int argc, char* argv[]) {
     }
     if (overworld_out_path && !headless) {
         LOG_ERROR("--overworld-out requires --headless");
+        return 1;
+    }
+    if ((card_out_path || card_style_arg) && !headless) {
+        LOG_ERROR("--card-out and --card-style require --headless");
+        return 1;
+    }
+    CardStyle card_style = CARD_STYLE_GRID;
+    if (card_style_arg && !card_style_from_name(card_style_arg, &card_style)) {
+        LOG_ERROR("--card-style must be grid or ace (got %s)", card_style_arg);
         return 1;
     }
     if (follower_hgss_path && !headless) {
@@ -849,7 +913,7 @@ int main(int argc, char* argv[]) {
             }
         }
         static GameState dump_state;  /* large; keep off the stack */
-        if (rc == 0 && (game_dump_path || panel_out_path)) {
+        if (rc == 0 && (game_dump_path || panel_out_path || card_out_path)) {
             game_init(&dump_state, gba.cart.rom, gba.cart.rom_size);
             game_update(&dump_state, &gba);
         }
@@ -952,6 +1016,26 @@ int main(int argc, char* argv[]) {
                     rc = 1;
                 }
                 free(px);
+            }
+        }
+        if (rc == 0 && card_out_path) {
+            GameMem gm = {gba.bus.ewram, gba.bus.iwram, gba.cart.rom, gba.cart.rom_size};
+            static TrainerCardData card;
+            CardStatus st = trainer_card_read(&dump_state, &gm, &card);
+            if (st != CARD_OK) {
+                LOG_ERROR("--card-out: %s", st == CARD_NOT_EMERALD ? "not a supported Emerald ROM"
+                                            : st == CARD_NO_TEAM   ? "no party yet"
+                                                                   : "party is not readable (battle facility)");
+                rc = 1;
+            } else {
+                NuzKey mvp;
+                bool has_mvp = run_file && run_session_mvp_key(&s_run, &mvp);
+                int ace = trainer_card_pick_ace(&card, panel_select_arg ? (int)panel_select : -1,
+                                                has_mvp ? &mvp : NULL);
+                if (!trainer_card_save(&dump_state, &gm, &card, card_style, ace, card_out_path)) {
+                    LOG_ERROR("Failed to write --card-out file: %s", card_out_path);
+                    rc = 1;
+                }
             }
         }
         if (rc == 0 && video_out_path) {
@@ -1110,6 +1194,7 @@ int main(int argc, char* argv[]) {
     bool save_fail_reported = false;
     while (fe.running && gba.running) {
         frontend_poll_input(&fe, &gba);
+        if (fe.card_requested) card_tick(&fe, &gba);
 
         // Pause: skip emulation, keep window responsive, mute audio.
         bool now_paused = frontend_is_paused(&fe);

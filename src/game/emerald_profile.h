@@ -61,6 +61,9 @@ typedef struct {
     uint32_t items;              uint16_t item_count;     /* 44-byte stride */
     uint32_t nature_name_ptrs;                            /* 25 pointers */
     uint32_t species_info;                                /* 28-byte stride */
+    uint32_t mon_still_front_pics;   /* CompressedSpriteSheet[] gMonStillFrontPicTable {ptr,u16 size,u16 tag} */
+    uint32_t mon_palettes;           /* CompressedSpritePalette[] gMonPaletteTable {ptr,u16 tag,u16 pad} */
+    uint32_t mon_shiny_palettes;     /* gMonShinyPaletteTable, same layout */
     uint32_t experience_tables;                           /* u32[growth][101] */
     uint32_t species_to_national;                         /* u16, index species-1 */
     uint32_t wild_mon_headers;   uint16_t wild_header_cap; /* 20-byte stride */

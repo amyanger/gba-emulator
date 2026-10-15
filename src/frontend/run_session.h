@@ -82,5 +82,7 @@ void run_session_init(RunSession* s, const GameProfile* p, const char* rom_path,
 /* Once per emulated frame, after nuz_session_frame filled nf. */
 void run_session_frame(RunSession* s, const GameMem* m, const NuzFacts* nf);
 bool run_session_dump(const RunSession* s, FILE* out);
+/* The Run page MVP's key; false without a run log or when nobody has a KO. */
+bool run_session_mvp_key(const RunSession* s, NuzKey* out);
 
 #endif // RUN_SESSION_H

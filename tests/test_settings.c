@@ -285,6 +285,12 @@ TEST(controls_h_is_reserved_for_hq_music) {
     ASSERT_TRUE(settings_controls_reserved(SDL_SCANCODE_H) != NULL);
 }
 
+TEST(controls_c_is_reserved_for_trainer_card) {
+    const char* why = settings_controls_reserved(SDL_SCANCODE_C);
+    ASSERT_TRUE(why != NULL);
+    ASSERT_STR_EQ(why, "C saves a trainer card");
+}
+
 TEST(controls_click_chip_then_key_rebinds) {
     setup(); keymap_reset_defaults();
     st.page = SETTINGS_PAGE_CONTROLS;
@@ -484,6 +490,7 @@ void run_settings_tests(void) {
     RUN_TEST(settings_audio_volume_and_start_muted);
     RUN_TEST(settings_audio_hq_music_switch);
     RUN_TEST(controls_h_is_reserved_for_hq_music);
+    RUN_TEST(controls_c_is_reserved_for_trainer_card);
     RUN_TEST(controls_click_chip_then_key_rebinds);
     RUN_TEST(controls_reserved_key_refused_keeps_listening);
     RUN_TEST(controls_unbindable_key_refused_keeps_listening);

@@ -253,6 +253,30 @@ TEST(snapshot_overworld_party_and_encounters) {
     ASSERT_MEM_EQ(before, s_ewram, sizeof(s_ewram));
 }
 
+TEST(snapshot_party_species_id_and_shiny) {
+    build_world();
+    at(0x02000000)[0] = 3;
+    uint8_t plain[4][12];
+    fixture_plain_mon(plain, 1);
+    /* slot 0: pid 0 / ot 1 -> xor 1 < 8, shiny */
+    fixture_encode_mon(at(0x02000400), 0, 1, plain, 0x02);
+    /* slot 1: ot 0xFFFF -> not shiny */
+    fixture_encode_mon(at(0x02000400 + 100), 0, 0xFFFF, plain, 0x02);
+    /* slot 2: shiny pid but an egg (IV word bit 30) */
+    fixture_put32(plain[3] + 4, 0x7FFFFFFFu | (1u << 31));
+    fixture_encode_mon(at(0x02000400 + 200), 0, 1, plain, 0x02);
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.party_count, 3);
+    ASSERT_EQ(gs->snap.party[0].species_id, 1);
+    ASSERT_TRUE(gs->snap.party[0].shiny);
+    ASSERT_EQ(gs->snap.party[1].species_id, 1);
+    ASSERT_TRUE(!gs->snap.party[1].shiny);
+    ASSERT_TRUE(gs->snap.party[2].egg);
+    ASSERT_TRUE(!gs->snap.party[2].shiny);
+}
+
 TEST(snapshot_map_name_empty_when_section_unknown) {
     build_world();
     GameState* gs = test_state();
@@ -848,6 +872,7 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_without_profile_explains);
     RUN_TEST(snapshot_waits_when_save_pointers_invalid);
     RUN_TEST(snapshot_overworld_party_and_encounters);
+    RUN_TEST(snapshot_party_species_id_and_shiny);
     RUN_TEST(snapshot_map_name_empty_when_section_unknown);
     RUN_TEST(snapshot_wild_battle_matchups_and_catch);
     RUN_TEST(snapshot_hidden_power_uses_the_players_ivs);

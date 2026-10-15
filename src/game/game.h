@@ -38,6 +38,8 @@ typedef struct {
     uint32_t exp_to_next;
     uint16_t hp, max_hp;
     uint8_t type_ids[2]; /* 0xFF when unknown */
+    uint16_t species_id; /* internal species index (sprite tables); 0 when bad */
+    bool shiny;          /* never set for eggs */
 } GamePartyMon;
 
 typedef struct {

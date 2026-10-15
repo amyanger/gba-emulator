@@ -53,6 +53,9 @@ const GameProfile g_emerald_profile = {
     .items = 0x085839A0, .item_count = 377,
     .nature_name_ptrs = 0x0861CB50,
     .species_info = 0x083203CC,
+    .mon_still_front_pics = 0x08301418, /* gMonStillFrontPicTable; gMonFrontPicTable 0x0830A18C has 2-frame sheets */
+    .mon_palettes = 0x08303678,         /* gMonPaletteTable */
+    .mon_shiny_palettes = 0x08304438,   /* gMonShinyPaletteTable, tag = species + 500 */
     .experience_tables = 0x0831F72C,
     .species_to_national = 0x0831DC82,
     .wild_mon_headers = 0x08552D48, .wild_header_cap = 200,

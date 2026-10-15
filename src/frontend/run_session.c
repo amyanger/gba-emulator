@@ -404,6 +404,14 @@ static int pick_mvp(const RunLog* log) {
     return best;
 }
 
+bool run_session_mvp_key(const RunSession* s, NuzKey* out) {
+    if (s->view.state != RUN_VIEW_RUN) return false;
+    int i = pick_mvp(&s->log);
+    if (i < 0) return false;
+    *out = s->log.members[i].key;
+    return true;
+}
+
 typedef struct { uint8_t stat; const char* pre; const char* one; const char* many; } FunFact;
 static const FunFact k_fun[] = {
     { RUN_STAT_LEDGES,        "Jumped ",                 " ledge",  " ledges" },

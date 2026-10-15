@@ -124,6 +124,7 @@ typedef struct Frontend {
     bool save_requested;
     bool load_requested;
     bool screenshot_requested; // F12 — captured at next frame boundary
+    uint8_t card_requested;    /* C / Shift+C: 0 none, else 1 + CardStyle; served at the next loop pass, even while paused */
     char rom_path[256];        // Copy of ROM path for building slot filenames
 
     // Fast-forward

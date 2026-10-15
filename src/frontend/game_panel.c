@@ -2083,7 +2083,7 @@ static int tab_index(GamePage shown) {
 const char* game_panel_hint(GamePage shown, const NuzView* nuz, bool search_focused, const RunView* run,
                             bool run_details) {
     switch (tab_index(shown)) {
-    case 1: return "[ ] select";
+    case 1: return "[ ] select   C card";
     case 3: return nuz && nuz->state == NUZ_VIEW_NO_RUN ? "N start" : "[ ] view";
     case 4: return "[ ] place   B alerts";
     case 5: return search_focused ? "Up/Down  Esc done" : "/ search";

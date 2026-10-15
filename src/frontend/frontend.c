@@ -13,6 +13,7 @@
 #include "input/keymap.h"
 #include "frontend/rom_picker.h"
 #include "frontend/run_panel.h"
+#include "frontend/trainer_card_draw.h"
 #include "ui/ui_theme.h"
 #include <math.h>
 #include <stdlib.h>
@@ -1386,6 +1387,11 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             // Screenshot hotkey
             if (has_rom_path && scan == SDL_SCANCODE_F12 && !event.key.repeat) {
                 fe->screenshot_requested = true;
+            }
+            /* C saves a trainer card (Shift+C the Ace style) unless the keymap binds C. */
+            if (has_rom_path && keymap_lookup(scan) == 0) {
+                uint8_t card = trainer_card_key_request((int32_t)scan, event.key.keysym.mod, event.key.repeat != 0);
+                if (card) fe->card_requested = card;
             }
 
             // Slot selection (number keys 0-9)

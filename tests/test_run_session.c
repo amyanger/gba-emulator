@@ -316,6 +316,8 @@ TEST(run_session_off_without_profile) {
     frames(&s_a, 5, 1);
     ASSERT_EQ(s_a.view.state, RUN_VIEW_OFF);
     ASSERT_TRUE(!s_a.attached);
+    NuzKey k;
+    ASSERT_TRUE(!run_session_mvp_key(&s_a, &k));
 }
 
 /* ---- View logic, with events put straight into the log of a file-less session ---- */
@@ -437,6 +439,8 @@ TEST(run_session_team_total) {
 TEST(run_session_mvp) {
     ready();
     ASSERT_STR_EQ(s_a.view.mvp, "");   /* no KOs, no MVP */
+    NuzKey mk;
+    ASSERT_TRUE(!run_session_mvp_key(&s_a, &mk));
     join(0x77770001, 3, RUN_HOW_GIFT, 4);
     RunEvent b = battle(2);
     add_ko(&b, KEY_ZIGGY, 2, 7);       /* +2 levels */
@@ -444,6 +448,8 @@ TEST(run_session_mvp) {
     inject(&b);
     ASSERT_STR_EQ(s_a.view.mvp, "Poochyena" " \xC2\xB7 " "2 KOs, never fainted");
     ASSERT_TRUE(s_a.view.team[2].mvp && !s_a.view.team[0].mvp);
+    ASSERT_TRUE(run_session_mvp_key(&s_a, &mk));
+    ASSERT_TRUE(nuz_key_eq(mk, key(0x77770001)));
     RunEvent f = ev_new(RUN_EV_FAINT);
     f.key = key(0x77770001);
     f.species = 3;
@@ -454,6 +460,8 @@ TEST(run_session_mvp) {
     inject(&b2);
     /* Backfilled Ziggy never fainted either, but was not watched: no "never fainted". */
     ASSERT_STR_EQ(s_a.view.mvp, "Ziggy" " \xC2\xB7 " "3 KOs");
+    ASSERT_TRUE(run_session_mvp_key(&s_a, &mk));
+    ASSERT_TRUE(nuz_key_eq(mk, key(KEY_ZIGGY)));
 }
 
 TEST(run_session_closest_call) {

@@ -5,6 +5,7 @@
 #include "game/daycare.h"
 #include "game/gen3_text.h"
 #include "game/hunt_read.h"
+#include "game/nuzlocke_read.h"
 #include "gba.h"
 #include "cartridge/rtc.h"
 #include <string.h>
@@ -155,6 +156,8 @@ void game_fill_mon(const GameMem* m, const GameProfile* p, const MonData* d, Gam
         return;
     }
     out->egg = d->is_egg;
+    out->species_id = d->species;
+    out->shiny = !d->is_egg && nuz_is_shiny(d->personality, d->ot_id);
     out->hp = d->hp;
     out->max_hp = d->max_hp;
     gen3_decode(d->nickname_raw, sizeof(d->nickname_raw), out->nickname, GAME_NAME_LEN);
