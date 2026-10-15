@@ -1,4 +1,5 @@
 #include "game/game.h"
+#include "game/emerald_layout.h"
 #include "game/battle_info.h"
 #include "game/damage_read.h"
 #include "game/daycare.h"
@@ -10,60 +11,20 @@
 #include <time.h>
 
 /* SaveBlock1 / SaveBlock2 (pokeemerald include/global.h) */
-#define SB1_MAP_GROUP    0x04
-#define SB1_MAP_NUM      0x05
 #define SB1_BALL_POCKET  0x650
-#define SB1_FLAGS        0x1270
 #define SB1_DEX_SEEN1    0x988
 #define SB1_DEX_SEEN2    0x3B24
 #define SB1_MIN_SIZE     (SB1_DEX_SEEN2 + 52)
-#define SB2_TRAINER_ID   0x0A
-#define SB2_DEX_OWNED    0x28
-#define SB2_DEX_SEEN     0x5C
 #define SB2_ENCRYPT_KEY  0xAC
 #define SB2_MIN_SIZE     (SB2_ENCRYPT_KEY + 4)
 #define BALL_POCKET_SLOTS 16
 
-/* struct BattlePokemon (include/pokemon.h) */
-#define BMON_SIZE        0x58
-#define BMON_SPECIES     0x00
-#define BMON_MOVES       0x0C
-#define BMON_IVS         0x14
-#define BMON_ABILITY     0x20
-#define BMON_TYPE1       0x21
-#define BMON_TYPE2       0x22
-#define BMON_HP          0x28
-#define BMON_LEVEL       0x2A
-#define BMON_MAX_HP      0x2C
-#define BMON_ITEM        0x2E
-#define BMON_PERSONALITY 0x48
-#define BMON_STATUS1     0x4C
-#define BMON_STATUS2     0x50
-#define STATUS2_FORESIGHT (1u << 29)
-
-/* struct SpeciesInfo */
-#define SPECIES_INFO_SIZE 28
-#define SI_TYPE1          0x06
-#define SI_TYPE2          0x07
-#define SI_CATCH_RATE     0x08
-#define SI_GENDER_RATIO   0x10
-#define SI_GROWTH_RATE    0x13
-#define SI_EGG_GROUP1     0x14
-#define SI_EGG_GROUP2     0x15
-#define SI_ABILITY1       0x16
-#define SI_ABILITY2       0x17
-
-#define BATTLE_MOVE_SIZE  12
-#define ITEM_SIZE         44
 #define ITEM_NAME_LEN     14
 #define SPECIES_NAME_STRIDE 11
 #define MOVE_NAME_STRIDE  13
 #define ABILITY_NAME_STRIDE 13
 #define TYPE_NAME_STRIDE  7
 
-#define BATTLE_TYPE_TRAINER (1u << 3)
-#define BATTLE_TYPE_SAFARI  (1u << 7)
-#define MAP_HEADER_REGION_MAP_SEC 0x14
 #define MAP_HEADER_MAP_TYPE 0x17
 #define MAP_TYPE_UNDERWATER 5
 #define TYPE_TABLE_MAX 512
@@ -480,8 +441,8 @@ void game_update_mem(GameState* gs, const GameMem* m) {
         if (national != 0 && dex_caught(m, p, sb1, sb2, sp))
             s->dex_caught[(national - 1u) / 8] |= (uint8_t)(1u << ((national - 1u) % 8));
     }
-    game_mem_read8(m, sb1 + SB1_MAP_GROUP, &s->map_group);
-    game_mem_read8(m, sb1 + SB1_MAP_NUM, &s->map_num);
+    game_mem_read8(m, sb1 + SB1_LOC_GROUP, &s->map_group);
+    game_mem_read8(m, sb1 + SB1_LOC_NUM, &s->map_num);
     game_mem_read8(m, p->map_header + MAP_HEADER_MAP_TYPE, &s->map_type);
     map_name(m, p, s->map_name);
     read_party(m, p, s);
@@ -545,8 +506,6 @@ void game_read_berries(GameState* gs, const GBA* gba, BerryView* out) {
     read_clock(gba, &gs->clock);
     berry_read(&gs->places, gs->profile, &m, &gs->clock, out);
 }
-
-#define BOX_MON_SIZE 0x50 /* struct BoxPokemon, the start of a DaycareMon */
 
 /* Level for exp on a growth rate's row of gExperienceTables; false when unreadable. */
 static bool level_for_exp(const GameMem* m, const GameProfile* p, uint8_t growth, uint32_t exp,

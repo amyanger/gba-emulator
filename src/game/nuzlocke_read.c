@@ -1,27 +1,16 @@
 #include "game/nuzlocke_read.h"
+#include "game/emerald_layout.h"
 #include "game/pokemon.h"
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
 /* SaveBlock2 (include/global.h) */
-#define SB2_TRAINER_ID 0x0A
 #define SB2_PLAY_TIME  0x0E  /* u16 hours, u8 minutes, u8 seconds, u8 frames */
 #define SB2_MIN_SIZE   0x13
 #define SB1_MIN_SIZE   0x3E08
 
-#define MAP_HEADER_REGION_MAP_SEC 0x14
-#define BOX_MON_SIZE    80
-#define STORAGE_BOXES   4     /* offset of boxes[14][30] in struct PokemonStorage */
 #define STORAGE_SIZE    (STORAGE_BOXES + NUZ_BOX_MAX * BOX_MON_SIZE)
-
-/* struct SpeciesInfo growthRate, struct Evolution {method, param, target, pad} x 5 */
-#define SPECIES_INFO_SIZE 28
-#define SI_GROWTH_RATE    0x13
-#define EVO_ENTRY_SIZE    8
-#define EVOS_PER_MON      5
-
-#define BMON_SIZE 0x58
 
 bool nuz_key_eq(NuzKey a, NuzKey b) {
     return a.pid == b.pid && a.ot == b.ot && a.variant == b.variant;

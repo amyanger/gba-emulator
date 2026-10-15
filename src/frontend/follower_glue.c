@@ -1,5 +1,6 @@
 #include "frontend/follower_glue.h"
 #include "gba.h"
+#include "game/emerald_layout.h"
 #include "game/encounters.h"
 #include "game/follower_ctx.h"
 #include "game/follower_places.h"
@@ -8,20 +9,11 @@
 
 /* Following Pokemon (F1) glue between the emulated frame, the follower view and the talk.
  * Struct offsets from pret/pokeemerald (global.h, pokemon.h, item.h, global.fieldmap.h). */
-#define FOL_SPECIES_INFO_SIZE 28
-#define FOL_SI_TYPE1          6
-#define FOL_SI_TYPE2          7
-#define FOL_SI_GENDER_RATIO   0x10
-#define FOL_ITEM_SIZE         44
 #define FOL_ITEM_POCKET       0x1A
 #define FOL_SPECIES_NAME_LEN  11
 #define FOL_ITEM_NAME_LEN     14
 #define FOL_PLAYER_NAME_LEN   8      /* 7 characters and 0xFF */
-#define FOL_SB2_LOCAL_TIME    0x98   /* struct Time localTimeOffset {s16 days; s8 hours, minutes, seconds} */
 #define FOL_AVATAR_OBJ_ID     0x05
-#define FOL_OBJ_COUNT         16
-#define FOL_OBJ_SIZE          0x24
-#define FOL_OBJ_CUR           0x10
 #define FOL_PAL_TAG_GRASS     0x1005 /* FLDEFF_PAL_TAG_GENERAL_1, the tall grass palette */
 #define FOL_FAINT_MOOD        (-80)
 
@@ -89,12 +81,12 @@ static bool follower_script_ok(uint16_t result, void* ud) {
 static uint8_t follower_adjacent_objects(const GameProfile* p, const GameMem* m, const FollowerInput* in) {
     uint8_t player = 0xFF, count = 0;
     game_mem_read8(m, p->player_avatar + FOL_AVATAR_OBJ_ID, &player);
-    for (uint32_t i = 0; i < FOL_OBJ_COUNT; i++) {
-        uint8_t obj[FOL_OBJ_CUR + 4];
-        if (i == player || !game_mem_copy(m, p->object_events + i * FOL_OBJ_SIZE, obj, sizeof(obj)) || !(obj[0] & 1))
+    for (uint32_t i = 0; i < OBJ_COUNT; i++) {
+        uint8_t obj[OBJ_CUR + 4];
+        if (i == player || !game_mem_copy(m, p->object_events + i * OBJ_SIZE, obj, sizeof(obj)) || !(obj[0] & 1))
             continue;
-        int32_t dx = (int16_t)(obj[FOL_OBJ_CUR] | obj[FOL_OBJ_CUR + 1] << 8) - in->cur_x;
-        int32_t dy = (int16_t)(obj[FOL_OBJ_CUR + 2] | obj[FOL_OBJ_CUR + 3] << 8) - in->cur_y;
+        int32_t dx = (int16_t)(obj[OBJ_CUR] | obj[OBJ_CUR + 1] << 8) - in->cur_x;
+        int32_t dy = (int16_t)(obj[OBJ_CUR + 2] | obj[OBJ_CUR + 3] << 8) - in->cur_y;
         if (dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1) count++;
     }
     return count;
@@ -121,8 +113,8 @@ static uint8_t follower_hour(const GBA* gba, const GameProfile* p, const GameMem
     int32_t minutes = tm ? tm->tm_hour * 60 + tm->tm_min : 12 * 60;
     uint32_t sb2 = 0;
     uint8_t h = 0, mi = 0;
-    if (game_mem_read32(m, p->save_block2_ptr, &sb2) && game_mem_read8(m, sb2 + FOL_SB2_LOCAL_TIME + 2, &h) &&
-        game_mem_read8(m, sb2 + FOL_SB2_LOCAL_TIME + 3, &mi))
+    if (game_mem_read32(m, p->save_block2_ptr, &sb2) && game_mem_read8(m, sb2 + SB2_LOCAL_TIME_OFFSET + 2, &h) &&
+        game_mem_read8(m, sb2 + SB2_LOCAL_TIME_OFFSET + 3, &mi))
         minutes -= (int8_t)h * 60 + (int8_t)mi;
     minutes %= 24 * 60;
     if (minutes < 0) minutes += 24 * 60;
@@ -150,7 +142,7 @@ static void follower_strvars(const GameProfile* p, const GameMem* m, const Follo
         game_mem_read32(m, p->region_map_entries + 8u * in->mapsec + 4, &name))
         follower_strvar(m, name, HGSS_STRVAR_MAX, s_fol_vars.s[3]);
     if (mon->held_item != 0 && mon->held_item < p->item_count)
-        follower_strvar(m, p->items + (uint32_t)mon->held_item * FOL_ITEM_SIZE, FOL_ITEM_NAME_LEN, s_fol_vars.s[4]);
+        follower_strvar(m, p->items + (uint32_t)mon->held_item * ITEM_SIZE, FOL_ITEM_NAME_LEN, s_fol_vars.s[4]);
 }
 
 /* Animation and text pages for the talk's current step. */
@@ -187,13 +179,13 @@ static void follower_talk_begin(Frontend* fe, const GBA* gba, const GameMem* m) 
 
     FollowerCtxExtra x;
     memset(&x, 0, sizeof(x));
-    uint32_t info = p->species_info + (uint32_t)mon->species * FOL_SPECIES_INFO_SIZE;
+    uint32_t info = p->species_info + (uint32_t)mon->species * SPECIES_INFO_SIZE;
     x.gender_ratio = 0xFF;
-    game_mem_read8(m, info + FOL_SI_TYPE1, &x.type1);
-    game_mem_read8(m, info + FOL_SI_TYPE2, &x.type2);
-    game_mem_read8(m, info + FOL_SI_GENDER_RATIO, &x.gender_ratio);
+    game_mem_read8(m, info + SI_TYPE1, &x.type1);
+    game_mem_read8(m, info + SI_TYPE2, &x.type2);
+    game_mem_read8(m, info + SI_GENDER_RATIO, &x.gender_ratio);
     if (mon->held_item != 0 && mon->held_item < p->item_count)
-        game_mem_read8(m, p->items + (uint32_t)mon->held_item * FOL_ITEM_SIZE + FOL_ITEM_POCKET, &x.item_pocket);
+        game_mem_read8(m, p->items + (uint32_t)mon->held_item * ITEM_SIZE + FOL_ITEM_POCKET, &x.item_pocket);
     if (national <= sizeof(a->species_class_tbl)) x.species_class = a->species_class_tbl[national - 1];
     x.adjacent_objects = follower_adjacent_objects(p, m, in);
     if (fe->overworld_xray && fe->ow_feed)

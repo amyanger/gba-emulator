@@ -1,21 +1,16 @@
 #include "game/mirage.h"
+#include "game/emerald_layout.h"
 #include "game/game.h"
 #include "game/pokemon.h"
 #include <stdio.h>
 #include <string.h>
 
 /* SaveBlock1.vars[] at 0x139C (include/global.h), indexed by var id - 0x4000. */
-#define SB1_VARS           0x139C
 #define SB1_VAR(id)        (SB1_VARS + 2u * ((uint32_t)(id) - 0x4000u))
 #define VAR_MIRAGE_RND_H   0x4024
 #define VAR_MIRAGE_RND_L   0x4025
 #define VAR_DAYS           0x4040
-#define SB1_FLAGS          0x1270
-#define FLAG_SYS_CLOCK_SET 0x895   /* SYSTEM_FLAGS (0x860) + 0x35 */
-#define SB2_LOCAL_TIME_OFFSET 0x98 /* struct Time: s16 days, s8 hours, minutes, seconds */
 
-#define BOX_MON_SIZE   80
-#define STORAGE_BOXES  4           /* boxes[14][30] after the u8 currentBox and padding */
 #define BOX_SLOTS      30
 #define BOX_REFRESH    60          /* snapshots between PC box reads */
 #define LOCAL_DAYS_MAX 32767       /* gLocalTime.days is s16 */

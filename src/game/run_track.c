@@ -1,9 +1,9 @@
 #include "game/run_track.h"
+#include "game/emerald_layout.h"
 #include <string.h>
 
 /* gBattleTypeFlags bits (include/constants/battle.h) */
 #define BT_SAFARI         (1u << 7)
-#define BT_INGAME_PARTNER (1u << 22)
 /* gBattleOutcome */
 #define OUTCOME_WON 1
 /* Room kept free each frame for edge events: 6 FAINTs, a WHITEOUT and a BATTLE. */

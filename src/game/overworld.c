@@ -1,4 +1,5 @@
 #include "game/overworld.h"
+#include "game/emerald_layout.h"
 #include <stdlib.h>
 #include <string.h>
 #include "game/feebas.h"
@@ -7,8 +8,6 @@
 
 /* Struct offsets (pret/pokeemerald include/global.fieldmap.h, include/sprite.h,
  * include/global.h); see the overworld research docs for verification marks. */
-#define OBJ_COUNT          16
-#define OBJ_SIZE           0x24
 #define OBJ_FLAGS0         0x00   /* bit0 active */
 #define OBJ_FLAGS2         0x02   /* bit0 isPlayer */
 #define OBJ_SPRITE         0x04
@@ -16,10 +15,6 @@
 #define OBJ_LOCAL_ID       0x08
 #define OBJ_MAP_NUM        0x09
 #define OBJ_MAP_GROUP      0x0A
-#define OBJ_ELEVATION      0x0B   /* low nibble: currentElevation */
-#define OBJ_CUR            0x10   /* s16 x, y in VMap coords */
-#define OBJ_PREV           0x14
-#define OBJ_DIRS           0x18   /* low nibble: facingDirection 1..4 */
 #define OBJ_RANGE          0x1D   /* trainerRange_berryTreeId */
 #define OBJ_BEHAVIOR       0x1E   /* currentMetatileBehavior */
 #define TRAINER_TYPE_NORMAL 1
@@ -34,34 +29,20 @@
 #define SPR_CTC_Y          0x29   /* s8 centerToCornerVecY */
 
 #define SB1_POS            0x00   /* s16 x, y: map coords of the screen's top-left tile */
-#define SB1_LOC_GROUP      0x04
-#define SB1_LOC_NUM        0x05
 #define SB1_TEMPLATES      0xC70  /* ObjectEventTemplate[64] */
 #define SB1_TEMPLATE_CAP   64
-#define SB1_FLAGS          0x1270
 #define SB1_OW_MIN_SIZE    (SB1_FLAGS + 300)
 
-#define TEMPLATE_SIZE      0x18
 #define TEMPLATE_SCRIPT    0x10
 #define TEMPLATE_FLAG      0x14
 #define MAP_HEADER_SIZE    0x1C
-#define MAP_HEADER_LAYOUT  0x00
-#define MAP_HEADER_EVENTS  0x04
 #define MAP_HEADER_CONNS   0x0C
-#define LAYOUT_WIDTH       0x00
-#define LAYOUT_HEIGHT      0x04
-#define LAYOUT_PRIMARY     0x10
-#define LAYOUT_SECONDARY   0x14
-#define TILESET_ATTRS      0x10
-#define EVENTS_OBJ_COUNT   0x00
 #define EVENTS_BG_COUNT    0x03
-#define EVENTS_OBJS        0x04
 #define EVENTS_BGS         0x10
 #define BG_SIZE            12
 #define BG_KIND            0x05
 #define BG_ITEM            0x08
 #define BG_HIDDEN_ID       0x0A
-#define ITEM_SIZE          44     /* struct Item: name[14] first */
 #define SPECIES_NAME_LEN   11
 #define TASK_COUNT         16
 #define TASK_SIZE          0x28
@@ -74,17 +55,10 @@
 #define FLAG_TRAINER_BASE  0x500
 #define FLAG_HIDDEN_BASE   0x1F4
 #define SCRIPT_TRAINERBATTLE 0x5C
-#define TRAINER_SIZE       0x28
 #define TRAINER_CLASS      0x01
 #define CLASS_NAME_LEN     13
 #define CHAR_MALE          0xB5
 #define CHAR_FEMALE        0xB6
-
-#define MAP_OFFSET         7
-#define VMAP_MAX_CELLS     10240
-#define GRID_UNDEFINED     0x03FF
-#define GRID_COLLISION     0x0C00
-#define PRIMARY_METATILES  512
 
 /* Maps with their own trainer lookup (trainer_see.c): the Battle Pyramid floor
  * and the Trainer Hill floors (data/maps/map_groups.json). */

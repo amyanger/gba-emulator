@@ -1,7 +1,6 @@
 #include "game/encounters.h"
+#include "game/emerald_layout.h"
 #include <string.h>
-
-#define WILD_HEADER_SIZE 20
 
 /* Slot odds are compiled into src/wild_encounter.c, not stored in a table. */
 static const uint8_t k_land_odds[12] = {20, 20, 10, 10, 10, 10, 5, 5, 4, 4, 1, 1};

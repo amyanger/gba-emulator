@@ -1,4 +1,5 @@
 #include "game/follower.h"
+#include "game/emerald_layout.h"
 #include <string.h>
 #include "gba.h"
 
@@ -6,16 +7,7 @@
 #define AVATAR_FLAGS       0x00
 #define AVATAR_TILE_STATE  0x03
 #define AVATAR_OBJ_ID      0x05
-#define OBJ_COUNT          16
-#define OBJ_SIZE           0x24
-#define OBJ_ELEVATION      0x0B   /* currentElevation:4, previousElevation:4 */
-#define OBJ_CUR            0x10
-#define OBJ_PREV           0x14
-#define OBJ_DIRS           0x18
 #define OBJ_ACTION         0x1C
-#define SB1_LOC_GROUP      0x04
-#define SB1_LOC_NUM        0x05
-#define MAP_HEADER_MAPSEC  0x14
 #define MAP_HEADER_TYPE    0x17
 #define CAM_X              0x04
 #define CAM_Y              0x08
@@ -28,7 +20,6 @@
 #define PARTY_SLOTS        6
 
 #define AVATAR_ON_BIKE_OR_WATER (0x02 | 0x04 | 0x08 | 0x10)
-#define AVATAR_SURFING     0x08
 #define MAP_TYPE_INDOOR    8
 #define MAP_TYPE_SECRET_BASE 9
 #define HOP_PEAK           12
@@ -84,7 +75,7 @@ bool follower_read(const GameProfile* p, const GameMem* m, int16_t fol_x, int16_
     out->move_action = obj[OBJ_ACTION];
     out->player_elevation = obj[OBJ_ELEVATION] & 0x0F;
 
-    game_mem_read8(m, p->map_header + MAP_HEADER_MAPSEC, &out->mapsec);
+    game_mem_read8(m, p->map_header + MAP_HEADER_REGION_MAP_SEC, &out->mapsec);
     game_mem_read8(m, p->map_header + MAP_HEADER_TYPE, &out->map_type);
     game_mem_read8(m, p->camera, &cam_active);
     out->cam_active = cam_active != 0;

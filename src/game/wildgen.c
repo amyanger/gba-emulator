@@ -1,4 +1,5 @@
 #include "game/wildgen.h"
+#include "game/emerald_layout.h"
 
 #include <string.h>
 
@@ -12,11 +13,9 @@
 #define ABILITY_MAGNET_PULL 42
 #define ABILITY_PRESSURE 46
 #define ABILITY_KEEN_EYE 51
-#define ABILITY_HUSTLE 55
 #define ABILITY_CUTE_CHARM 56
 #define ABILITY_VITAL_SPIRIT 72
 #define TYPE_STEEL 8
-#define TYPE_ELECTRIC 13
 
 #define CERTAIN_MAX_ITERS 14 /* R2: loops this short always ended before the VBlank draw */
 #define NO_SKIP UINT32_MAX

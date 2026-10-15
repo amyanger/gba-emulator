@@ -1,14 +1,11 @@
 #include "game/hunt_read.h"
+#include "game/emerald_layout.h"
 #include "game/encounters.h"
 #include "game/pokemon.h"
 #include "game/daycare.h"
 #include <string.h>
 
 /* SaveBlock1 (include/global.h) */
-#define SB1_MAP_GROUP 0x04
-#define SB1_MAP_NUM 0x05
-#define SB1_FLAGS 0x1270
-#define SB1_VARS 0x139C
 #define VARS_START 0x4000
 
 /* struct Roamer (include/global.h) */
@@ -22,16 +19,7 @@
 #define OUTBREAK_MAP_GROUP 0x03
 
 /* struct WildPokemonHeader {u8 group, num; pad; landMonsInfo*, ...}, WildPokemonInfo {u8 rate} */
-#define WILD_HEADER_SIZE 20
 #define WILD_HEADER_LAND 4
-
-/* struct SpeciesInfo */
-#define SPECIES_INFO_SIZE 28
-#define SI_TYPE1 0x06
-#define SI_TYPE2 0x07
-#define SI_GENDER_RATIO 0x10
-#define SI_ABILITY1 0x16
-#define SI_ABILITY2 0x17
 
 /* include/constants: flags.h, vars.h, global.fieldmap.h, items.h, abilities.h, battle.h */
 #define FLAG_SYS_ENC_UP_ITEM 0x8AD   /* White Flute */
@@ -40,7 +28,6 @@
 #define NUM_ALTERING_CAVE_TABLES 9
 #define AVATAR_MACH_BIKE 0x02
 #define AVATAR_ACRO_BIKE 0x04
-#define AVATAR_SURFING 0x08
 #define ITEM_CLEANSE_TAG 190
 #define ABILITY_STENCH 1
 #define ABILITY_SAND_VEIL 8
@@ -52,7 +39,6 @@
 #define MAX_ENCOUNTER_RATE 2880
 /* src/metatile_behavior.c sTileBitAttributes flags; field_control_avatar.c:670 */
 #define TILE_FLAG_HAS_ENCOUNTERS 0x01
-#define TILE_FLAG_SURFABLE 0x02
 #define WILD_IMMUNITY_STEPS 4
 #define BOX_FLAGS 0x13 /* isBadEgg:1, hasSpecies:1, isEgg:1 */
 #define BOX_HAS_SPECIES 0x02
@@ -348,8 +334,8 @@ bool hunt_read(const GameProfile* p, const GameMem* m, const NuzFacts* nf, bool 
         !game_mem_in_ewram(sb1, (uint32_t)p->roamer_sb1_offset + ROAMER_SIZE) ||
         !game_mem_read32(m, p->rng_value, &out->rng) ||
         !game_mem_read32(m, p->rand_count, &out->rand_count) ||
-        !game_mem_read8(m, sb1 + SB1_MAP_GROUP, &out->map_group) ||
-        !game_mem_read8(m, sb1 + SB1_MAP_NUM, &out->map_num))
+        !game_mem_read8(m, sb1 + SB1_LOC_GROUP, &out->map_group) ||
+        !game_mem_read8(m, sb1 + SB1_LOC_NUM, &out->map_num))
         return false;
     out->valid = true;
     out->otid = nf->trainer_id;

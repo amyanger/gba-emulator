@@ -1,4 +1,5 @@
 #include "game/species_search.h"
+#include "game/emerald_layout.h"
 #include <string.h>
 #include "game/encounters.h"
 #include "game/game.h"
@@ -9,8 +10,6 @@ _Static_assert(SPECIES_MAP_NAME_LEN == GAME_MAP_NAME_LEN, "map name buffers must
 
 #define NAME_BYTES    11
 #define NATIONAL_MAX  386
-#define EVO_ENTRY_SIZE 8
-#define EVOS_PER_MON   5
 #define MAPS_MAX       256
 
 void species_search_normalize(const char* in, char* out, size_t out_size) {
@@ -159,7 +158,6 @@ uint16_t species_search_query(const SpeciesIndex* ix, const char* query, uint16_
 /* ---- Detail: how to get a species ---- */
 
 /* struct MapHeader.regionMapSectionId (pret include/global.fieldmap.h), as in game.c. */
-#define MAP_HEADER_REGION_MAP_SEC 0x14
 #define MAPSEC_UNKNOWN 0xFF
 #define EVO_METHOD_TRADE_ITEM 6
 #define EVO_METHOD_ITEM 7

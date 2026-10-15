@@ -1,4 +1,5 @@
 #include "frontend/run_session.h"
+#include "game/emerald_layout.h"
 #include "common.h"
 #include "frontend/game_panel.h"   /* game_panel_title_case */
 #include "frontend/session_log.h"
@@ -13,12 +14,10 @@
 #define MDOT           " \xC2\xB7 " /* " · " separator */
 
 /* struct Trainer (include/data.h): u8 trainerName[12] at +4, 0x28 bytes each. */
-#define TRAINER_SIZE     0x28
 #define TRAINER_NAME     4
 #define TRAINER_NAME_LEN 12
 /* include/constants/opponents.h: TRAINER_ROXANNE_1 265 .. TRAINER_JUAN_1 272, in badge order. */
 #define TRAINER_GYM_FIRST 265
-#define TRAINER_WALLACE   335
 /* include/constants/species.h */
 #define SPECIES_KYOGRE  404
 #define SPECIES_GROUDON 405

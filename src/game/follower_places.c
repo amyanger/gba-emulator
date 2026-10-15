@@ -1,4 +1,5 @@
 #include "game/follower_places.h"
+#include "game/emerald_layout.h"
 
 /* Emerald region map sections. */
 #define MAPSEC_FIERY_PATH_A 74
@@ -10,8 +11,6 @@
 #define MAPSEC_PETALBURG_WOODS 59
 
 /* Emerald metatile behaviors. */
-#define MB_TALL_GRASS 0x02
-#define MB_LONG_GRASS 0x03
 #define MB_DEEP_SAND 0x06
 #define MB_ICE 0x20
 #define MB_SAND 0x21

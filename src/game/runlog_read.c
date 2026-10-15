@@ -1,36 +1,23 @@
 #include "game/runlog_read.h"
+#include "game/emerald_layout.h"
 #include <string.h>
 
 /* SaveBlock1 / SaveBlock2 (pret include/global.h) */
 #define SB1_LOCATION   0x04     /* struct WarpData: s8 mapGroup, s8 mapNum */
-#define SB1_FLAGS      0x1270   /* u8 flags[NUM_FLAG_BYTES] */
-#define SB1_VARS       0x139C   /* u16 vars[], index id - 0x4000 */
 #define SB1_GAME_STATS 0x159C   /* u32 gameStats[64], stored ^ SB2 encryptionKey */
 #define SB1_READ_SIZE  (SB1_GAME_STATS + 4 * RUN_STATS)
 #define SB1_FLAG_BYTES 300      /* NUM_FLAG_BYTES */
 #define SB2_NAME       0x00
-#define SB2_DEX_OWNED  0x28     /* pokedex (+0x18) owned[52] (+0x10) */
-#define SB2_DEX_SEEN   0x5C     /* pokedex seen[52] (+0x44) */
 #define SB2_KEY        0xAC     /* u32 encryptionKey */
 #define SB2_READ_SIZE  (SB2_KEY + 4)
 #define DEX_COUNT      386      /* NATIONAL_DEX_COUNT, bit n-1 = national dex n */
 
 /* include/constants/flags.h, vars.h */
-#define FLAG_BADGE01_GET 0x867
 #define TRAINER_FLAGS_START 0x500
 #define VAR_STARTER_MON 0x4023
-#define TRAINER_WALLACE 335
-
-/* struct BattlePokemon (include/pokemon.h) */
-#define BMON_SIZE    0x58
-#define BMON_SPECIES 0x00
-#define BMON_HP      0x28
-#define BMON_LEVEL   0x2A
-#define BMON_MAX_HP  0x2C
 
 /* struct Trainer (include/data.h); ROM party entries are 16 bytes with custom
  * moves (F_TRAINER_PARTY_CUSTOM_MOVESET), else 8, species at +4. */
-#define TRAINER_SIZE       0x28
 #define TRAINER_PARTY_SIZE 0x20
 #define TRAINER_PARTY_PTR  0x24
 
@@ -45,7 +32,6 @@
 #define BT_FACTORY          (1u << 19)
 #define BT_PIKE             (1u << 20)
 #define BT_PYRAMID          (1u << 21)
-#define BT_INGAME_PARTNER   (1u << 22)
 #define BT_TOWER_LINK_MULTI (1u << 23)
 #define BT_RECORDED         (1u << 24)
 #define BT_RECORDED_LINK    (1u << 25)

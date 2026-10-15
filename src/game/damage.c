@@ -1,4 +1,5 @@
 #include "game/damage.h"
+#include "game/emerald_layout.h"
 
 #include <string.h>
 
@@ -14,7 +15,6 @@
 #define TYPE_FIRE     10
 #define TYPE_WATER    11
 #define TYPE_GRASS    12
-#define TYPE_ELECTRIC 13
 #define TYPE_ICE      15
 #define TYPE_FORESIGHT 0xFE
 #define TYPE_ENDTABLE  0xFF
@@ -35,9 +35,6 @@
 #define ABILITY_HUGE_POWER   37
 #define ABILITY_SOUNDPROOF   43
 #define ABILITY_THICK_FAT    47
-#define ABILITY_HUSTLE       55
-#define ABILITY_PLUS         57
-#define ABILITY_MINUS        58
 #define ABILITY_GUTS         62
 #define ABILITY_MARVEL_SCALE 63
 #define ABILITY_OVERGROW     65
@@ -157,8 +154,6 @@
 
 /* include/constants/battle.h */
 #define BATTLE_TYPE_DOUBLE   (1u << 0)
-#define BATTLE_TYPE_SAFARI   (1u << 7)
-#define BATTLE_TYPE_FRONTIER 0x003F0100u
 
 #define B_WEATHER_RAIN_TEMPORARY 0x01
 #define B_WEATHER_RAIN           0x07
@@ -178,7 +173,6 @@
 #define STATUS1_TOXIC_POISON 0x80
 #define STATUS2_MULTIPLETURNS (1u << 12)
 #define STATUS2_SUBSTITUTE (1u << 24)
-#define STATUS2_FORESIGHT  (1u << 29)
 #define STATUS3_ON_AIR      (1u << 6)
 #define STATUS3_UNDERGROUND (1u << 7)
 #define STATUS3_MINIMIZED   (1u << 8)

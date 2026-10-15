@@ -1,30 +1,9 @@
 #include "game/damage_read.h"
+#include "game/emerald_layout.h"
 #include "game/game.h"
 #include <string.h>
 
 /* Offsets and constants: docs/superpowers/specs/emerald-game-layer/damage-data.md. */
-
-/* struct BattlePokemon (include/pokemon.h) */
-#define BMON_SIZE        0x58
-#define BMON_SPECIES     0x00
-#define BMON_ATTACK      0x02
-#define BMON_DEFENSE     0x04
-#define BMON_SPEED       0x06
-#define BMON_SP_ATTACK   0x08
-#define BMON_SP_DEFENSE  0x0A
-#define BMON_IVS         0x14
-#define BMON_STAGES      0x18
-#define BMON_ABILITY     0x20
-#define BMON_TYPE1       0x21
-#define BMON_TYPE2       0x22
-#define BMON_HP          0x28
-#define BMON_LEVEL       0x2A
-#define BMON_FRIENDSHIP  0x2B
-#define BMON_MAX_HP      0x2C
-#define BMON_ITEM        0x2E
-#define BMON_PERSONALITY 0x48
-#define BMON_STATUS1     0x4C
-#define BMON_STATUS2     0x50
 
 /* struct Pokemon: personality is the first word of the 100-byte party struct. */
 #define PARTY_MON_SIZE   100
@@ -35,7 +14,6 @@
 #define DISABLE_FIRST_TURN 0x16
 
 /* struct Item (include/item.h) */
-#define ITEM_SIZE             44
 #define ITEM_HOLD_EFFECT      0x12
 #define ITEM_HOLD_EFFECT_PARAM 0x13
 
@@ -43,22 +21,13 @@
 #define DEX_ENTRY_SIZE   0x20
 #define DEX_ENTRY_WEIGHT 0x0E
 
-#define BATTLE_MOVE_SIZE 12
-
 /* struct BattleResources: flags pointer at +4; struct ResourceFlags is u32 flags[4]. */
 #define RESOURCES_FLAGS        0x04
 #define RESOURCE_FLAG_FLASH_FIRE 1
 
-/* SaveBlock1 flags: FLAG_BADGE01_GET 0x867 .. FLAG_BADGE08_GET 0x86E */
-#define SB1_FLAGS          0x1270
-#define FLAG_BADGE01_GET   0x867
-
 #define BATTLE_TYPE_LINK            (1u << 1)
-#define BATTLE_TYPE_TRAINER         (1u << 3)
-#define BATTLE_TYPE_SAFARI          (1u << 7)
 #define BATTLE_TYPE_EREADER_TRAINER (1u << 11)
 #define BATTLE_TYPE_RECORDED_LINK   (1u << 25)
-#define BATTLE_TYPE_FRONTIER        0x003F0100u
 #define TRAINER_SECRET_BASE         1024
 
 #define STATUS3_MUDSPORT   (1u << 16)
@@ -67,8 +36,6 @@
 /* include/constants/abilities.h */
 #define ABILITY_DAMP       6
 #define ABILITY_CLOUD_NINE 13
-#define ABILITY_PLUS       57
-#define ABILITY_MINUS      58
 #define ABILITY_AIR_LOCK   77
 
 #define MAX_BATTLERS 4

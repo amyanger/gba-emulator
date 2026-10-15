@@ -1,28 +1,15 @@
 #include "game/feebas.h"
+#include "game/emerald_layout.h"
 #include <string.h>
 
 /* Game-code constants (pret src/wild_encounter.c, include/global.h,
  * include/constants/metatile_behaviors.h, src/metatile_behavior.c). */
 #define NUM_FISHING_SPOTS  447    /* 131 + 167 + 149 */
 #define SECTION_COUNT      3
-#define SB1_LOC_GROUP      0x04
-#define SB1_LOC_NUM        0x05
 #define SB1_TREND_SEED     0x2E6A /* dewfordTrends[0].rand */
-#define MAP_HEADER_LAYOUT  0x00
-#define LAYOUT_WIDTH       0x00
-#define LAYOUT_HEIGHT      0x04
-#define LAYOUT_PRIMARY     0x10
-#define LAYOUT_SECONDARY   0x14
-#define TILESET_ATTRS      0x10
-#define MAP_OFFSET         7
 #define MAP_OFFSET_W       15
 #define MAP_OFFSET_H       14
-#define VMAP_MAX_CELLS     10240
 #define MAX_ROW            256
-#define GRID_UNDEFINED     0x03FF
-#define GRID_COLLISION     0x0C00
-#define PRIMARY_METATILES  512
-#define TILE_FLAG_SURFABLE 0x02
 #define MB_WATERFALL       0x13
 #define MB_BRIDGE_FIRST    0x70   /* MB_BRIDGE_OVER_OCEAN .. MB_BRIDGE_OVER_POND_HIGH */
 #define MB_BRIDGE_LAST     0x73

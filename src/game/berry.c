@@ -1,4 +1,5 @@
 #include "game/berry.h"
+#include "game/emerald_layout.h"
 #include "game/game.h"
 #include "game/gen3_text.h"
 #include <string.h>
@@ -6,10 +7,7 @@
 /* pret/pokeemerald include/global.h, include/global.berry.h, src/berry.c;
  * research: docs/superpowers/specs/emerald-game-layer/overworld-layout-berries.md */
 #define SB1_BERRY_TREES      0x169C
-#define SB1_FLAGS            0x1270
 #define SB1_BERRY_MIN_SIZE   (SB1_BERRY_TREES + BERRY_TREE_COUNT * TREE_SIZE)
-#define FLAG_SYS_CLOCK_SET   0x895
-#define SB2_LOCAL_TIME_OFFSET 0x98
 #define SB2_LAST_BERRY_UPDATE 0xA0
 #define SB2_BERRY_MIN_SIZE   (SB2_LAST_BERRY_UPDATE + 8)
 #define TREE_SIZE            8
@@ -24,11 +22,6 @@
 #define WIPE_STAGES          71
 
 /* struct MapHeader / MapEvents / ObjectEventTemplate (include/global.fieldmap.h) */
-#define MAP_HEADER_EVENTS    0x04
-#define MAP_HEADER_SEC       0x14
-#define EVENTS_OBJ_COUNT     0x00
-#define EVENTS_OBJS          0x04
-#define TEMPLATE_SIZE        0x18
 #define TEMPLATE_MOVEMENT    0x09
 #define TEMPLATE_TREE_ID     0x0E
 #define MOVEMENT_BERRY_TREE  0x0C
@@ -47,7 +40,7 @@ static uint8_t place_for_sec(BerryPlaces* bp, const GameProfile* p, const GameMe
 static void add_map_trees(BerryPlaces* bp, const GameProfile* p, const GameMem* m, uint32_t header) {
     uint32_t events = 0, objs = 0;
     uint8_t count = 0, sec = 0;
-    if (!game_mem_read32(m, header + MAP_HEADER_EVENTS, &events) || !game_mem_read8(m, header + MAP_HEADER_SEC, &sec) ||
+    if (!game_mem_read32(m, header + MAP_HEADER_EVENTS, &events) || !game_mem_read8(m, header + MAP_HEADER_REGION_MAP_SEC, &sec) ||
         !game_mem_read8(m, events + EVENTS_OBJ_COUNT, &count) || !game_mem_read32(m, events + EVENTS_OBJS, &objs))
         return;
     for (uint32_t i = 0; i < count; i++) {
@@ -241,7 +234,7 @@ void berry_read(const BerryPlaces* bp, const GameProfile* p, const GameMem* m, c
     out->clock_set = game_mem_read8(m, sb1 + SB1_FLAGS + (FLAG_SYS_CLOCK_SET >> 3), &flag) &&
                      (flag & (1u << (FLAG_SYS_CLOCK_SET & 7)));
     out->in_battle = game_mem_read8(m, p->main_in_battle, &in_battle) && (in_battle & 0x02);
-    if (game_mem_read8(m, p->map_header + MAP_HEADER_SEC, &sec))
+    if (game_mem_read8(m, p->map_header + MAP_HEADER_REGION_MAP_SEC, &sec))
         for (uint8_t i = 0; i < bp->count; i++)
             if (bp->place[i].sec == sec) out->here = i;
 

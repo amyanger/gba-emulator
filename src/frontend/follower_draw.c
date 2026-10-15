@@ -1,15 +1,12 @@
 #include "frontend/follower_draw.h"
+#include "game/emerald_layout.h"
 #include <stdio.h>
 #include <string.h>
 
 #define FOLLOW_FOOT_PAD   4      /* HGSS sprites leave about 4 px under the feet */
-#define MB_TALL_GRASS     0x02
-#define MB_LONG_GRASS     0x03
 #define GRASS_RUSTLE      10     /* frames per rustle frame */
 #define GRASS_RUSTLE_END  (4 * GRASS_RUSTLE)
 #define NATIONAL_UNOWN    201
-#define SPECIES_INFO_SIZE 28
-#define SI_GENDER_RATIO   0x10
 
 static const uint8_t k_obj_h[3][4] = { {8, 16, 32, 64}, {8, 8, 16, 32}, {16, 32, 32, 64} };
 
