@@ -131,6 +131,7 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 | D | Switch between the dashboard and the Details sheet, on the Run page (unless bound to a GBA button) |
 | , and . | Pick the nature the Hunt page's Next match looks for (unless bound to a GBA button; Ctrl+, still opens Settings) |
 | R, twice | Reset the Hunt page's encounter counts: the first press arms it for 3 seconds, the second resets (unless bound to a GBA button) |
+| C, Shift+C | Save a trainer card of your team (original Pokemon Emerald US/English ROM only): C makes the team grid, Shift+C the ace showcase (use the left Shift key, because right Shift is the GBA Select button by default and would press Select too). Saved next to the ROM as `<rom>.YYYYMMDD-HHMMSS.card.png`; works with the panel open or closed and while paused (ignored if bound to a GBA button, and reserved in Settings > Controls) |
 | F5 | Save state to current slot |
 | F6 | Edit label of current save-state slot |
 | F7 | Open save-state slot picker |
@@ -267,6 +268,8 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--screenshot-out <file>` | After the run, save the final framebuffer as PNG. |
 | `--input-script <file>` | Replay scripted keypad input. Headless only. Format below. |
 | `--panel-out <file>` | After the run, render the Emerald Companion panel to a PNG. Requires `--headless`. |
+| `--card-out <file>` | After the run, render the trainer card (1200x630 PNG). `--panel-select N` picks the ace. Requires `--headless`. |
+| `--card-style <s>` | Trainer card style, `grid` or `ace` (default `grid`). Requires `--headless`. |
 | `--panel-density <f>` | Panel pixels per point, 0.5 to 4.0 (default 1.0). Requires `--headless`. |
 | `--panel-page <p>` | Panel page: `auto`, `party`, `route`, `nuzlocke`, `berries`, `search`, `hunt` or `run` (default `auto`). Requires `--headless`. |
 | `--panel-search <text>` | Open the Search page with this text typed in. Implies `--panel-page search`, and is an error with any other page. Requires `--headless`. |

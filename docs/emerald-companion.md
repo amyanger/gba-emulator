@@ -90,6 +90,23 @@ Steps here are the steps the game counts. Walking and biking count. Steps on ice
 
 ![The Party page with two Pokemon at the Daycare and an egg waiting: the breeding row is selected and shows they get along very well (70% each roll), and the egg will be a female Ralts with a Rash nature and Synchronize. Two eggs in the party show 517 and 1,029 steps to hatch](screenshots/panel-daycare.png)
 
+## Trainer card
+
+Press `C` to save a picture of your team as a PNG, ready to share. It works with the panel open or closed, and while the game is paused. The file goes next to the ROM as `<rom>.YYYYMMDD-HHMMSS.card.png`, the same way F12 screenshots do. If you bind `C` to a GBA button, the key is ignored.
+
+- **Team grid (`C`).** Your trainer name, ID, play time, Pokedex count and badges across the top, then all six Pokemon with level, types, nature, held item and IVs.
+- **Ace showcase (`Shift+C`).** One Pokemon large on the left with its nature, ability, types and IV bars, and the rest of the team listed on the right.
+
+The ace is the selected row when the panel is on the Party page. Otherwise it is the MVP of your Run log, if one is attached and that Pokemon is in your party, and failing that your first Pokemon that isn't an egg.
+
+A toast confirms the save. The card isn't made in the Battle Tents, the Battle Frontier facilities (Tower, Dome, Palace, Pyramid, Arena, Factory and Pike) or Trainer Hill, in partner battles or in link battles. It needs a game in progress with at least one Pokemon, since it reads the party from RAM and works before the first save.
+
+![A trainer card in the team grid style: trainer details across the top and six Pokemon tiles below](screenshots/trainer-card-grid.png)
+
+![A trainer card in the ace showcase style: one large Pokemon on the left and the rest of the team listed on the right](screenshots/trainer-card-ace.png)
+
+Some things are left out on purpose. Unown always shows as an A and Spinda has no spots. Eggs are shown as eggs, so they stay a surprise. Only your public trainer ID is printed, never the secret half. From the command line, `--card-out` renders the same card (see [usage](usage.md)).
+
 ## Route
 
 The name of the route, town or city you're in, read from the game's region map, and its wild encounter table with level ranges and odds. Pokemon you've caught are marked with a check.

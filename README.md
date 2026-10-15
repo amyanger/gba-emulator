@@ -54,6 +54,7 @@ These need the original, unmodified Pokemon Emerald (US/English) ROM. Every othe
 | &nbsp;&nbsp;[Damage](docs/emerald-companion.md#damage) | | Predicted damage as a percent of HP on every move in a battle, with KO coloring, for your moves and the enemy's. |
 | &nbsp;&nbsp;[Party](docs/emerald-companion.md#party) | | Your Pokemon's hidden stats: IVs, EVs, Hidden Power, friendship. |
 | &nbsp;&nbsp;[Daycare](docs/emerald-companion.md#daycare) | | Your Daycare Pokemon, egg odds and the next roll, what the egg will be (even if it's shiny) and steps until each egg hatches. |
+| &nbsp;&nbsp;[Trainer card](docs/emerald-companion.md#trainer-card) | C | Save a shareable picture of your team, as a grid or with your ace up front. |
 | &nbsp;&nbsp;[Route](docs/emerald-companion.md#route) | | The wild encounter table for where you are, with caught Pokemon checked off. |
 | &nbsp;&nbsp;[Mirage Island](docs/emerald-companion.md#mirage-island) | J, twice | Which of your Pokemon raises Mirage Island today and when it next will, then jump the clock to that day. |
 | &nbsp;&nbsp;[Nuzlocke](docs/emerald-companion.md#nuzlocke) | N | Logs each area's first encounter, every death and any reload after a death. |
