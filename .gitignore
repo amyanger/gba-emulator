@@ -31,6 +31,7 @@ roms/*.hunt
 roms/*.follow
 roms/*.cht
 roms/*.cheatbak*
+roms/*.card.png
 # Legacy saves/ dir (pre-2026-04 layout)
 saves/*.sav
 saves/*.ss[0-9]
