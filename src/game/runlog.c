@@ -1,7 +1,6 @@
 #include "game/runlog.h"
-#include <errno.h>
+#include "game/logline.h"
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 
 #define NEW_GAME_PT (60u * 60u * 60u) /* first hour of play, in frames */
@@ -15,10 +14,6 @@ static const char* const k_how_names[RUN_HOW_COUNT] = {
 #define RUN_KIND_COUNT 3
 static const char* const k_kind_names[RUN_KIND_COUNT] = { "wild", "trainer", "other" };
 
-static bool key_eq(NuzKey a, NuzKey b) {
-    return a.pid == b.pid && a.ot == b.ot && a.variant == b.variant;
-}
-
 void run_log_init(RunLog* log) {
     memset(log, 0, sizeof(*log));
     log->low_permille = log->folded_low = 1000;
@@ -26,13 +21,13 @@ void run_log_init(RunLog* log) {
 
 int run_find_member(const RunLog* log, NuzKey key) {
     for (int i = 0; i < log->member_count; i++)
-        if (key_eq(log->members[i].key, key)) return i;
+        if (nuz_key_eq(log->members[i].key, key)) return i;
     return -1;
 }
 
 static int find_folded(const RunLog* log, NuzKey key) {
     for (int i = 0; i < log->folded_ko_count; i++)
-        if (key_eq(log->folded_kos[i].key, key)) return i;
+        if (nuz_key_eq(log->folded_kos[i].key, key)) return i;
     return -1;
 }
 
@@ -147,7 +142,7 @@ static bool fold_oldest_wild(RunLog* log) {
         if (m < 0) continue;
         bool joined_before = false;
         for (int j = 0; j < log->ev_count && !joined_before; j++)
-            joined_before = log->ev[j].type == RUN_EV_JOIN && key_eq(log->ev[j].key, b->kos[i].key) &&
+            joined_before = log->ev[j].type == RUN_EV_JOIN && nuz_key_eq(log->ev[j].key, b->kos[i].key) &&
                             log->ev[j].seq < b->seq;
         if (!joined_before) continue;
         int f = find_folded(log, b->kos[i].key);
@@ -346,7 +341,6 @@ int run_format(const RunEvent* in, char* out, size_t out_size) {
         put(&w, buf);
         break;
     case RUN_EV_JOIN: {
-        static const char hex[] = "0123456789ABCDEF";
         put_key(&w, ev->key);
         put_u(&w, "sp", ev->species);
         put_u(&w, "lv", ev->level);
@@ -357,11 +351,7 @@ int run_format(const RunEvent* in, char* out, size_t out_size) {
         put_u(&w, "sh", ev->shiny);
         put_u(&w, "nd", ev->newdex);
         char nick[2 * sizeof(ev->nick) + 1];
-        for (size_t i = 0; i < sizeof(ev->nick); i++) {
-            nick[2 * i] = hex[ev->nick[i] >> 4];
-            nick[2 * i + 1] = hex[ev->nick[i] & 15];
-        }
-        nick[sizeof(nick) - 1] = '\0';
+        logline_hex_encode(nick, ev->nick, sizeof(ev->nick));
         put(&w, " nick=");
         put(&w, nick);
         break;
@@ -429,38 +419,6 @@ int run_format(const RunEvent* in, char* out, size_t out_size) {
     return w.bad ? -1 : (int)w.len;
 }
 
-static bool parse_u32(const char* s, int base, uint32_t max, uint32_t* out) {
-    char* end;
-    /* 10 digits covers any u32; also guards against strtoul wrapping on 32-bit long. */
-    if (*s == '\0' || *s == '-' || *s == '+' || *s == ' ' || strlen(s) > 10) return false;
-    errno = 0;
-    unsigned long v = strtoul(s, &end, base);
-    if (*end != '\0' || errno == ERANGE || v > max) return false;
-    *out = (uint32_t)v;
-    return true;
-}
-
-static bool parse_u8(const char* s, uint8_t* out) {
-    uint32_t v;
-    if (!parse_u32(s, 10, 255, &v)) return false;
-    *out = (uint8_t)v;
-    return true;
-}
-
-static bool parse_u16(const char* s, uint16_t* out) {
-    uint32_t v;
-    if (!parse_u32(s, 10, 0xFFFF, &v)) return false;
-    *out = (uint16_t)v;
-    return true;
-}
-
-static bool parse_bool(const char* s, bool* out) {
-    uint32_t v;
-    if (!parse_u32(s, 10, 1, &v)) return false;
-    *out = v != 0;
-    return true;
-}
-
 /* Splits s in place on sep into at most max parts; returns the count, 0 if too many. */
 static int split(char* s, char sep, char** part, int max) {
     int n = 0;
@@ -477,27 +435,11 @@ static int split(char* s, char sep, char** part, int max) {
 /* p[0..2] = pid (hex), ot (hex), variant. */
 static bool parse_key_parts(char** p, NuzKey* k) {
     uint32_t v;
-    if (!parse_u32(p[0], 16, 0xFFFFFFFFu, &k->pid) || !parse_u32(p[1], 16, 0xFFFFFFFFu, &k->ot) ||
-        !parse_u32(p[2], 10, 1, &v))
+    if (!logline_u32(p[0], 16, 0xFFFFFFFFu, &k->pid) || !logline_u32(p[1], 16, 0xFFFFFFFFu, &k->ot) ||
+        !logline_u32(p[2], 10, 1, &v))
         return false;
     k->variant = (uint8_t)v;
     return true;
-}
-
-static int hex_digit(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    return -1;
-}
-
-static bool parse_name(const char* v, const char* const* names, int count, uint8_t* out) {
-    for (int i = 0; i < count; i++)
-        if (strcmp(v, names[i]) == 0) {
-            *out = (uint8_t)i;
-            return true;
-        }
-    return false;
 }
 
 static bool parse_kos(char* v, RunEvent* ev) {
@@ -508,7 +450,7 @@ static bool parse_kos(char* v, RunEvent* ev) {
         char* p[5];
         if (split(item[i], ':', p, 5) != 5) return false;
         RunKo* k = &ev->kos[i];
-        if (!parse_key_parts(p, &k->key) || !parse_u16(p[3], &k->count) || !parse_u8(p[4], &k->level))
+        if (!parse_key_parts(p, &k->key) || !logline_u16(p[3], &k->count) || !logline_u8(p[4], &k->level))
             return false;
     }
     ev->ko_count = (uint8_t)n;
@@ -517,88 +459,65 @@ static bool parse_kos(char* v, RunEvent* ev) {
 
 static bool parse_field(const char* k, char* v, RunEvent* ev, bool* have_pt) {
     uint32_t x;
-    if (strcmp(k, "pt") == 0) { if (!parse_u32(v, 10, 0xFFFFFFFFu, &ev->pt)) return false; *have_pt = true; }
-    else if (strcmp(k, "tid") == 0) return parse_u32(v, 16, 0xFFFFFFFFu, &ev->tid);
-    else if (strcmp(k, "pid") == 0) return parse_u32(v, 16, 0xFFFFFFFFu, &ev->key.pid);
-    else if (strcmp(k, "ot") == 0) return parse_u32(v, 16, 0xFFFFFFFFu, &ev->key.ot);
-    else if (strcmp(k, "var") == 0) { if (!parse_u32(v, 10, 1, &x)) return false; ev->key.variant = (uint8_t)x; }
-    else if (strcmp(k, "sp") == 0) return parse_u16(v, &ev->species);
-    else if (strcmp(k, "from") == 0) return parse_u16(v, &ev->from);
-    else if (strcmp(k, "lv") == 0) return parse_u8(v, &ev->level);
-    else if (strcmp(k, "sec") == 0) return parse_u8(v, &ev->sec);
-    else if (strcmp(k, "how") == 0) return parse_name(v, k_how_names, RUN_HOW_COUNT, &ev->how);
-    else if (strcmp(k, "ball") == 0) return parse_u8(v, &ev->ball);
-    else if (strcmp(k, "sh") == 0) return parse_bool(v, &ev->shiny);
-    else if (strcmp(k, "nd") == 0) return parse_bool(v, &ev->newdex);
-    else if (strcmp(k, "u") == 0) return parse_bool(v, &ev->untimed);
-    else if (strcmp(k, "nick") == 0) {
-        if (strlen(v) != 2 * sizeof(ev->nick)) return false;
-        for (size_t i = 0; i < sizeof(ev->nick); i++) {
-            int hi = hex_digit(v[2 * i]), lo = hex_digit(v[2 * i + 1]);
-            if (hi < 0 || lo < 0) return false;
-            ev->nick[i] = (uint8_t)(hi << 4 | lo);
-        }
-    }
-    else if (strcmp(k, "foe") == 0) return parse_u16(v, &ev->foe);
-    else if (strcmp(k, "id") == 0) return parse_u8(v, &ev->id);
-    else if (strcmp(k, "tmax") == 0) return parse_u8(v, &ev->team_max);
-    else if (strcmp(k, "tavg") == 0) return parse_u8(v, &ev->team_avg);
-    else if (strcmp(k, "dex") == 0) return parse_u16(v, &ev->dex);
-    else if (strcmp(k, "steps") == 0) return parse_u32(v, 10, 0xFFFFFFFFu, &ev->steps);
-    else if (strcmp(k, "kind") == 0) return parse_name(v, k_kind_names, RUN_KIND_COUNT, &ev->kind);
-    else if (strcmp(k, "tr") == 0) return parse_u16(v, &ev->trainer);
-    else if (strcmp(k, "out") == 0) return parse_u8(v, &ev->outcome);
+    if (strcmp(k, "pt") == 0) { if (!logline_u32(v, 10, 0xFFFFFFFFu, &ev->pt)) return false; *have_pt = true; }
+    else if (strcmp(k, "tid") == 0) return logline_u32(v, 16, 0xFFFFFFFFu, &ev->tid);
+    else if (strcmp(k, "pid") == 0) return logline_u32(v, 16, 0xFFFFFFFFu, &ev->key.pid);
+    else if (strcmp(k, "ot") == 0) return logline_u32(v, 16, 0xFFFFFFFFu, &ev->key.ot);
+    else if (strcmp(k, "var") == 0) { if (!logline_u32(v, 10, 1, &x)) return false; ev->key.variant = (uint8_t)x; }
+    else if (strcmp(k, "sp") == 0) return logline_u16(v, &ev->species);
+    else if (strcmp(k, "from") == 0) return logline_u16(v, &ev->from);
+    else if (strcmp(k, "lv") == 0) return logline_u8(v, &ev->level);
+    else if (strcmp(k, "sec") == 0) return logline_u8(v, &ev->sec);
+    else if (strcmp(k, "how") == 0) return logline_name(v, k_how_names, RUN_HOW_COUNT, &ev->how);
+    else if (strcmp(k, "ball") == 0) return logline_u8(v, &ev->ball);
+    else if (strcmp(k, "sh") == 0) return logline_bool(v, &ev->shiny);
+    else if (strcmp(k, "nd") == 0) return logline_bool(v, &ev->newdex);
+    else if (strcmp(k, "u") == 0) return logline_bool(v, &ev->untimed);
+    else if (strcmp(k, "nick") == 0) return logline_hex_decode(v, ev->nick, sizeof(ev->nick));
+    else if (strcmp(k, "foe") == 0) return logline_u16(v, &ev->foe);
+    else if (strcmp(k, "id") == 0) return logline_u8(v, &ev->id);
+    else if (strcmp(k, "tmax") == 0) return logline_u8(v, &ev->team_max);
+    else if (strcmp(k, "tavg") == 0) return logline_u8(v, &ev->team_avg);
+    else if (strcmp(k, "dex") == 0) return logline_u16(v, &ev->dex);
+    else if (strcmp(k, "steps") == 0) return logline_u32(v, 10, 0xFFFFFFFFu, &ev->steps);
+    else if (strcmp(k, "kind") == 0) return logline_name(v, k_kind_names, RUN_KIND_COUNT, &ev->kind);
+    else if (strcmp(k, "tr") == 0) return logline_u16(v, &ev->trainer);
+    else if (strcmp(k, "out") == 0) return logline_u8(v, &ev->outcome);
     else if (strcmp(k, "ko") == 0) return parse_kos(v, ev);
-    else if (strcmp(k, "ind") == 0) return parse_u8(v, &ev->indirect);
-    else if (strcmp(k, "up") == 0) return parse_u8(v, &ev->upset);
-    else if (strcmp(k, "low") == 0) return parse_u16(v, &ev->low);
+    else if (strcmp(k, "ind") == 0) return logline_u8(v, &ev->indirect);
+    else if (strcmp(k, "up") == 0) return logline_u8(v, &ev->upset);
+    else if (strcmp(k, "low") == 0) return logline_u16(v, &ev->low);
     else if (strcmp(k, "lowby") == 0) {
         char* p[3];
         return split(v, ':', p, 3) == 3 && parse_key_parts(p, &ev->low_by);
     }
-    else if (strcmp(k, "fnt") == 0) return parse_u8(v, &ev->faints);
+    else if (strcmp(k, "fnt") == 0) return logline_u8(v, &ev->faints);
     else if (strcmp(k, "ace") == 0) {
         char* p[3];
         if (split(v, ':', p, 3) != 3 || !parse_key_parts(p, &ev->ace_by)) return false;
         ev->has_ace = true;
     }
-    else if (strcmp(k, "acesp") == 0) return parse_u16(v, &ev->ace_species);
-    else if (strcmp(k, "to") == 0) return parse_u32(v, 10, 0xFFFFFFFFu, &ev->to_pt);
+    else if (strcmp(k, "acesp") == 0) return logline_u16(v, &ev->ace_species);
+    else if (strcmp(k, "to") == 0) return logline_u32(v, 10, 0xFFFFFFFFu, &ev->to_pt);
     /* Unknown keys are skipped so newer files still load. */
     return true;
 }
 
 bool run_parse(const char* line, RunEvent* ev) {
     char buf[RUN_LINE_MAX];
-    size_t len = strlen(line);
-    while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) len--;
-    if (len == 0 || len >= sizeof(buf)) return false;
-    memcpy(buf, line, len);
-    buf[len] = '\0';
-
+    char* tok[40];
     memset(ev, 0, sizeof(*ev));
     ev->sec = NUZ_SEC_NONE;
     ev->low = 1000;
-    /* Split on spaces by hand: strtok_r isn't available on MSVC. */
-    char* tok[40];
-    int ntok = 0;
-    for (char* p = buf; *p;) {
-        while (*p == ' ') *p++ = '\0';
-        if (!*p) break;
-        if (ntok == 40) return false;
-        tok[ntok++] = p;
-        while (*p && *p != ' ') p++;
-    }
+    int ntok = logline_tokens(line, buf, sizeof(buf), tok, 40);
     if (ntok == 0) return false;
     uint8_t type;
-    if (!parse_name(tok[0], k_type_names, RUN_EV_COUNT, &type)) return false;
+    if (!logline_name(tok[0], k_type_names, RUN_EV_COUNT, &type)) return false;
     ev->type = type;
     bool have_pt = false;
     for (int i = 1; i < ntok; i++) {
-        char* eq = strchr(tok[i], '=');
-        if (!eq || eq == tok[i]) return false;
-        *eq = '\0';
-        if (!parse_field(tok[i], eq + 1, ev, &have_pt)) return false;
+        char *k, *v;
+        if (!logline_field(tok[i], &k, &v) || !parse_field(k, v, ev, &have_pt)) return false;
     }
     return have_pt;
 }

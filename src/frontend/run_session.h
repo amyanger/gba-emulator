@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include "game/game.h"
 #include "game/run_track.h"
+#include "frontend/session_log.h"
 
 /* Owns the run log of a normal playthrough: <rom>.<trainer id>.run next to the ROM, or a
  * fixed path in headless runs. Replays it when a save with that trainer ID shows up,
@@ -67,8 +68,8 @@ typedef struct {
     RunLog log;
     RunTracker tracker;
     bool attached;
-    uint32_t tid, pending_tid;
-    uint8_t pending_count;
+    uint32_t tid;
+    SessionTidGate tid_gate;     /* a new trainer ID must hold for a while before we switch */
     char path[1100];
     bool path_ok, file_has_header, write_failed;
     uint32_t frame;

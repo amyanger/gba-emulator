@@ -2,11 +2,11 @@
 #include "common.h"
 #include "frontend/game_panel.h"
 #include "frontend/hunt_panel.h"
+#include "frontend/session_log.h"
 #include "game/pokemon.h"
 #include <string.h>
 
 #define HUNT_HEADER "huntlog 1"
-#define ATTACH_FRAMES 30 /* a trainer ID must read the same this long before we switch hunts */
 #define RETRY_FRAMES 60  /* retry queued writes about once a second */
 #define REBUILD_MS 250   /* R11: the view is rebuilt at most 4 times a second */
 #define RESET_ARM_MS 3000
@@ -112,24 +112,21 @@ static void replay_line(HuntSession* s, const char* line) {
 }
 
 static void load_file(HuntSession* s) {
-    FILE* f = fopen(s->path, "r");
     char line[128];
-    if (!f)
-        return;
-    if (!fgets(line, sizeof(line), f)) { /* empty file: ours to start */
-        fclose(f);
-        return;
-    }
-    if (strncmp(line, HUNT_HEADER, strlen(HUNT_HEADER)) != 0) {
+    SessionLogReader r;
+    SessionLogOpen open = session_log_open(&r, s->path, HUNT_HEADER);
+    if (open == SESSION_LOG_FOREIGN) {
         LOG_WARN("Shiny Hunt: %s is not a hunt file; leaving it alone", s->path);
         s->path_ok = false;
-        fclose(f);
-        return;
     }
+    if (open != SESSION_LOG_OK)
+        return;
     s->file_has_header = true;
-    while (fgets(line, sizeof(line), f))
+    while (session_log_next(&r, line, sizeof(line)))
         replay_line(s, line);
-    fclose(f);
+    /* If the torn-tail repair can't be written, appends can't either: the retry queue
+     * reports that. */
+    session_log_close(&r, s->path);
 }
 
 static void attach(HuntSession* s, uint32_t tid) {
@@ -144,10 +141,7 @@ static void attach(HuntSession* s, uint32_t tid) {
     s->tid = tid;
     s->file_has_header = false;
     s->reset_armed = false;
-    int n = s->fixed_path[0]
-                ? snprintf(s->path, sizeof(s->path), "%s", s->fixed_path)
-                : snprintf(s->path, sizeof(s->path), "%s.%08X.hunt", s->rom_path, (unsigned)tid);
-    s->path_ok = (s->rom_path[0] || s->fixed_path[0]) && n > 0 && (size_t)n < sizeof(s->path);
+    s->path_ok = session_log_path(s->path, sizeof(s->path), s->rom_path, s->fixed_path, tid, "hunt");
     if (s->path_ok)
         load_file(s);
     s->dirty = true;
@@ -328,20 +322,10 @@ bool hunt_session_frame(HuntSession* s, const GameMem* m, const NuzFacts* nf, bo
     if (!s->profile || !nf->valid)
         return false;
     s->frame++;
-    if (s->attached && nf->trainer_id == s->tid)
-        s->pending_count = 0;
-    if (!s->attached || nf->trainer_id != s->tid) {
-        /* Ignore a misread (save blocks mid-move) or the blank ID of a game that hasn't started. */
-        if (nf->trainer_id == 0)
-            return false;
-        if (nf->trainer_id != s->pending_tid) {
-            s->pending_tid = nf->trainer_id;
-            s->pending_count = 0;
-        }
-        if (++s->pending_count < ATTACH_FRAMES)
-            return false;
+    if (session_tid_step(&s->tid_gate, s->attached, s->tid, nf->trainer_id))
         attach(s, nf->trainer_id);
-    }
+    else if (!s->attached || nf->trainer_id != s->tid)
+        return false; /* a misread (save blocks mid-move), a blank ID, or a new ID still debouncing */
     if (s->queue_n && s->frame % RETRY_FRAMES == 0)
         flush_queue(s);
     if (!hunt_read(s->profile, m, nf, s->shown, &s->facts))

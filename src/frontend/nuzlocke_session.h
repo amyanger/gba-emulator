@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include "game/game.h"
 #include "game/nuzlocke.h"
+#include "frontend/session_log.h"
 
 /* Owns a Nuzlocke run's file: <rom>.<trainer id>.nuzlocke next to the ROM, or a
  * fixed path in headless runs. Loads and replays it when a save with that
@@ -74,8 +75,7 @@ typedef struct {
     NuzTracker tracker;
     bool attached;
     uint32_t tid;
-    uint32_t pending_tid;        /* a new trainer ID must hold for a while before we switch */
-    uint8_t pending_count;
+    SessionTidGate tid_gate;     /* a new trainer ID must hold for a while before we switch */
     char path[1100];
     bool path_ok;                /* false: path too long or the file isn't ours; run stays in memory */
     bool file_has_header;

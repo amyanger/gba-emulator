@@ -1,13 +1,13 @@
 #include "frontend/run_session.h"
 #include "common.h"
 #include "frontend/game_panel.h"   /* game_panel_title_case */
+#include "frontend/session_log.h"
 #include "game/gen3_text.h"
 #include <stdarg.h>
 #include <string.h>
 
 #define RUN_HEADER     "run 1"
 #define VIEW_EVERY     30   /* frames between view refreshes when nothing was logged */
-#define ATTACH_FRAMES  30   /* a trainer ID must read the same this long before we switch logs */
 #define CLOSE_CALL_MAX 100  /* closest-call card only at or below 10% HP */
 #define DOT            "\xC2\xB7"   /* "·": untimed */
 #define MDOT           " \xC2\xB7 " /* " · " separator */
@@ -70,46 +70,21 @@ static void emit(RunSession* s, const RunEvent* ev, uint32_t n) {
 
 static void load_file(RunSession* s) {
     static char line[RUN_LINE_MAX + 2];
-    uint32_t bad = 0;
-    FILE* f = fopen(s->path, "r");
-    if (!f) return;
-    if (!fgets(line, sizeof(line), f)) {   /* empty: ours to start */
-        fclose(f);
-        return;
-    }
-    size_t hl = strlen(RUN_HEADER);
-    if (strncmp(line, RUN_HEADER, hl) != 0 || (line[hl] != '\0' && line[hl] != '\n' && line[hl] != '\r')) {
+    SessionLogReader r;
+    SessionLogOpen open = session_log_open(&r, s->path, RUN_HEADER);
+    if (open == SESSION_LOG_FOREIGN) {
         LOG_WARN("Run log: %s is not a run file; leaving it alone", s->path);
         s->path_ok = false;
-        fclose(f);
-        return;
     }
+    if (open != SESSION_LOG_OK) return;
     s->file_has_header = true;
-    bool ends_nl = line[strlen(line) - 1] == '\n';
-    while (fgets(line, sizeof(line), f)) {
-        size_t len = strlen(line);
-        if (len + 1 == sizeof(line) && line[len - 1] != '\n') {
-            int c;
-            while ((c = fgetc(f)) != EOF && c != '\n') {}
-            ends_nl = c == '\n';
-            bad++;
-            continue;
-        }
-        ends_nl = line[len - 1] == '\n';
+    while (session_log_next(&r, line, sizeof(line))) {
         RunEvent ev;
-        /* A last line with no newline was cut off mid-write (crash): don't trust it. */
-        if (ends_nl && run_parse(line, &ev)) run_apply(&s->log, &ev);
-        else bad++;
+        if (run_parse(line, &ev)) run_apply(&s->log, &ev);
+        else r.bad++;
     }
-    fclose(f);
-    if (bad) LOG_WARN("Run log: skipped %u unreadable line(s) in %s", (unsigned)bad, s->path);
-    /* End the torn line so the next append starts on a line of its own. */
-    if (!ends_nl) {
-        f = fopen(s->path, "a");
-        bool ok = f != NULL && fputc('\n', f) != EOF;
-        if (f && fclose(f) != 0) ok = false;
-        if (!ok) s->write_failed = true;
-    }
+    if (!session_log_close(&r, s->path)) s->write_failed = true;
+    if (r.bad) LOG_WARN("Run log: skipped %u unreadable line(s) in %s", (unsigned)r.bad, s->path);
 }
 
 /* A save showed up (the first one, or a different trainer): switch to its log. */
@@ -119,11 +94,9 @@ static void attach(RunSession* s, uint32_t tid, uint32_t pt) {
     s->tid = tid;
     s->file_has_header = false;
     s->write_failed = false;
-    int n = s->fixed_path[0] ? snprintf(s->path, sizeof(s->path), "%s", s->fixed_path)
-                             : snprintf(s->path, sizeof(s->path), "%s.%08X.run", s->rom_path, (unsigned)tid);
     /* path[] fits either path at its longest (1023 + 13), so the length test is only a guard;
      * a name the filesystem rejects shows up as write_failed on the first append. */
-    s->path_ok = (s->rom_path[0] || s->fixed_path[0]) && n > 0 && (size_t)n < sizeof(s->path);
+    s->path_ok = session_log_path(s->path, sizeof(s->path), s->rom_path, s->fixed_path, tid, "run");
     if (s->path_ok) load_file(s);
     if (s->log.active && s->log.tid != tid) {
         /* A fixed headless file from another save: don't mix runs. */
@@ -619,20 +592,8 @@ void run_session_frame(RunSession* s, const GameMem* m, const NuzFacts* nf) {
     run_read(s->profile, m, nf->valid ? nf->enemy_species : 0, &s->rf);
     bool valid = nf->valid && s->rf.valid;
 
-    if (nf->valid) {
-        if (s->attached && nf->trainer_id == s->tid) {
-            s->pending_count = 0;
-        } else if (nf->trainer_id != 0) {   /* 0: a game that hasn't started, or a misread */
-            if (nf->trainer_id != s->pending_tid) {
-                s->pending_tid = nf->trainer_id;
-                s->pending_count = 0;
-            }
-            if (++s->pending_count >= ATTACH_FRAMES) {
-                s->pending_count = 0;
-                attach(s, nf->trainer_id, nf->play_time);
-            }
-        }
-    }
+    if (nf->valid && session_tid_step(&s->tid_gate, s->attached, s->tid, nf->trainer_id))
+        attach(s, nf->trainer_id, nf->play_time);
 
     /* Invalid frames still go to the tracker: it counts them to tell a save block move from a
      * real gap. A different trainer ID (misread, or a switch still debouncing) is skipped. */

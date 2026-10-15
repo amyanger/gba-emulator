@@ -94,6 +94,7 @@ void run_run_track_tests(void);
 void run_nuzlocke_tests(void);
 void run_nuzlocke_session_tests(void);
 void run_run_session_tests(void);
+void run_session_log_tests(void);
 void run_library_tests(void);
 void run_library_view_tests(void);
 #ifndef _WIN32
@@ -196,6 +197,7 @@ int main(void) {
     RUN_SUITE(run_nuzlocke_tests);
     RUN_SUITE(run_nuzlocke_session_tests);
     RUN_SUITE(run_run_session_tests);
+    RUN_SUITE(run_session_log_tests);
     RUN_SUITE(run_library_tests);
     RUN_SUITE(run_library_view_tests);
 #ifndef _WIN32

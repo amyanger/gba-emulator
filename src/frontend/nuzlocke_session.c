@@ -1,12 +1,12 @@
 #include "frontend/nuzlocke_session.h"
 #include "common.h"
+#include "frontend/session_log.h"
 #include "game/gen3_text.h"
 #include <string.h>
 
 #define NUZ_HEADER       "nuzlocke 1"
 #define BOX_EVERY        60   /* frames between PC box reads */
 #define VIEW_EVERY       30   /* frames between view refreshes when nothing was logged */
-#define ATTACH_FRAMES    30   /* a trainer ID must read the same this long before we switch runs */
 
 void nuz_session_init(NuzSession* s, const GameProfile* p, const char* rom_path, const char* fixed_path) {
     memset(s, 0, sizeof(*s));
@@ -46,28 +46,22 @@ static void append_events(NuzSession* s, const NuzEvent* ev, uint32_t n) {
 }
 
 static void load_file(NuzSession* s) {
-    FILE* f = fopen(s->path, "r");
     char line[512];
-    uint32_t bad = 0;
-    if (!f) return;
-    if (!fgets(line, sizeof(line), f)) {   /* empty (crash before the first write): ours to start */
-        fclose(f);
-        return;
-    }
-    if (strncmp(line, NUZ_HEADER, strlen(NUZ_HEADER)) != 0) {
+    SessionLogReader r;
+    SessionLogOpen open = session_log_open(&r, s->path, NUZ_HEADER);
+    if (open == SESSION_LOG_FOREIGN) {
         LOG_WARN("Nuzlocke: %s is not a run file; leaving it alone", s->path);
         s->path_ok = false;
-        fclose(f);
-        return;
     }
+    if (open != SESSION_LOG_OK) return;
     s->file_has_header = true;
-    while (fgets(line, sizeof(line), f)) {
+    while (session_log_next(&r, line, sizeof(line))) {
         NuzEvent ev;
         if (nuz_parse(line, &ev)) nuz_apply(&s->run, &ev);
-        else bad++;
+        else r.bad++;
     }
-    fclose(f);
-    if (bad) LOG_WARN("Nuzlocke: skipped %u unreadable line(s) in %s", (unsigned)bad, s->path);
+    if (!session_log_close(&r, s->path)) s->write_failed = true;
+    if (r.bad) LOG_WARN("Nuzlocke: skipped %u unreadable line(s) in %s", (unsigned)r.bad, s->path);
 }
 
 /* A different save showed up (or the first one): switch to its run. */
@@ -78,10 +72,7 @@ static void attach(NuzSession* s, uint32_t tid) {
     s->file_has_header = false;
     s->write_failed = false;
     s->start_requested = false;
-    int n = s->fixed_path[0]
-                ? snprintf(s->path, sizeof(s->path), "%s", s->fixed_path)
-                : snprintf(s->path, sizeof(s->path), "%s.%08X.nuzlocke", s->rom_path, (unsigned)tid);
-    s->path_ok = s->rom_path[0] || s->fixed_path[0] ? n > 0 && (size_t)n < sizeof(s->path) : false;
+    s->path_ok = session_log_path(s->path, sizeof(s->path), s->rom_path, s->fixed_path, tid, "nuzlocke");
     if (s->path_ok) load_file(s);
     if (s->run.active && s->run.tid != tid) {
         /* A fixed headless file from another save: don't mix runs. */
@@ -258,21 +249,15 @@ void nuz_session_frame(NuzSession* s, const GameMem* m) {
         if (s->view.state != NUZ_VIEW_OFF) refresh_view(s, m);
         return;
     }
-    if (s->attached && s->facts.trainer_id == s->tid) s->pending_count = 0;
-    if (!s->attached || s->facts.trainer_id != s->tid) {
-        /* Ignore a misread (save blocks mid-move) or the blank ID of a game that hasn't started. */
-        if (s->facts.trainer_id == 0) return;
-        if (s->facts.trainer_id != s->pending_tid) {
-            s->pending_tid = s->facts.trainer_id;
-            s->pending_count = 0;
-        }
-        if (++s->pending_count < ATTACH_FRAMES) return;
+    if (session_tid_step(&s->tid_gate, s->attached, s->tid, s->facts.trainer_id)) {
         attach(s, s->facts.trainer_id);
         active = s->run.active;
         starting = !active && (s->start_requested || s->fixed_path[0]);
         /* has_boxes is per read (nuz_read clears it), so the back-fill always sees boxes read
          * this frame, never the list kept from the last cadence read. */
         if (starting && !s->facts.has_boxes) nuz_read(s->profile, m, true, &s->facts);
+    } else if (!s->attached || s->facts.trainer_id != s->tid) {
+        return;   /* a misread (save blocks mid-move), a blank ID, or a new ID still debouncing */
     }
 
     if (starting && s->families_ok) {

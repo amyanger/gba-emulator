@@ -14,10 +14,6 @@ void run_tracker_reset(RunTracker* t) {
     memset(t, 0, sizeof(*t));
 }
 
-static bool key_eq(NuzKey a, NuzKey b) {
-    return a.pid == b.pid && a.ot == b.ot && a.variant == b.variant;
-}
-
 static void new_event(RunEvent* ev, uint8_t type, uint32_t pt) {
     memset(ev, 0, sizeof(*ev));
     ev->type = type;
@@ -177,7 +173,7 @@ static bool track_milestones(RunTracker* t, const RunLog* log, const NuzFacts* n
 
 static bool emitted_key(const RunEvent* out, uint8_t n, NuzKey key) {
     for (uint8_t i = 0; i < n; i++)
-        if (out[i].type == RUN_EV_JOIN && key_eq(out[i].key, key)) return true;
+        if (out[i].type == RUN_EV_JOIN && nuz_key_eq(out[i].key, key)) return true;
     return false;
 }
 
@@ -227,7 +223,7 @@ static void track_evolutions(RunTracker* t, const RunLog* log, const NuzFacts* n
             memset(w, 0, sizeof(*w));
             continue;
         }
-        if (!key_eq(w->key, m->key) || w->species != m->species) {
+        if (!nuz_key_eq(w->key, m->key) || w->species != m->species) {
             w->key = m->key;
             w->species = m->species;
             w->frames = 0;
@@ -257,7 +253,7 @@ static void track_faints(RunTracker* t, const RunLog* log, const NuzFacts* nf, u
         RunHpWatch* w = &next[i];
         w->key = m->key;
         for (uint8_t j = 0; j < NUZ_PARTY_MAX; j++)
-            if (key_eq(t->hp[j].key, m->key)) {
+            if (nuz_key_eq(t->hp[j].key, m->key)) {
                 w->alive_seen = t->hp[j].alive_seen;
                 w->zero_frames = t->hp[j].zero_frames;
             }
@@ -392,7 +388,7 @@ static void close_battle(RunTracker* t, const NuzFacts* nf, uint32_t pt, RunEven
             continue;
         }
         uint8_t k = 0;
-        while (k < ev.ko_count && !key_eq(ev.kos[k].key, e->key)) k++;
+        while (k < ev.ko_count && !nuz_key_eq(ev.kos[k].key, e->key)) k++;
         if (k == ev.ko_count) {
             if (ev.ko_count == RUN_KO_SLOTS) {
                 ev.indirect++;
@@ -417,7 +413,7 @@ static void close_battle(RunTracker* t, const NuzFacts* nf, uint32_t pt, RunEven
             if (!(t->fought_mask & (1u << pi)) || t->fought_max[pi] == 0) continue;
             for (uint8_t i = 0; i < nf->party_count && i < NUZ_PARTY_MAX; i++) {
                 const NuzMon* m = &nf->party[i];
-                if (!key_eq(m->key, t->fought_key[pi]) || m->hp == 0) continue;
+                if (!nuz_key_eq(m->key, t->fought_key[pi]) || m->hp == 0) continue;
                 uint32_t pm = (uint32_t)m->hp * 1000u / t->fought_max[pi];
                 if (pm > 1000) pm = 1000;
                 if (pm < ev.low) {

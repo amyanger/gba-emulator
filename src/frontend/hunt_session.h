@@ -4,6 +4,7 @@
 #include "game/game.h"
 #include "game/hunt.h"
 #include "game/hunt_read.h"
+#include "frontend/session_log.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -76,8 +77,7 @@ struct HuntSession {
     bool shown; /* the Hunt page is on screen: only then are predictions read */
     bool attached;
     uint32_t tid;
-    uint32_t pending_tid; /* a new trainer ID must hold for a while before we switch */
-    uint8_t pending_count;
+    SessionTidGate tid_gate; /* a new trainer ID must hold for a while before we switch */
     char path[1100];
     bool path_ok; /* false: path too long or the file isn't ours */
     bool file_has_header;

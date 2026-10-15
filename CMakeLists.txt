@@ -146,6 +146,7 @@ set(SOURCES
     src/game/runlog.c
     src/game/run_track.c
     src/game/nuzlocke.c
+    src/game/logline.c
     src/game/script_walk.c
     src/game/follower.c
     src/game/follower_ctx.c
@@ -184,6 +185,7 @@ set(SOURCES
     src/frontend/nuzlocke_session.c
     src/frontend/hunt_session.c
     src/frontend/run_session.c
+    src/frontend/session_log.c
     src/frontend/run_panel.c
     src/frontend/hunt_panel.c
     src/frontend/library.c
@@ -348,6 +350,7 @@ set(LIB_SOURCES
     src/game/runlog.c
     src/game/run_track.c
     src/game/nuzlocke.c
+    src/game/logline.c
     src/game/script_walk.c
     src/game/follower.c
     src/game/follower_ctx.c
@@ -386,6 +389,7 @@ set(LIB_SOURCES
     src/frontend/nuzlocke_session.c
     src/frontend/hunt_session.c
     src/frontend/run_session.c
+    src/frontend/session_log.c
     src/frontend/run_panel.c
     src/frontend/hunt_panel.c
     src/frontend/library.c
@@ -512,6 +516,7 @@ set(TEST_SOURCES
     tests/test_nuzlocke_session.c
     tests/test_hunt_session.c
     tests/test_run_session.c
+    tests/test_session_log.c
     tests/test_library.c
     tests/test_library_view.c
     tests/test_search_view.c

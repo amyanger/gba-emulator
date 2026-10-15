@@ -1,5 +1,5 @@
 #include "game/nuzlocke.h"
-#include <errno.h>
+#include "game/logline.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -130,22 +130,13 @@ void nuz_apply(NuzRun* run, const NuzEvent* ev) {
 
 /* ---- Log lines ---- */
 
-static void put_hex(char* out, const uint8_t* b, size_t n) {
-    static const char hex[] = "0123456789ABCDEF";
-    for (size_t i = 0; i < n; i++) {
-        out[2 * i] = hex[b[i] >> 4];
-        out[2 * i + 1] = hex[b[i] & 15];
-    }
-    out[2 * n] = '\0';
-}
-
 int nuz_format(const NuzEvent* ev, char* out, size_t out_size) {
     char key[32], nick[21];
     int n;
     if (ev->type >= NUZ_EV_COUNT) return -1;
     snprintf(key, sizeof(key), "%08X:%08X:%u", (unsigned)ev->key.pid, (unsigned)ev->key.ot,
              (unsigned)ev->key.variant);
-    put_hex(nick, ev->nick, sizeof(ev->nick));
+    logline_hex_encode(nick, ev->nick, sizeof(ev->nick));
     const char* t = k_type_names[ev->type];
     unsigned pt = (unsigned)ev->pt, sec = ev->sec, sp = ev->species, lv = ev->level;
     switch (ev->type) {
@@ -184,17 +175,6 @@ int nuz_format(const NuzEvent* ev, char* out, size_t out_size) {
     return (n < 0 || (size_t)n >= out_size) ? -1 : n;
 }
 
-static bool parse_u32(const char* s, int base, uint32_t max, uint32_t* out) {
-    char* end;
-    /* 10 digits covers any u32; also guards against strtoul wrapping on 32-bit long. */
-    if (*s == '\0' || *s == '-' || *s == '+' || *s == ' ' || strlen(s) > 10) return false;
-    errno = 0;
-    unsigned long v = strtoul(s, &end, base);
-    if (*end != '\0' || errno == ERANGE || v > max) return false;
-    *out = (uint32_t)v;
-    return true;
-}
-
 static bool parse_key(const char* s, NuzKey* k) {
     char buf[32];
     uint32_t v;
@@ -204,48 +184,33 @@ static bool parse_key(const char* s, NuzKey* k) {
     char* b = a ? strchr(a + 1, ':') : NULL;
     if (!a || !b) return false;
     *a = *b = '\0';
-    if (!parse_u32(buf, 16, 0xFFFFFFFFu, &k->pid) || !parse_u32(a + 1, 16, 0xFFFFFFFFu, &k->ot) ||
-        !parse_u32(b + 1, 10, 1, &v))
+    if (!logline_u32(buf, 16, 0xFFFFFFFFu, &k->pid) || !logline_u32(a + 1, 16, 0xFFFFFFFFu, &k->ot) ||
+        !logline_u32(b + 1, 10, 1, &v))
         return false;
     k->variant = (uint8_t)v;
     return true;
 }
 
-static int hex_digit(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    return -1;
-}
-
 static bool parse_field(const char* k, const char* v, NuzEvent* ev, bool* have_pt) {
     uint32_t x;
-    if (strcmp(k, "pt") == 0) { if (!parse_u32(v, 10, 0xFFFFFFFFu, &ev->pt)) return false; *have_pt = true; }
-    else if (strcmp(k, "tid") == 0) return parse_u32(v, 16, 0xFFFFFFFFu, &ev->tid);
+    if (strcmp(k, "pt") == 0) { if (!logline_u32(v, 10, 0xFFFFFFFFu, &ev->pt)) return false; *have_pt = true; }
+    else if (strcmp(k, "tid") == 0) return logline_u32(v, 16, 0xFFFFFFFFu, &ev->tid);
     else if (strcmp(k, "key") == 0) return parse_key(v, &ev->key);
-    else if (strcmp(k, "sp") == 0) { if (!parse_u32(v, 10, 0xFFFF, &x)) return false; ev->species = (uint16_t)x; }
-    else if (strcmp(k, "foe") == 0) { if (!parse_u32(v, 10, 0xFFFF, &x)) return false; ev->foe = (uint16_t)x; }
-    else if (strcmp(k, "lv") == 0) { if (!parse_u32(v, 10, 255, &x)) return false; ev->level = (uint8_t)x; }
-    else if (strcmp(k, "sec") == 0) { if (!parse_u32(v, 10, 255, &x)) return false; ev->sec = (uint8_t)x; }
-    else if (strcmp(k, "shiny") == 0) { if (!parse_u32(v, 10, 1, &x)) return false; ev->shiny = x != 0; }
-    else if (strcmp(k, "from") == 0) return parse_u32(v, 10, 0xFFFFFFFFu, &ev->from);
-    else if (strcmp(k, "to") == 0) return parse_u32(v, 10, 0xFFFFFFFFu, &ev->to);
+    else if (strcmp(k, "sp") == 0) { if (!logline_u32(v, 10, 0xFFFF, &x)) return false; ev->species = (uint16_t)x; }
+    else if (strcmp(k, "foe") == 0) { if (!logline_u32(v, 10, 0xFFFF, &x)) return false; ev->foe = (uint16_t)x; }
+    else if (strcmp(k, "lv") == 0) { if (!logline_u32(v, 10, 255, &x)) return false; ev->level = (uint8_t)x; }
+    else if (strcmp(k, "sec") == 0) { if (!logline_u32(v, 10, 255, &x)) return false; ev->sec = (uint8_t)x; }
+    else if (strcmp(k, "shiny") == 0) { if (!logline_u32(v, 10, 1, &x)) return false; ev->shiny = x != 0; }
+    else if (strcmp(k, "from") == 0) return logline_u32(v, 10, 0xFFFFFFFFu, &ev->from);
+    else if (strcmp(k, "to") == 0) return logline_u32(v, 10, 0xFFFFFFFFu, &ev->to);
     else if (strcmp(k, "res") == 0) {
         if (strcmp(v, "caught") == 0) ev->caught = true;
         else if (strcmp(v, "missed") == 0) ev->caught = false;
         else return false;
     } else if (strcmp(k, "kind") == 0) {
-        int i = 0;
-        while (i < NUZ_KIND_COUNT && strcmp(v, k_kind_names[i]) != 0) i++;
-        if (i == NUZ_KIND_COUNT) return false;
-        ev->kind = (uint8_t)i;
+        return logline_name(v, k_kind_names, NUZ_KIND_COUNT, &ev->kind);
     } else if (strcmp(k, "nick") == 0) {
-        if (strlen(v) != 2 * sizeof(ev->nick)) return false;
-        for (size_t i = 0; i < sizeof(ev->nick); i++) {
-            int hi = hex_digit(v[2 * i]), lo = hex_digit(v[2 * i + 1]);
-            if (hi < 0 || lo < 0) return false;
-            ev->nick[i] = (uint8_t)(hi << 4 | lo);
-        }
+        return logline_hex_decode(v, ev->nick, sizeof(ev->nick));
     }
     /* Unknown keys are skipped so newer files still load. */
     return true;
@@ -253,35 +218,17 @@ static bool parse_field(const char* k, const char* v, NuzEvent* ev, bool* have_p
 
 bool nuz_parse(const char* line, NuzEvent* ev) {
     char buf[256];
-    size_t len = strlen(line);
-    while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) len--;
-    if (len == 0 || len >= sizeof(buf)) return false;
-    memcpy(buf, line, len);
-    buf[len] = '\0';
-
+    char* tok[24];
     memset(ev, 0, sizeof(*ev));
     ev->sec = NUZ_SEC_NONE;
-    /* Split on spaces by hand: strtok_r isn't available on MSVC. */
-    char* tok[24];
-    int ntok = 0;
-    for (char* p = buf; *p;) {
-        while (*p == ' ') *p++ = '\0';
-        if (!*p) break;
-        if (ntok == 24) return false;
-        tok[ntok++] = p;
-        while (*p && *p != ' ') p++;
-    }
-    if (ntok == 0) return false;
-    int type = 0;
-    while (type < NUZ_EV_COUNT && strcmp(tok[0], k_type_names[type]) != 0) type++;
-    if (type == NUZ_EV_COUNT) return false;
-    ev->type = (uint8_t)type;
+    int ntok = logline_tokens(line, buf, sizeof(buf), tok, 24);
+    uint8_t type;
+    if (ntok == 0 || !logline_name(tok[0], k_type_names, NUZ_EV_COUNT, &type)) return false;
+    ev->type = type;
     bool have_pt = false;
     for (int i = 1; i < ntok; i++) {
-        char* eq = strchr(tok[i], '=');
-        if (!eq || eq == tok[i]) return false;
-        *eq = '\0';
-        if (!parse_field(tok[i], eq + 1, ev, &have_pt)) return false;
+        char *k, *v;
+        if (!logline_field(tok[i], &k, &v) || !parse_field(k, v, ev, &have_pt)) return false;
     }
     return have_pt;
 }
