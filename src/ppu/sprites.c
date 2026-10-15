@@ -135,6 +135,133 @@ static void extra_objs_at(PPU* ppu, int priority, int32_t slot) {
     }
 }
 
+// One OAM entry decoded for the current scanline.
+typedef struct {
+    uint16_t attr0;
+    uint8_t gfx_mode, pal_num;
+    bool affine, color_8bpp, h_flip, v_flip;
+    uint16_t base_tile;
+    int32_t x, local_y, width, height, bbox_w, bbox_h;
+    int16_t pa, pb, pc, pd;
+} ObjLine;
+
+// Decode OAM entry i for the current scanline. window_pass selects GFX mode 2
+// (OBJ window) sprites; otherwise only visible sprites at `priority`. False
+// when the entry is disabled, filtered out, has a reserved shape, misses the
+// line or is hidden in a bitmap mode.
+static bool obj_decode_line(const PPU* ppu, int32_t i, bool window_pass, int priority, ObjLine* o) {
+    uint32_t oam_base = (uint32_t)i * OAM_ENTRY_SIZE;
+
+    // Read OAM attributes (little-endian)
+    uint16_t attr0 = (uint16_t)ppu->oam[oam_base]
+                   | ((uint16_t)ppu->oam[oam_base + 1] << 8);
+    uint16_t attr1 = (uint16_t)ppu->oam[oam_base + 2]
+                   | ((uint16_t)ppu->oam[oam_base + 3] << 8);
+    uint16_t attr2 = (uint16_t)ppu->oam[oam_base + 4]
+                   | ((uint16_t)ppu->oam[oam_base + 5] << 8);
+
+    // OBJ Mode: attr0 bits 9-8
+    // 0 = Regular, 1 = Affine, 2 = Disabled, 3 = Affine double-size
+    uint8_t obj_mode = BITS(attr0, 9, 8);
+    if (obj_mode == 2) return false;  // Disabled sprite
+
+    // GFX Mode: attr0 bits 11-10
+    // 0 = Normal, 1 = Semi-transparent, 2 = OBJ window
+    // OBJ window sprites are not drawn and ignore priority; they only mark
+    // pixels in the obj_window buffer (ppu_build_obj_window).
+    uint8_t gfx_mode = BITS(attr0, 11, 10);
+    if (window_pass != (gfx_mode == 2)) return false;
+
+    // Priority: attr2 bits 11-10
+    if (!window_pass && BITS(attr2, 11, 10) != (uint8_t)priority) return false;
+
+    // Shape and size determine sprite dimensions
+    uint8_t shape = BITS(attr0, 15, 14);
+    uint8_t size  = BITS(attr1, 15, 14);
+
+    // Guard against invalid shape (shape=3 is reserved/undefined)
+    if (shape > 2) return false;
+
+    o->width  = sprite_width[shape][size];
+    o->height = sprite_height[shape][size];
+
+    // Affine double-size mode renders into a doubled bounding box.
+    o->bbox_w = (obj_mode == 3) ? o->width * 2 : o->width;
+    o->bbox_h = (obj_mode == 3) ? o->height * 2 : o->height;
+
+    // Y coordinate: attr0 bits 7-0 (unsigned 0-255)
+    // Values >= 160 are treated as negative (wrap around): y - 256
+    int32_t sprite_y = BITS(attr0, 7, 0);
+    if (sprite_y >= 160) sprite_y -= 256;
+
+    // Check if the sprite's bounding box intersects the scanline
+    o->local_y = (int32_t)ppu->vcount - sprite_y;
+    if (o->local_y < 0 || o->local_y >= o->bbox_h) return false;
+
+    // Apply vertical mosaic: snap sprite row to the top of the mosaic block.
+    // OAM attr0 bit 12 enables mosaic for this sprite. Not applied to OBJ
+    // window sprites (kept as before; unverified against hardware).
+    if (!window_pass && BIT(attr0, 12)) {
+        uint16_t obj_v_size = BITS(ppu->mosaic, 15, 12) + 1;
+        if (obj_v_size > 1) {
+            o->local_y = o->local_y - (o->local_y % (int32_t)obj_v_size);
+        }
+    }
+
+    // X coordinate: attr1 bits 8-0 (9-bit signed via sign-extending bit 8)
+    o->x = BITS(attr1, 8, 0);
+    if (BIT(attr1, 8)) {
+        o->x |= (int32_t)0xFFFFFE00;  // Sign-extend from bit 8
+    }
+
+    // Color mode: attr0 bit 13 (0=4bpp, 1=8bpp)
+    o->color_8bpp = BIT(attr0, 13);
+
+    // Tile number: attr2 bits 9-0
+    o->base_tile = BITS(attr2, 9, 0);
+
+    // In 8bpp mode, hardware forces tile number bit 0 to 0
+    if (o->color_8bpp) {
+        o->base_tile &= ~(uint16_t)1;
+    }
+
+    if (obj_tile_hidden_in_bitmap_mode(ppu, o->base_tile)) return false;
+
+    // Palette number: attr2 bits 15-12 (only used in 4bpp mode)
+    o->pal_num = BITS(attr2, 15, 12);
+
+    // Flip flags (regular mode only; affine repurposes these bits
+    // as part of the parameter group index)
+    o->affine = (obj_mode == 1) || (obj_mode == 3);
+    o->h_flip = !o->affine && BIT(attr1, 12);
+    o->v_flip = !o->affine && BIT(attr1, 13);
+
+    o->pa = 0x100;
+    o->pb = 0;
+    o->pc = 0;
+    o->pd = 0x100;
+    if (o->affine) {
+        obj_read_affine_params(ppu, attr1, &o->pa, &o->pb, &o->pc, &o->pd);
+    }
+
+    o->attr0 = attr0;
+    o->gfx_mode = gfx_mode;
+    return true;
+}
+
+// Palette index at bounding-box column px of a decoded sprite line
+// (0: transparent, or outside an affine sprite's texture).
+static uint8_t obj_line_texel(const PPU* ppu, const ObjLine* o, bool mapping_1d, int32_t px) {
+    int32_t tex_x, tex_y;
+    if (!obj_texcoord(px, o->local_y, o->affine, o->pa, o->pb, o->pc, o->pd,
+                      o->bbox_w, o->bbox_h, o->width, o->height,
+                      o->h_flip, o->v_flip, &tex_x, &tex_y)) {
+        return 0;
+    }
+    return obj_fetch_texel(ppu, mapping_1d, o->color_8bpp, o->base_tile, (uint32_t)o->width,
+                           (uint32_t)tex_x, (uint32_t)tex_y);
+}
+
 // Render all sprites whose OAM priority field matches the given priority level.
 // Iterates OAM entries from 127 down to 0 so that lower-numbered entries
 // overwrite higher-numbered ones (lower index = higher display priority among
@@ -146,8 +273,6 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
     // DISPCNT bit 6: OBJ tile mapping mode (0=2D, 1=1D)
     bool mapping_1d = BIT(ppu->dispcnt, 6);
 
-    uint16_t scanline = ppu->vcount;
-
     bool extra = false;
     for (int k = 0; k < PPU_EXTRA_OBJ_MAX; k++)
         if (ppu->extra_obj[k].on && ppu->extra_obj[k].priority == priority) extra = true;
@@ -155,126 +280,27 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
     if (extra) extra_objs_at(ppu, priority, 128);
     for (int32_t i = OAM_ENTRY_COUNT - 1; i >= 0; i--) {
         if (extra) extra_objs_at(ppu, priority, i);
-        uint32_t oam_base = (uint32_t)i * OAM_ENTRY_SIZE;
-
-        // Read OAM attributes (little-endian)
-        uint16_t attr0 = (uint16_t)ppu->oam[oam_base]
-                       | ((uint16_t)ppu->oam[oam_base + 1] << 8);
-        uint16_t attr1 = (uint16_t)ppu->oam[oam_base + 2]
-                       | ((uint16_t)ppu->oam[oam_base + 3] << 8);
-        uint16_t attr2 = (uint16_t)ppu->oam[oam_base + 4]
-                       | ((uint16_t)ppu->oam[oam_base + 5] << 8);
-
-        // OBJ Mode: attr0 bits 9-8
-        // 0 = Regular, 1 = Affine, 2 = Disabled, 3 = Affine double-size
-        uint8_t obj_mode = BITS(attr0, 9, 8);
-        if (obj_mode == 2) continue;  // Disabled sprite
-        bool affine = (obj_mode == 1) || (obj_mode == 3);
-
-        // GFX Mode: attr0 bits 11-10
-        // 0 = Normal, 1 = Semi-transparent, 2 = OBJ window
-        uint8_t gfx_mode = BITS(attr0, 11, 10);
-
-        // OBJ window sprites are not rendered visually and ignore priority.
-        // They only mark pixels in the obj_window buffer.
-        if (gfx_mode == 2) continue;  // Handled in a separate pass
-
-        // Priority: attr2 bits 11-10
-        uint8_t sprite_prio = BITS(attr2, 11, 10);
-        if (sprite_prio != (uint8_t)priority) continue;
-
-        // Shape and size determine sprite dimensions
-        uint8_t shape = BITS(attr0, 15, 14);
-        uint8_t size  = BITS(attr1, 15, 14);
-
-        // Guard against invalid shape (shape=3 is reserved/undefined)
-        if (shape > 2) continue;
-
-        int32_t width  = sprite_width[shape][size];
-        int32_t height = sprite_height[shape][size];
-
-        // Affine double-size mode renders into a doubled bounding box.
-        int32_t bbox_w = (obj_mode == 3) ? width * 2 : width;
-        int32_t bbox_h = (obj_mode == 3) ? height * 2 : height;
-
-        // Y coordinate: attr0 bits 7-0 (unsigned 0-255)
-        // Values >= 160 are treated as negative (wrap around): y - 256
-        int32_t sprite_y = BITS(attr0, 7, 0);
-        if (sprite_y >= 160) sprite_y -= 256;
-
-        // Check if the sprite's bounding box intersects the scanline
-        int32_t local_y = (int32_t)scanline - sprite_y;
-        if (local_y < 0 || local_y >= bbox_h) continue;
-
-        // Apply vertical mosaic: snap sprite row to the top of the mosaic block.
-        // OAM attr0 bit 12 enables mosaic for this sprite.
-        if (BIT(attr0, 12)) {
-            uint16_t obj_v_size = BITS(ppu->mosaic, 15, 12) + 1;
-            if (obj_v_size > 1) {
-                local_y = local_y - (local_y % (int32_t)obj_v_size);
-            }
-        }
-
-        // X coordinate: attr1 bits 8-0 (9-bit signed via sign-extending bit 8)
-        int32_t sprite_x = BITS(attr1, 8, 0);
-        if (BIT(attr1, 8)) {
-            sprite_x |= (int32_t)0xFFFFFE00;  // Sign-extend from bit 8
-        }
-
-        // Color mode: attr0 bit 13 (0=4bpp, 1=8bpp)
-        bool color_8bpp = BIT(attr0, 13);
-
-        // Tile number: attr2 bits 9-0
-        uint16_t base_tile = BITS(attr2, 9, 0);
-
-        // In 8bpp mode, hardware forces tile number bit 0 to 0
-        if (color_8bpp) {
-            base_tile &= ~(uint16_t)1;
-        }
-
-        if (obj_tile_hidden_in_bitmap_mode(ppu, base_tile)) continue;
-
-        // Palette number: attr2 bits 15-12 (only used in 4bpp mode)
-        uint8_t pal_num = BITS(attr2, 15, 12);
-
-        // Flip flags (regular mode only; affine repurposes these bits
-        // as part of the parameter group index)
-        bool h_flip = !affine && BIT(attr1, 12);
-        bool v_flip = !affine && BIT(attr1, 13);
-
-        int16_t pa = 0x100, pb = 0, pc = 0, pd = 0x100;
-        if (affine) {
-            obj_read_affine_params(ppu, attr1, &pa, &pb, &pc, &pd);
-        }
+        ObjLine o;
+        if (!obj_decode_line(ppu, i, false, priority, &o)) continue;
 
         // Render each pixel of this bounding-box row
-        for (int32_t px = 0; px < bbox_w; px++) {
-            int32_t screen_x = sprite_x + px;
+        for (int32_t px = 0; px < o.bbox_w; px++) {
+            int32_t screen_x = o.x + px;
 
             // Clip to visible screen area
             if (screen_x < 0 || screen_x >= SCREEN_WIDTH) continue;
 
-            int32_t tex_x, tex_y;
-            if (!obj_texcoord(px, local_y, affine, pa, pb, pc, pd,
-                              bbox_w, bbox_h, width, height,
-                              h_flip, v_flip, &tex_x, &tex_y)) {
-                continue;
-            }
-
-            uint8_t color_idx = obj_fetch_texel(ppu, mapping_1d, color_8bpp,
-                                                base_tile, (uint32_t)width,
-                                                (uint32_t)tex_x, (uint32_t)tex_y);
-
             // Palette index 0 is transparent in both modes
+            uint8_t color_idx = obj_line_texel(ppu, &o, mapping_1d, px);
             if (color_idx == 0) continue;
 
             // Look up the 15-bit BGR555 color from OBJ palette RAM
             uint32_t pal_addr;
-            if (color_8bpp) {
+            if (o.color_8bpp) {
                 pal_addr = OBJ_PALETTE_BASE + (uint32_t)color_idx * 2;
             } else {
                 pal_addr = OBJ_PALETTE_BASE
-                         + ((uint32_t)pal_num * 16 + (uint32_t)color_idx) * 2;
+                         + ((uint32_t)o.pal_num * 16 + (uint32_t)color_idx) * 2;
             }
 
             uint16_t color = (uint16_t)ppu->palette_ram[pal_addr]
@@ -283,8 +309,8 @@ void ppu_render_sprites_at_priority(PPU* ppu, int priority) {
             // Window-filtered write: dropped if OBJ is masked out at this pixel.
             // Only set mosaic/semi-transparent flags when the write landed.
             if (ppu_push_pixel(ppu, (uint32_t)screen_x, color, 4)) {
-                ppu->obj_mosaic[screen_x] = BIT(attr0, 12);
-                ppu->obj_semitransparent[screen_x] = (gfx_mode == 1);
+                ppu->obj_mosaic[screen_x] = BIT(o.attr0, 12);
+                ppu->obj_semitransparent[screen_x] = (o.gfx_mode == 1);
             }
         }
     }
@@ -315,76 +341,17 @@ void ppu_build_obj_window(PPU* ppu) {
     if (!BIT(ppu->dispcnt, 12)) return;
 
     bool mapping_1d = BIT(ppu->dispcnt, 6);
-    uint16_t scanline = ppu->vcount;
 
     for (int32_t i = OAM_ENTRY_COUNT - 1; i >= 0; i--) {
-        uint32_t oam_base = (uint32_t)i * OAM_ENTRY_SIZE;
+        ObjLine o;
+        if (!obj_decode_line(ppu, i, true, 0, &o)) continue;
 
-        uint16_t attr0 = (uint16_t)ppu->oam[oam_base]
-                       | ((uint16_t)ppu->oam[oam_base + 1] << 8);
-        uint16_t attr1 = (uint16_t)ppu->oam[oam_base + 2]
-                       | ((uint16_t)ppu->oam[oam_base + 3] << 8);
-        uint16_t attr2 = (uint16_t)ppu->oam[oam_base + 4]
-                       | ((uint16_t)ppu->oam[oam_base + 5] << 8);
-
-        uint8_t obj_mode = BITS(attr0, 9, 8);
-        if (obj_mode == 2) continue;  // Disabled
-        bool affine = (obj_mode == 1) || (obj_mode == 3);
-
-        // Only process GFX mode 2 (OBJ window) sprites
-        uint8_t gfx_mode = BITS(attr0, 11, 10);
-        if (gfx_mode != 2) continue;
-
-        uint8_t shape = BITS(attr0, 15, 14);
-        uint8_t size  = BITS(attr1, 15, 14);
-        if (shape > 2) continue;
-
-        int32_t width  = sprite_width[shape][size];
-        int32_t height = sprite_height[shape][size];
-        int32_t bbox_w = (obj_mode == 3) ? width * 2 : width;
-        int32_t bbox_h = (obj_mode == 3) ? height * 2 : height;
-
-        int32_t sprite_y = BITS(attr0, 7, 0);
-        if (sprite_y >= 160) sprite_y -= 256;
-
-        int32_t local_y = (int32_t)scanline - sprite_y;
-        if (local_y < 0 || local_y >= bbox_h) continue;
-
-        int32_t sprite_x = BITS(attr1, 8, 0);
-        if (BIT(attr1, 8)) {
-            sprite_x |= (int32_t)0xFFFFFE00;
-        }
-
-        bool color_8bpp = BIT(attr0, 13);
-        uint16_t base_tile = BITS(attr2, 9, 0);
-        if (color_8bpp) base_tile &= ~(uint16_t)1;
-        if (obj_tile_hidden_in_bitmap_mode(ppu, base_tile)) continue;
-
-        bool h_flip = !affine && BIT(attr1, 12);
-        bool v_flip = !affine && BIT(attr1, 13);
-
-        int16_t pa = 0x100, pb = 0, pc = 0, pd = 0x100;
-        if (affine) {
-            obj_read_affine_params(ppu, attr1, &pa, &pb, &pc, &pd);
-        }
-
-        for (int32_t px = 0; px < bbox_w; px++) {
-            int32_t screen_x = sprite_x + px;
+        for (int32_t px = 0; px < o.bbox_w; px++) {
+            int32_t screen_x = o.x + px;
             if (screen_x < 0 || screen_x >= SCREEN_WIDTH) continue;
 
-            int32_t tex_x, tex_y;
-            if (!obj_texcoord(px, local_y, affine, pa, pb, pc, pd,
-                              bbox_w, bbox_h, width, height,
-                              h_flip, v_flip, &tex_x, &tex_y)) {
-                continue;
-            }
-
-            uint8_t color_idx = obj_fetch_texel(ppu, mapping_1d, color_8bpp,
-                                                base_tile, (uint32_t)width,
-                                                (uint32_t)tex_x, (uint32_t)tex_y);
-
             // Only non-transparent pixels contribute to the OBJ window
-            if (color_idx != 0) {
+            if (obj_line_texel(ppu, &o, mapping_1d, px) != 0) {
                 ppu->obj_window[screen_x] = true;
             }
         }
