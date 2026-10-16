@@ -35,9 +35,11 @@ mkdir -p "$WORK/AppDir/usr/share/doc/gba_emulator"
 cp "$REPO/LICENSE" "$REPO/fonts/Inter-LICENSE.txt" "$WORK/AppDir/usr/share/doc/gba_emulator/"
 
 # Update info lets AppImageUpdate fetch the latest release; appimagetool
-# writes the matching .zsync (needs zsyncmake on PATH) next to the AppImage.
+# makes the matching .zsync (needs zsyncmake on PATH), moved next to the AppImage.
 UPDATE_INFO="gh-releases-zsync|amyanger|gba-emulator|latest|gba_emulator-*-x86_64.AppImage.zsync"
 APPIMAGE="$OUT/gba_emulator-$VERSION-x86_64.AppImage"
 mkdir -p "$OUT"
 ARCH=x86_64 VERSION="$VERSION" "$WORK/appimagetool" -u "$UPDATE_INFO" "$WORK/AppDir" "$APPIMAGE"
+ZSYNC="$(basename "$APPIMAGE").zsync" # zsyncmake writes it to the current directory
+[ "$ZSYNC" -ef "$APPIMAGE.zsync" ] || mv "$ZSYNC" "$APPIMAGE.zsync"
 test -s "$APPIMAGE.zsync" || { echo "No .zsync written (is zsyncmake installed?)"; exit 1; }
