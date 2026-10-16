@@ -161,6 +161,7 @@ typedef struct {
     uint32_t mon_still_front_pics;   /* CompressedSpriteSheet[] gMonStillFrontPicTable {ptr,u16 size,u16 tag} */
     uint32_t mon_palettes;           /* CompressedSpritePalette[] gMonPaletteTable {ptr,u16 tag,u16 pad} */
     uint32_t mon_shiny_palettes;     /* gMonShinyPaletteTable, same layout */
+    uint32_t badge_gfx;              /* LZ77 128x16 4bpp badge sheet (trainer card); 0 = none */
     uint32_t experience_tables;                           /* u32[growth][101] */
     uint32_t species_to_national;                         /* u16, index species-1 */
     uint32_t wild_mon_headers;   uint16_t wild_header_cap; /* 20-byte stride */

@@ -157,6 +157,7 @@ set(CORE_SOURCES
     src/game/berry.c
     src/game/daycare.c
     src/game/mon_pic.c
+    src/game/badge_pic.c
     src/game/trainer_card.c
     src/hgss/nds_fs.c
     src/hgss/hgss_msg.c
@@ -177,6 +178,7 @@ set(CORE_SOURCES
     src/frontend/slot_picker.c
     src/frontend/game_panel.c
     src/frontend/trainer_card_draw.c
+    src/frontend/badge_draw.c
     src/frontend/berry_alerts.c
     src/frontend/daycare_alerts.c
     src/frontend/panel_layout.c
@@ -371,8 +373,10 @@ set(TEST_SOURCES
     tests/test_overworld_draw.c
     tests/test_nuzlocke_read.c
     tests/test_mon_pic.c
+    tests/test_badge_pic.c
     tests/test_trainer_card.c
     tests/test_trainer_card_draw.c
+    tests/test_badge_draw.c
     tests/test_species_search.c
     tests/test_run_read.c
     tests/test_runlog.c

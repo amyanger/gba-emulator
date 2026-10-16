@@ -87,6 +87,8 @@ void run_hud_tests(void);
 void run_overworld_draw_tests(void);
 void run_nuzlocke_read_tests(void);
 void run_mon_pic_tests(void);
+void run_badge_pic_tests(void);
+void run_badge_draw_tests(void);
 void run_trainer_card_tests(void);
 void run_trainer_card_draw_tests(void);
 void run_species_search_tests(void);
@@ -193,6 +195,8 @@ int main(void) {
     RUN_SUITE(run_overworld_draw_tests);
     RUN_SUITE(run_nuzlocke_read_tests);
     RUN_SUITE(run_mon_pic_tests);
+    RUN_SUITE(run_badge_pic_tests);
+    RUN_SUITE(run_badge_draw_tests);
     RUN_SUITE(run_trainer_card_tests);
     RUN_SUITE(run_trainer_card_draw_tests);
     RUN_SUITE(run_species_search_tests);

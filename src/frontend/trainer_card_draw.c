@@ -1,5 +1,6 @@
 #include "frontend/trainer_card_draw.h"
 #include "frontend/game_panel.h"
+#include "frontend/badge_draw.h"
 #include "screenshot/screenshot.h"
 #include "common.h"
 #include "ui/ui_font.h"
@@ -15,12 +16,6 @@
 #define ACE_GLOW   0xFF1C2A4Au
 #define LEFT_W     690.0f
 
-/* Badge colors in badge order; presentation only (R14). */
-static const uint32_t k_hoenn_badge_colors[8] = {0xFFA8B0C4, 0xFFD9A85B, 0xFFF2C94C, 0xFFEB5757,
-                                                 0xFFC9B27C, 0xFF8DB2F0, 0xFFFF5D8F, 0xFF4C9BFF};
-/* Boulder, Cascade, Thunder, Rainbow, Soul, Marsh, Volcano, Earth */
-static const uint32_t k_kanto_badge_colors[8] = {0xFFA8B0C4, 0xFF4C9BFF, 0xFFF2C94C, 0xFFB58CFF,
-                                                 0xFFFF5D8F, 0xFFD9A85B, 0xFFEB5757, 0xFF5BBF6A};
 /* GamePartyMon.ivs is HP, Atk, Def, Spe, SpA, SpD; the card shows HP, Atk, Def, SpA, SpD, Spe. */
 static const uint8_t k_stat_order[6] = {0, 1, 2, 4, 5, 3};
 static const char* const k_stat_label[6] = {"HP", "Atk", "Def", "SpA", "SpD", "Spe"};
@@ -84,12 +79,10 @@ static void draw_pic(UiCanvas* c, float x, float y, float size, const uint32_t p
 }
 
 static void badge_row(UiCanvas* c, float x, float y, const TrainerCardData* d, float size) {
-    const uint32_t* colors =
-        d->region == GAME_REGION_KANTO ? k_kanto_badge_colors : k_hoenn_badge_colors;
     for (int i = 0; i < 8; i++) {
         float bx = x + (float)i * (size + 6.0f);
         if (d->badges & (1u << i))
-            ui_fill_round_rect(c, (UiRect){bx, y, size, size}, size / 2, colors[i]);
+            ui_fill_round_rect(c, (UiRect){bx, y, size, size}, size / 2, badge_color(d->region, i));
         else
             ui_ring(c, bx + size / 2, y + size / 2, size / 2 - 1.0f, 2.0f, UI_DIVIDER);
     }

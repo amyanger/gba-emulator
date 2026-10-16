@@ -236,7 +236,7 @@ The story of your playthrough. It is always on: there is nothing to start, it ke
 
 The dashboard shows your trainer name, play time, badge count and Pokedex totals at the top, then:
 
-- **Badges.** All eight, with the play time it took to earn each one. The first shows the time you got it, the rest show the time since the badge before ("+1:02").
+- **Badges.** All eight, each drawn with its own art from your ROM: in colour once you have it, a dark silhouette until then. Each earned badge also shows the play time it took to get it. The first shows the time you got it, the rest show the time since the badge before ("+1:02").
 - **Journey.** Everything that happened, newest first: badges and the leader you beat, story moments such as choosing your starter, Mt. Chimney, Groudon and Kyogre, and the Hall of Fame, Pokemon you caught or were given, evolutions, faints with what knocked them out, times you whited out, and which of your Pokemon knocked out the last Pokemon of a gym leader, Elite Four member or the Champion. Each line has the play time, and lines for catches, faints and the like also say where. Use `[` and `]` to scroll.
 - **Highlights.** Pokemon caught, faints, steps and battles, plus an MVP (most knockouts), your closest call (one of your Pokemon still standing at the end of a won battle on 10% HP or less) and a fun fact from the game's own counters, such as ledges jumped or times rained on.
 

@@ -156,6 +156,7 @@ const GameProfile g_firered_profile = {
     .mon_still_front_pics = 0x082350AC, /* gMonFrontPicTable: FRLG fronts are one frame */
     .mon_palettes = 0x0823730C,
     .mon_shiny_palettes = 0x082380CC,
+    .badge_gfx = 0x083CD5E8, /* trainer card badges, pointer in LoadCardGfx at 0x08089530 */
     .experience_tables = 0x08253AE4,
     .species_to_national = 0x08251FEE,
     .wild_mon_headers = 0x083C9CB8, .wild_header_cap = 133,
@@ -192,6 +193,7 @@ const GameProfile g_leafgreen_profile = {
     .mon_still_front_pics = 0x082350F8,
     .mon_palettes = 0x08237358,
     .mon_shiny_palettes = 0x08238118,
+    .badge_gfx = 0x083CD494, /* trainer card badges, pointer in LoadCardGfx at 0x08089518 */
     .experience_tables = 0x08253B30,
     .species_to_national = 0x0825203A,
     .wild_mon_headers = 0x083C9B64, .wild_header_cap = 133,

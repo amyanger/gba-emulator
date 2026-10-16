@@ -1,4 +1,5 @@
 #include "frontend/run_panel.h"
+#include "frontend/badge_draw.h"
 #include "ui/ui_font.h"
 #include "ui/ui_theme.h"
 #include "ui/ui_widgets.h"
@@ -17,9 +18,9 @@
 
 /* Dashboard */
 #define BADGE_Y      76.0f
-#define BADGE_H      50.0f
+#define BADGE_H      71.0f
 #define BADGE_GAP    6.0f
-#define COLS_Y       136.0f
+#define COLS_Y       157.0f
 #define FEED_Y       (COLS_Y + 18.0f)
 #define FEED_W       306.0f              /* left column: LEFT .. 322 */
 #define FEED_TIME_W  40.0f
@@ -28,7 +29,7 @@
 #define HI_X         336.0f              /* right column: 336 .. RIGHT */
 #define HI_W         (RIGHT - HI_X)
 #define TILE_H       40.0f
-#define CARD_GAP     8.0f
+#define CARD_GAP     6.0f
 
 /* Details */
 #define TEAM_HEAD_Y  94.0f
@@ -122,16 +123,22 @@ static void showing_line(UiCanvas* c, float x, float y, float w, unsigned first,
 
 /* ---- Dashboard ---- */
 
-static void badge_cell(UiCanvas* c, float x, float w, const RunView* v, int b) {
+static void badge_cell(UiCanvas* c, float x, float w, const RunView* v, int b, const BadgeArt* art,
+                       GameRegion region) {
     bool have = v->badges[b].have;
     ui_fill_round_rect(c, (UiRect){x, BADGE_Y, w, BADGE_H}, UI_RADIUS, UI_SURFACE);
-    float cx = x + w / 2, cy = BADGE_Y + 11.0f;
-    if (have) ui_fill_round_rect(c, (UiRect){cx - 6.0f, cy - 6.0f, 12.0f, 12.0f}, 6.0f, UI_MID);
-    else ui_ring(c, cx, cy, 5.5f, 1.0f, UI_FAINT);
-    ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, cx, BADGE_Y + 19.0f, w - 6.0f, UI_ALIGN_CENTER,
+    float cx = x + w / 2;
+    if (art && art->ok) {
+        badge_draw(c, cx - 16.0f, BADGE_Y + 6.0f, art->px[b], region, b, have);
+    } else {
+        float cy = BADGE_Y + 22.0f;
+        if (have) ui_fill_round_rect(c, (UiRect){cx - 6.0f, cy - 6.0f, 12.0f, 12.0f}, 6.0f, UI_MID);
+        else ui_ring(c, cx, cy, 5.5f, 1.0f, UI_FAINT);
+    }
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, cx, BADGE_Y + 40.0f, w - 6.0f, UI_ALIGN_CENTER,
             have ? UI_MUTED : UI_FAINT, v->badges[b].name);
     if (have && v->badges[b].split[0])
-        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_SMALL, cx, BADGE_Y + 32.0f, w - 6.0f, UI_ALIGN_CENTER,
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_SMALL, cx, BADGE_Y + 53.0f, w - 6.0f, UI_ALIGN_CENTER,
                 v->badges[b].untimed ? UI_FAINT : UI_TEXT, v->badges[b].split);
 }
 
@@ -243,7 +250,8 @@ static void highlights(UiCanvas* c, const RunView* v) {
     if (v->fun[0]) card(c, y, "Fun fact", v->fun);
 }
 
-static void dashboard(UiCanvas* c, const RunView* v, float top, uint8_t scroll) {
+static void dashboard(UiCanvas* c, const RunView* v, float top, uint8_t scroll, const BadgeArt* art,
+                      GameRegion region) {
     char title[GAME_NAME_LEN + 8], meta[96];
     snprintf(title, sizeof(title), "%s's run", v->player);
     char dex[48];
@@ -253,7 +261,7 @@ static void dashboard(UiCanvas* c, const RunView* v, float top, uint8_t scroll) 
     title_line(c, top + 4.0f, title, meta);
 
     float bw = (RIGHT - LEFT - 7 * BADGE_GAP) / 8;
-    for (int b = 0; b < RUN_BADGES; b++) badge_cell(c, LEFT + b * (bw + BADGE_GAP), bw, v, b);
+    for (int b = 0; b < RUN_BADGES; b++) badge_cell(c, LEFT + b * (bw + BADGE_GAP), bw, v, b, art, region);
 
     journey(c, v, scroll);
     highlights(c, v);
@@ -400,12 +408,13 @@ static void no_run(UiCanvas* c, const RunView* v) {
             "show up here once your save is loaded.");
 }
 
-void run_panel_draw(UiCanvas* c, const RunView* v, float top, uint8_t scroll, bool show_details) {
+void run_panel_draw(UiCanvas* c, const RunView* v, float top, uint8_t scroll, bool show_details,
+                    const BadgeArt* art, GameRegion region) {
     if (!v || v->state != RUN_VIEW_RUN) {
         static const RunView off = { .state = RUN_VIEW_WAITING, .reason = "Waiting for save data" };
         no_run(c, v ? v : &off);
         return;
     }
     if (show_details) details(c, v, top, scroll);
-    else dashboard(c, v, top, scroll);
+    else dashboard(c, v, top, scroll, art, region);
 }

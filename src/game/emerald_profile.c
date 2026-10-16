@@ -155,6 +155,7 @@ const GameProfile g_emerald_profile = {
     .mon_still_front_pics = 0x08301418, /* gMonStillFrontPicTable; gMonFrontPicTable 0x0830A18C has 2-frame sheets */
     .mon_palettes = 0x08303678,         /* gMonPaletteTable */
     .mon_shiny_palettes = 0x08304438,   /* gMonShinyPaletteTable, tag = species + 500 */
+    .badge_gfx = 0x0856F5CC,            /* trainer card badges, pointer in LoadCardGfx at 0x080C2BEC */
     .experience_tables = 0x0831F72C,
     .species_to_national = 0x0831DC82,
     .wild_mon_headers = 0x08552D48, .wild_header_cap = 200,

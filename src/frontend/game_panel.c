@@ -2197,7 +2197,8 @@ void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8
     } else if (active == 6) {
         hunt_panel_draw(c, hunt, top);
     } else if (active == 7) {
-        run_panel_draw(c, run, top, run_scroll, run_details);
+        run_panel_draw(c, run, top, run_scroll, run_details, snap->badge_art,
+                       snap->profile ? snap->profile->rules->region : GAME_REGION_HOENN);
     } else if (!snap->valid) {
         ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, PANEL_W / 2, 220.0f, RIGHT - LEFT,
                 UI_ALIGN_CENTER, UI_MUTED, snap->reason);

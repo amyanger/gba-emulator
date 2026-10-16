@@ -10,6 +10,7 @@
 #include "game/berry.h"
 #include "game/species_search.h"
 #include "game/damage.h"
+#include "game/badge_pic.h"
 
 typedef struct GBA GBA;
 
@@ -87,6 +88,7 @@ typedef struct {
 typedef struct {
     bool valid;
     const GameProfile* profile; /* NULL when unsupported or hand-built (Emerald text) */
+    const BadgeArt* badge_art;  /* GameState-owned, constant per ROM; NULL without a profile or in hand-built snapshots */
     GameSupport support; /* OK unless the ROM itself is unsupported */
     char reason[48];
     GameContext context;
@@ -148,6 +150,7 @@ typedef struct {
     BerryPlaces places;  /* berry tree places, built from the ROM by game_init */
     SpeciesIndex search; /* species search index, built from the ROM by game_init */
     DamageTables dmg_tables; /* damage calculator ROM tables, copied by game_init */
+    BadgeArt badge_art;      /* trainer card badge sheet, decoded by game_init */
     /* Daycare stability hold: SB1 pointer of the last read, consecutive held reads, last
      * adopted view and the personality of each of its clean slots (0 = none), daycare
      * slots 0-1 then party slots. */

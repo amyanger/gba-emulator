@@ -61,7 +61,7 @@ These need the original, unmodified US/English ROM of Pokémon Emerald, FireRed 
 | &nbsp;&nbsp;[Berries](docs/pokemon-companion.md#berries) | B | Every berry tree you've planted, with growth, watering and countdowns, plus a toast when berries are ripe, need water or are about to drop. (Emerald only) |
 | &nbsp;&nbsp;[Search](docs/pokemon-companion.md#search) | / | Type a Pokemon's name to see every wild spot with levels and odds, or how to get it by evolution or breeding. |
 | &nbsp;&nbsp;[Hunt](docs/pokemon-companion.md#hunt) | [ ] | Shiny hunting in tall grass: counts every encounter, shows the next Pokemon and when a match comes up. (Emerald only) |
-| &nbsp;&nbsp;[Run stats](docs/pokemon-companion.md#run) | F10 | Your playthrough's story: badge times, catches, faints, evolutions, an MVP and the game's own counters. |
+| &nbsp;&nbsp;[Run stats](docs/pokemon-companion.md#run) | F10 | Your playthrough's story: badge art and times, catches, faints, evolutions, an MVP and the game's own counters. |
 | **[Overworld X-Ray](docs/pokemon-companion.md#overworld-x-ray)** | F4 | Trainer sight lines, item names, NPC gifts and the hidden Feebas tiles drawn right on the map. (Emerald only) |
 | **[Following Pokemon](docs/usage.md#following-pokemon)** | F1 | Your lead Pokemon walks behind you and talks like it does in HeartGold and SoulSilver, using your own HeartGold or SoulSilver ROM (Emerald only). |
 

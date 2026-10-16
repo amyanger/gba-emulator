@@ -413,6 +413,7 @@ void game_init(GameState* gs, const uint8_t* rom, uint32_t rom_size) {
     berry_places_build(&gs->places, game_has(gs->profile, FEAT_BERRIES) ? gs->profile : NULL, &m);
     species_index_build(&gs->search, gs->profile, &m);
     if (gs->profile) damage_tables_load(&m, gs->profile, &gs->dmg_tables);
+    badge_pic_load(&m, gs->profile, &gs->badge_art);
 }
 
 void game_update_mem(GameState* gs, const GameMem* m) {
@@ -422,6 +423,7 @@ void game_update_mem(GameState* gs, const GameMem* m) {
 
     memset(s, 0, sizeof(*s));
     s->profile = p;
+    s->badge_art = p ? &gs->badge_art : NULL;
     if (!p) {
         s->support = gs->support == GAME_SUPPORT_OK ? GAME_SUPPORT_OTHER_GAME : gs->support;
         game_strcpy(s->reason, sizeof(s->reason),

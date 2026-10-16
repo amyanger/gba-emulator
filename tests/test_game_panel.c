@@ -5,6 +5,7 @@
 #include "ui/ui_widgets.h"
 #include "frontend/search_view.h"
 #include "frontend/run_panel.h"
+#include "frontend/badge_draw.h"
 #include "frontend/hunt_panel.h"
 #include "game/wildgen.h"
 #include <stdio.h>
@@ -1363,10 +1364,68 @@ TEST(panel_run_dashboard_columns_do_not_touch) {
     ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
     game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &full, 0, false, NULL, NULL);
     int lit = 0;
-    for (int y = 140; y < 448; y++)
+    for (int y = 161; y < 448; y++)
         for (int x = 323; x < 335; x++)
             if (s_buf[y * 600 + x] != UI_BG) lit++;
     ASSERT_EQ(lit, 0);
+}
+
+/* Badge 0 (earned in fill_run_full) shows the ROM art when there is some, the dot when not. */
+TEST(panel_run_badge_strip_art_and_fallback) {
+    static GameSnapshot rest;
+    static RunView full;
+    static BadgeArt art;
+    fill_party_and_route(&rest);
+    fill_run_full(&full);
+    memset(&art, 0, sizeof(art));
+    art.ok = true;
+    memset(art.px[0], 3, 256);
+    static const float densities[] = {0.75f, 1.0f, 2.0f};
+    for (size_t d = 0; d < 3; d++) {
+        float s = densities[d];
+        int w = (int)(600 * s + 0.5f), h = (int)(480 * s + 0.5f);
+        int x0 = (int)(33 * s), x1 = (int)(65 * s), y0 = (int)(82 * s), y1 = (int)(114 * s);
+        UiCanvas c;
+        int with_art = 0, dot = 0, dot_fallback = 0;
+        rest.badge_art = &art;
+        ui_canvas_init(&c, s_buf, w, h, s);
+        game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &full, 0, false, NULL, NULL);
+        for (int y = y0; y < y1; y++)
+            for (int x = x0; x < x1; x++) {
+                if (s_buf[y * w + x] == badge_color(GAME_REGION_HOENN, 0)) with_art++;
+                if (s_buf[y * w + x] == UI_MID) dot++;
+            }
+        rest.badge_art = NULL;
+        ui_canvas_init(&c, s_buf, w, h, s);
+        game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &full, 0, false, NULL, NULL);
+        for (int y = y0; y < y1; y++)
+            for (int x = x0; x < x1; x++)
+                if (s_buf[y * w + x] == UI_MID) dot_fallback++;
+        ASSERT_TRUE(with_art > 100);
+        ASSERT_EQ(dot, 0);
+        ASSERT_TRUE(dot_fallback > 20);
+    }
+}
+
+/* MVP, Closest call and Fun fact as two-line cards end above the footer. */
+TEST(panel_run_highlights_fit_with_three_two_line_cards) {
+    static GameSnapshot rest;
+    static RunView v;
+    fill_party_and_route(&rest);
+    fill_run_full(&v);
+    const char* two = "Blaziken the long named hero of the whole run and more";
+    snprintf(v.mvp, sizeof(v.mvp), "%s", two);
+    snprintf(v.closest, sizeof(v.closest), "%s", two);
+    snprintf(v.fun, sizeof(v.fun), "%s", two);
+    UiCanvas c;
+    ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+    game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &v, 0, false, NULL, NULL);
+    int lit = 0, last = 0;
+    for (int y = 140; y < 456; y++)
+        for (int x = 336; x < 584; x++)
+            if (s_buf[y * 600 + x] != UI_BG) { if (y < 448) last = y; else lit++; }
+    ASSERT_EQ(lit, 0);
+    ASSERT_TRUE(last > 400);   /* the third card is really there */
 }
 
 TEST(panel_run_max_scroll) {
@@ -1619,6 +1678,8 @@ TEST(panel_run_preview_png) {
 void run_game_panel_tests(void) {
     RUN_TEST(panel_run_views_stay_in_bounds);
     RUN_TEST(panel_run_dashboard_columns_do_not_touch);
+    RUN_TEST(panel_run_badge_strip_art_and_fallback);
+    RUN_TEST(panel_run_highlights_fit_with_three_two_line_cards);
     RUN_TEST(panel_run_max_scroll);
     RUN_TEST(panel_tab_bar_fits_every_hint);
     RUN_TEST(panel_run_preview_png);
