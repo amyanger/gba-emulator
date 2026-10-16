@@ -10,8 +10,9 @@ Building from source, what is emulated, how the code is organized, how it is tes
 |------------|---------|---------|
 | SDL2 | 2.0+ | `brew install sdl2` (macOS) / `apt install libsdl2-dev` (Linux) |
 | CMake | 3.21+ | `brew install cmake` (macOS) / `apt install cmake` (Linux) |
+| Rust (cargo) | 1.77+ | [rustup.rs](https://rustup.rs) (any OS) or `brew install rust` (macOS) |
 
-No other external libraries are required.
+The HeartGold/SoulSilver parsers in `rust/hgss` are Rust. They use no crates, so the build downloads nothing. No other external libraries are required.
 
 ### Compile
 
@@ -218,10 +219,11 @@ src/
     follower_ctx.c/h       Talk context (place, weather, mood) for the follower
     follower_places.c/h    Maps Emerald places to HeartGold/SoulSilver ones
   hgss/
-    nds_fs.c/h             Read-only access to the user's HeartGold/SoulSilver ROM
+    nds_fs.c/h             Opens and reads the user's HeartGold/SoulSilver ROM
     hgss_assets.c/h        Loads follower sprites, text box, font and messages
-    hgss_gfx.c/h           Texture, frame and font decoders
-    hgss_msg.c/h           Message decryption and text variables
+    hgss_gfx.h             Texture, frame and font decoders (rust/hgss/src/gfx.rs)
+    hgss_msg.h             Message decryption and text variables (rust/hgss/src/msg.rs)
+    hgss_rs.h              Layout probe that keeps the Rust structs in step with C
     hgss_talk.c/h          Follower talk rules
     hgss_model_lut.h       Species to follower model table
   ui/
@@ -285,6 +287,12 @@ src/
       xray_activity.c      "Behind the scenes": timers, DMA, interrupts
 include/
   common.h                 Fixed-width types, bit manipulation macros, logging
+rust/
+  hgss/                    Rust static library behind nds_fs.h, hgss_gfx.h, hgss_msg.h
+    src/nds.rs             NDS file system and NARC archive walking
+    src/gfx.rs             BTX0/BMD0/NCGR/NCLR/font decoding
+    src/msg.rs             Message banks and Gen 3 to HGSS text
+    src/ffi.rs             The C ABI
 tests/                     Unit tests (gba_tests) and golden hashes in tests/golden/
 tools/                     Build, packaging and test scripts (see below)
 ```

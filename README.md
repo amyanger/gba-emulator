@@ -120,7 +120,7 @@ On macOS, hold **fn** with the F-keys unless your keyboard is set to use them as
 
 ## Building from source
 
-You need SDL2 2.0+ and CMake 3.21+ (`brew install sdl2 cmake` on macOS, `apt install libsdl2-dev cmake` on Linux).
+You need SDL2 2.0+, CMake 3.21+ and a Rust toolchain (`brew install sdl2 cmake rust` on macOS; on Linux `apt install libsdl2-dev cmake` plus Rust from [rustup.rs](https://rustup.rs)).
 
 ```bash
 mkdir -p build && cd build
