@@ -32,6 +32,10 @@ Differences from Emerald:
 - The Run page's story beats are Kanto's: S.S. Ticket, Rocket Hideout, Mr. Fuji, Surf, Silph Co., Indigo Plateau, the Champion and the Hall of Fame (shown together, since the game only keeps that flag), the National Dex and the Sapphire. Your rival's name is used for rival and Champion battles.
 - While the game replays "Previously on your quest..." after Continue, the panel waits and nothing is logged. Teachy TV's demo battles and the Old Man's catching demo are never logged either, and the Pokédude's Pokémon are never taken for your team.
 
+![LeafGreen on Cinnabar Island with the Party page showing a Venusaur's nature, ability, IVs and EVs](screenshots/panel-party-leafgreen.png)
+
+![LeafGreen with the Search page for Vulpix, a LeafGreen-only Pokemon, listing Routes 7 and 8 and the Pokemon Mansion](screenshots/panel-search-leafgreen.png)
+
 ## Keys
 
 | Key | Panel action |
@@ -233,6 +237,8 @@ While the Hunt page is up, a battle starting doesn't switch the panel to the bat
 ## Run
 
 The story of your playthrough. It is always on: there is nothing to start, it keeps going whether the panel is open or not, and it runs alongside a Nuzlocke run if you have one. Open the Run page with F10.
+
+![FireRed at the Indigo Plateau with the Run page: all eight Kanto badges, the Journey list up to the Hall of Fame, and highlights](screenshots/panel-run-firered.png)
 
 The dashboard shows your trainer name, play time, badge count and Pokedex totals at the top, then:
 

@@ -73,6 +73,10 @@ These need the original, unmodified US/English ROM of Pokémon Emerald, FireRed 
 <td width="50%"><a href="docs/pokemon-companion.md#berries"><img src="docs/screenshots/panel-berries-ripe.png" alt="Route 102 with a ripe Pecha tree, and the Berries page listing it under Needs you"></a><br><b>Berries:</b> a ripe Pecha, 10 hours before it drops</td>
 </tr>
 <tr>
+<td><a href="docs/pokemon-companion.md#run"><img src="docs/screenshots/panel-run-firered.png" alt="FireRed at the Indigo Plateau with the Run page showing all eight Kanto badges and the Journey list"></a><br><b>Run (FireRed):</b> badges, story and highlights after the Hall of Fame</td>
+<td><a href="docs/pokemon-companion.md#firered-and-leafgreen"><img src="docs/screenshots/panel-party-leafgreen.png" alt="LeafGreen on Cinnabar Island with the Party page showing a Venusaur's IVs and EVs"></a><br><b>Party (LeafGreen):</b> hidden stats on Cinnabar Island</td>
+</tr>
+<tr>
 <td><a href="docs/pokemon-companion.md#nuzlocke"><img src="docs/screenshots/panel-nuzlocke-routes.png" alt="Nuzlocke page listing every area used so far with what was met there"></a><br><b>Nuzlocke:</b> every area used and what you met there</td>
 <td><a href="docs/pokemon-companion.md#mirage-island"><img src="docs/screenshots/panel-mirage-forecast.png" alt="Route page in Lilycove City with the Mirage Island forecast"></a><br><b>Mirage Island:</b> which Pokemon raises it, and when</td>
 </tr>
