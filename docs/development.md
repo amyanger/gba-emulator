@@ -374,7 +374,7 @@ cd build && cmake .. && make gba_tests && ctest --output-on-failure
 - `sanitizers`: the unit tests on Linux under AddressSanitizer and UBSan.
 - `golden-frame`: a Release build checked against the golden hashes (below).
 
-`.github/workflows/release.yml` runs on `v*` tags. It builds and tests on all three systems, packages the macOS `.dmg`, Windows `.zip` and Linux AppImage, checks the macOS bundle and the AppImage, and creates the GitHub release.
+`.github/workflows/release.yml` runs on `v*` tags. It builds and tests on all three systems, packages the macOS `.dmg`, Windows `.zip` and Linux AppImage (with update info and a `.zsync` for AppImageUpdate), checks the macOS bundle and the AppImage, and creates the GitHub release.
 
 ### Test ROMs
 

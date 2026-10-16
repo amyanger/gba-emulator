@@ -1,6 +1,6 @@
 #!/bin/bash
 # Packs a Linux build into a single-file AppImage with SDL2 bundled.
-# Downloads pinned linuxdeploy/appimagetool (checked by SHA-256).
+# Downloads pinned linuxdeploy/appimagetool (checked by SHA-256). Needs zsyncmake (zsync package).
 # Usage: tools/make_appimage.sh <gba_emulator binary> <version> <out dir>
 set -euo pipefail
 
@@ -34,6 +34,10 @@ cp "$REPO/res/icon/app.png" "$WORK/gba_emulator.png"
 mkdir -p "$WORK/AppDir/usr/share/doc/gba_emulator"
 cp "$REPO/LICENSE" "$REPO/fonts/Inter-LICENSE.txt" "$WORK/AppDir/usr/share/doc/gba_emulator/"
 
+# Update info lets AppImageUpdate fetch the latest release; appimagetool
+# writes the matching .zsync (needs zsyncmake on PATH) next to the AppImage.
+UPDATE_INFO="gh-releases-zsync|amyanger|gba-emulator|latest|gba_emulator-*-x86_64.AppImage.zsync"
+APPIMAGE="$OUT/gba_emulator-$VERSION-x86_64.AppImage"
 mkdir -p "$OUT"
-ARCH=x86_64 VERSION="$VERSION" "$WORK/appimagetool" "$WORK/AppDir" \
-    "$OUT/gba_emulator-$VERSION-Linux-x86_64.AppImage"
+ARCH=x86_64 VERSION="$VERSION" "$WORK/appimagetool" -u "$UPDATE_INFO" "$WORK/AppDir" "$APPIMAGE"
+test -s "$APPIMAGE.zsync" || { echo "No .zsync written (is zsyncmake installed?)"; exit 1; }

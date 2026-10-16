@@ -22,7 +22,7 @@ Ready-to-run apps for **macOS** (Apple Silicon), **Windows** and **Linux** are o
 |--------|------|
 | macOS 11+ (Apple Silicon) | `gba_emulator-<version>-macOS-arm64.dmg` |
 | Windows (64-bit) | `gba_emulator-<version>-Windows-AMD64.zip` |
-| Linux (x86_64) | `gba_emulator-<version>-Linux-x86_64.AppImage` |
+| Linux (x86_64) | `gba_emulator-<version>-x86_64.AppImage` |
 
 The apps aren't signed with a paid certificate, so macOS and Windows ask you to confirm the first time you open them. [Installing a pre-built binary](docs/usage.md#installing-a-pre-built-binary) has step-by-step instructions for each system.
 

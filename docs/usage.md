@@ -28,14 +28,14 @@ Saves are written next to the ROM. To use command-line options, run the binary i
 
 ### Linux (x86_64)
 
-1. Download `gba_emulator-0.12.1-Linux-x86_64.AppImage` from the Releases page.
-2. Make it executable: right-click it, open **Properties** and allow running it as a program, or run `chmod +x gba_emulator-0.12.1-Linux-x86_64.AppImage`.
+1. Download `gba_emulator-0.12.1-x86_64.AppImage` from the Releases page.
+2. Make it executable: right-click it, open **Properties** and allow running it as a program, or run `chmod +x gba_emulator-0.12.1-x86_64.AppImage`.
 3. Double-click it. The game library opens: click **Choose folder…** once to pick where you keep your games, then double-click one to play.
 
 The folder and file dialogs use `zenity` (GNOME and most desktops) or `kdialog` (KDE). If neither is installed, drop a `.gba` file on the library window, or pass the ROM on the command line:
 
 ```bash
-./gba_emulator-0.12.1-Linux-x86_64.AppImage path/to/rom.gba --scale 3
+./gba_emulator-0.12.1-x86_64.AppImage path/to/rom.gba --scale 3
 ```
 
 ### Windows (x86_64)
