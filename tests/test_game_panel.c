@@ -1407,6 +1407,40 @@ TEST(panel_run_badge_strip_art_and_fallback) {
     }
 }
 
+/* The footer explains the Journey dots, and gives the line up to a run file warning. */
+TEST(panel_run_footer_legend) {
+    static GameSnapshot rest;
+    static RunView v;
+    fill_party_and_route(&rest);
+    fill_run_full(&v);
+    static const float densities[] = {0.75f, 1.0f, 2.0f};
+    for (size_t d = 0; d < 3; d++) {
+        float s = densities[d];
+        int w = (int)(600 * s + 0.5f), h = (int)(480 * s + 0.5f);
+        for (int warn = 0; warn < 2; warn++) {
+            v.write_failed = warn != 0;
+            v.log_full = false;
+            if (!warn) strcpy(v.tracking_since, "Tracking since 36:32");
+            UiCanvas c;
+            ui_canvas_init(&c, s_buf, w, h, s);
+            game_panel_draw(&c, &rest, GAME_PAGE_RUN, 0, NULL, 0, 0, true, NULL, &v, 0, false, NULL, NULL);
+            int story = 0, faint = 0, evolve = 0;
+            for (int y = (int)(452 * s); y < h; y++)
+                for (int x = (int)(200 * s); x < w; x++) {
+                    uint32_t px = s_buf[y * w + x];
+                    story += px == UI_ACCENT;
+                    faint += px == UI_BAD;
+                    evolve += px == 0xFFB18CFFu;
+                }
+            if (warn) {
+                ASSERT_EQ(story + faint + evolve, 0);
+            } else {
+                ASSERT_TRUE(story > 0 && faint > 0 && evolve > 0);
+            }
+        }
+    }
+}
+
 /* MVP, Closest call and Fun fact as two-line cards end above the footer. */
 TEST(panel_run_highlights_fit_with_three_two_line_cards) {
     static GameSnapshot rest;
@@ -1679,6 +1713,7 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_run_views_stay_in_bounds);
     RUN_TEST(panel_run_dashboard_columns_do_not_touch);
     RUN_TEST(panel_run_badge_strip_art_and_fallback);
+    RUN_TEST(panel_run_footer_legend);
     RUN_TEST(panel_run_highlights_fit_with_three_two_line_cards);
     RUN_TEST(panel_run_max_scroll);
     RUN_TEST(panel_tab_bar_fits_every_hint);

@@ -96,8 +96,8 @@ static void head_meta(const RunView* v, char* out, size_t size) {
              v->badge_count == 1 ? "" : "s");
 }
 
-/* Footer left: a warning when the run file has a problem, else the tracking note. */
-static void footer_left(UiCanvas* c, const RunView* v, float w) {
+/* Footer left: a warning when the run file has a problem, else the tracking note. Returns its width. */
+static float footer_left(UiCanvas* c, const RunView* v, float w) {
     const char* text = v->tracking_since;
     uint32_t color = UI_FAINT;
     if (v->write_failed) {
@@ -107,7 +107,7 @@ static void footer_left(UiCanvas* c, const RunView* v, float w) {
         text = "Run log full: new events are no longer recorded.";
         color = UI_WARN;
     }
-    ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, FOOT_Y, w, UI_ALIGN_LEFT, color, text);
+    return ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, FOOT_Y, w, UI_ALIGN_LEFT, color, text);
 }
 
 static void showing_line(UiCanvas* c, float x, float y, float w, unsigned first, unsigned last, unsigned of,
@@ -156,14 +156,43 @@ static uint32_t icon_color(uint8_t icon) {
     }
 }
 
+static void icon_dot(UiCanvas* c, float cx, float cy, uint8_t icon) {
+    uint32_t color = icon_color(icon);
+    if (icon == RUN_ICON_WHITEOUT || icon == RUN_ICON_GIFT) ui_ring(c, cx, cy, 4.0f, 1.5f, color);
+    else ui_fill_round_rect(c, (UiRect){cx - 4.0f, cy - 4.0f, 8.0f, 8.0f}, 4.0f, color);
+}
+
+/* Footer right: what the Journey dots mean. Left out when it would run into the left text (a warning). */
+static const struct { uint8_t icon; const char* name; } k_legend[] = {
+    {RUN_ICON_BADGE, "Badge"}, {RUN_ICON_STORY, "Story"},       {RUN_ICON_CATCH, "Catch"},
+    {RUN_ICON_GIFT, "Gift"},   {RUN_ICON_FAINT, "Faint"},       {RUN_ICON_WHITEOUT, "Whiteout"},
+    {RUN_ICON_EVOLVE, "Evolved"}, {RUN_ICON_ACE, "Ace KO"},
+};
+#define LEGEND_DOT 12.0f   /* dot plus the space before its word */
+#define LEGEND_GAP 10.0f
+
+static void journey_legend(UiCanvas* c, float left_end) {
+    size_t n = sizeof(k_legend) / sizeof(k_legend[0]);
+    float total = 0.0f;
+    for (size_t i = 0; i < n; i++)
+        total += LEGEND_DOT + ui_text_width(c, UI_FONT_REGULAR, UI_SIZE_LABEL, k_legend[i].name) +
+                 (i ? LEGEND_GAP : 0.0f);
+    float x = RIGHT - total;
+    if (x < left_end + 16.0f) return;
+    float cy = FOOT_Y + ui_text_cap_middle(c, UI_FONT_REGULAR, UI_SIZE_LABEL);
+    for (size_t i = 0; i < n; i++) {
+        icon_dot(c, x + 4.0f, cy, k_legend[i].icon);
+        x += LEGEND_DOT;
+        x += ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, x, FOOT_Y, RIGHT - x, UI_ALIGN_LEFT, UI_FAINT,
+                     k_legend[i].name) + LEGEND_GAP;
+    }
+}
+
 static void feed_row(UiCanvas* c, float y, const RunViewFeed* f) {
     float ty = y + ui_text_ascent(c, UI_FONT_REGULAR, UI_SIZE_SMALL) -
                ui_text_ascent(c, UI_FONT_REGULAR, UI_SIZE_LABEL);
     ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, ty, FEED_TIME_W, UI_ALIGN_LEFT, UI_FAINT, f->time);
-    float cx = LEFT + 49.0f, cy = y + ui_text_cap_middle(c, UI_FONT_REGULAR, UI_SIZE_SMALL);
-    uint32_t color = icon_color(f->icon);
-    if (f->icon == RUN_ICON_WHITEOUT || f->icon == RUN_ICON_GIFT) ui_ring(c, cx, cy, 4.0f, 1.5f, color);
-    else ui_fill_round_rect(c, (UiRect){cx - 4.0f, cy - 4.0f, 8.0f, 8.0f}, 4.0f, color);
+    icon_dot(c, LEFT + 49.0f, y + ui_text_cap_middle(c, UI_FONT_REGULAR, UI_SIZE_SMALL), f->icon);
     /* The event text wins; the place gets what is left, between 48 and 96 points. */
     float right = LEFT + FEED_W;
     float tw = ui_text_width(c, UI_FONT_REGULAR, UI_SIZE_SMALL, f->text);
@@ -266,7 +295,7 @@ static void dashboard(UiCanvas* c, const RunView* v, float top, uint8_t scroll, 
     journey(c, v, scroll);
     highlights(c, v);
 
-    footer_left(c, v, RIGHT - LEFT);
+    journey_legend(c, LEFT + footer_left(c, v, RIGHT - LEFT));
 }
 
 /* ---- Details ---- */
