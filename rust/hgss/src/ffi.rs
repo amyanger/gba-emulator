@@ -1,9 +1,10 @@
 //! The C ABI. Every function here is declared in a header under src/hgss and
 //! must keep that exact signature.
-use core::mem::size_of;
+use core::ffi::{c_char, c_void, CStr};
+use core::mem::{offset_of, size_of};
 use core::slice;
 
-use crate::{gfx, msg};
+use crate::{gfx, msg, nds};
 
 /// # Safety
 /// `p` points to `len` readable bytes, or is null.
@@ -46,6 +47,14 @@ pub extern "C" fn hgss_rs_layout(what: u32) -> u32 {
         4 => size_of::<gfx::BurstGfx>(),
         5 => size_of::<gfx::FrameGfx>(),
         6 => size_of::<gfx::Font>(),
+        7 => size_of::<NdsRom>(),
+        8 => size_of::<nds::Span>(),
+        100 => offset_of!(NdsRom, size),
+        101 => offset_of!(NdsRom, code),
+        102 => offset_of!(NdsRom, fnt),
+        103 => offset_of!(NdsRom, fnt_size),
+        104 => offset_of!(NdsRom, fat),
+        105 => offset_of!(NdsRom, fat_size),
         _ => 0,
     };
     v as u32
@@ -186,5 +195,89 @@ pub unsafe extern "C" fn hgss_font_pixel(f: *const gfx::Font, glyph: u16, x: u32
         0
     } else {
         gfx::font_pixel(&*f, glyph, x, y)
+    }
+}
+
+/// Mirror of NdsRom in src/hgss/nds_fs.h. `f` and `code` are only touched by C.
+#[repr(C)]
+#[allow(dead_code)]
+pub struct NdsRom {
+    f: *mut c_void,
+    size: u32,
+    code: [c_char; 5],
+    fnt: u32,
+    fnt_size: u32,
+    fat: u32,
+    fat_size: u32,
+}
+
+extern "C" {
+    fn nds_read(r: *const NdsRom, off: u32, dst: *mut c_void, len: u32) -> bool;
+}
+
+struct Rom<'a>(&'a NdsRom);
+
+impl nds::Source for Rom<'_> {
+    fn size(&self) -> u32 {
+        self.0.size
+    }
+    fn read(&self, off: u32, dst: &mut [u8]) -> bool {
+        let Ok(len) = u32::try_from(dst.len()) else {
+            return false;
+        };
+        unsafe { nds_read(self.0, off, dst.as_mut_ptr().cast(), len) }
+    }
+}
+
+fn tables(r: &NdsRom) -> nds::Tables {
+    nds::Tables { fnt: r.fnt, fnt_size: r.fnt_size, fat: r.fat, fat_size: r.fat_size }
+}
+
+/// # Safety
+/// `r` is an NdsRom opened by nds_open, `path` a NUL-terminated string, `out` one NdsSpan.
+#[no_mangle]
+pub unsafe extern "C" fn nds_find(r: *const NdsRom, path: *const c_char, out: *mut nds::Span) -> bool {
+    if r.is_null() || path.is_null() || out.is_null() {
+        return false;
+    }
+    let r = &*r;
+    match nds::find(&Rom(r), &tables(r), CStr::from_ptr(path).to_bytes()) {
+        Some(s) => {
+            *out = s;
+            true
+        }
+        None => false,
+    }
+}
+
+/// # Safety
+/// `r` is an NdsRom opened by nds_open, `count` one u16.
+#[no_mangle]
+pub unsafe extern "C" fn narc_count(r: *const NdsRom, narc: nds::Span, count: *mut u16) -> bool {
+    if r.is_null() || count.is_null() {
+        return false;
+    }
+    match nds::narc_count(&Rom(&*r), narc) {
+        Some(c) => {
+            *count = c;
+            true
+        }
+        None => false,
+    }
+}
+
+/// # Safety
+/// `r` is an NdsRom opened by nds_open, `out` one NdsSpan.
+#[no_mangle]
+pub unsafe extern "C" fn narc_member(r: *const NdsRom, narc: nds::Span, index: u32, out: *mut nds::Span) -> bool {
+    if r.is_null() || out.is_null() {
+        return false;
+    }
+    match nds::narc_member(&Rom(&*r), narc, index) {
+        Some(s) => {
+            *out = s;
+            true
+        }
+        None => false,
     }
 }

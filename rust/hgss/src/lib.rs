@@ -7,6 +7,7 @@
 mod bytes;
 pub mod msg;
 pub mod gfx;
+pub mod nds;
 
 #[cfg(not(test))]
 mod ffi;

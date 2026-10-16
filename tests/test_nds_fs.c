@@ -106,9 +106,49 @@ TEST(narc_member_rejects_out_of_range) {
     remove(TMP);
 }
 
+TEST(narc_rejects_block_size_that_wraps) {
+    static uint8_t rom[0x600];
+    uint32_t len = build_rom(rom);
+    /* BTAF at 0x410 with size 2^32 - 0x310: unchecked, the next block wraps
+     * around to 0x100, where a planted BTNF points on to the real GMIF. */
+    w32(rom + 0x410 + 4, 0xFFFFFCF0);
+    memcpy(rom + 0x100, "BTNF", 4);
+    w32(rom + 0x104, 0x334);
+    ASSERT_TRUE(write_rom(len, rom));
+    NdsRom r;
+    ASSERT_TRUE(nds_open(&r, TMP));
+    NdsSpan narc;
+    uint16_t count = 0;
+    ASSERT_TRUE(nds_find(&r, "a/x", &narc));
+    ASSERT_TRUE(!narc_count(&r, narc, &count));
+    nds_close(&r);
+    remove(TMP);
+}
+
+TEST(narc_member_rejects_entry_outside_btaf) {
+    static uint8_t rom[0x600];
+    build_rom(rom);
+    /* Count 6, but the BTAF block holds 2 entries. Entry 5 would sit at 0x444,
+     * just past the NARC, where these bytes describe a 2-byte member. */
+    w16(rom + 0x410 + 8, 6);
+    w32(rom + 0x444, 0);
+    w32(rom + 0x448, 2);
+    ASSERT_TRUE(write_rom(0x450, rom));
+    NdsRom r;
+    ASSERT_TRUE(nds_open(&r, TMP));
+    NdsSpan narc, m;
+    ASSERT_TRUE(nds_find(&r, "a/x", &narc));
+    ASSERT_TRUE(narc_member(&r, narc, 1, &m));
+    ASSERT_TRUE(!narc_member(&r, narc, 5, &m));
+    nds_close(&r);
+    remove(TMP);
+}
+
 void run_nds_fs_tests(void) {
     RUN_TEST(nds_open_reads_code);
     RUN_TEST(nds_find_and_narc_members);
     RUN_TEST(nds_open_rejects_truncated);
     RUN_TEST(narc_member_rejects_out_of_range);
+    RUN_TEST(narc_rejects_block_size_that_wraps);
+    RUN_TEST(narc_member_rejects_entry_outside_btaf);
 }
