@@ -82,7 +82,8 @@ bool frontend_init(Frontend* fe, int scale) {
         LOG_ERROR("SDL texture creation failed: %s", SDL_GetError());
         return false;
     }
-    SDL_SetTextureScaleMode(fe->texture, SDL_ScaleModeNearest);
+    /* Nearest is SDL's default. No SDL_SetTextureScaleMode here: SDL 2.0.20 (Ubuntu 22.04,
+     * bundled in the AppImage) crashes on it when the renderer converts ABGR1555. */
 
     fe->overlay_texture = SDL_CreateTexture(fe->renderer,
         SDL_PIXELFORMAT_ARGB8888,
