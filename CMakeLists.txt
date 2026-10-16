@@ -160,7 +160,6 @@ set(CORE_SOURCES
     src/game/badge_pic.c
     src/game/trainer_card.c
     src/hgss/nds_fs.c
-    src/hgss/hgss_msg.c
     src/hgss/hgss_gfx.c
     src/hgss/hgss_talk.c
     src/hgss/hgss_assets.c
@@ -246,6 +245,42 @@ set(SOURCES
 if(ENABLE_XRAY)
     list(APPEND SOURCES src/frontend/xray/xray.c)
 endif()
+
+# ── Rust: HGSS ROM parsers (rust/hgss) ──────────────────────────────
+# Always the release profile: the C tests drive this library, so a debug
+# build of it only adds link-time trouble.
+find_program(CARGO cargo HINTS "$ENV{HOME}/.cargo/bin" "$ENV{USERPROFILE}/.cargo/bin")
+if(NOT CARGO OR NOT EXISTS "${CARGO}")
+    message(FATAL_ERROR "cargo not found. rust/hgss (the HeartGold/SoulSilver parsers) needs a Rust toolchain, see https://rustup.rs")
+endif()
+if(APPLE AND CMAKE_OSX_ARCHITECTURES AND NOT CMAKE_OSX_ARCHITECTURES STREQUAL CMAKE_HOST_SYSTEM_PROCESSOR)
+    message(FATAL_ERROR "rust/hgss builds for the host (${CMAKE_HOST_SYSTEM_PROCESSOR}) only, not CMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}")
+endif()
+set(HGSS_RS_DIR "${CMAKE_SOURCE_DIR}/rust/hgss")
+set(HGSS_RS_TARGET_DIR "${CMAKE_BINARY_DIR}/rust")
+if(MSVC)
+    set(HGSS_RS_LIB "${HGSS_RS_TARGET_DIR}/release/hgss_rs.lib")
+else()
+    set(HGSS_RS_LIB "${HGSS_RS_TARGET_DIR}/release/libhgss_rs.a")
+endif()
+set(HGSS_RS_ENV "")
+if(ENABLE_WERROR)
+    list(APPEND HGSS_RS_ENV "RUSTFLAGS=-Dwarnings")
+endif()
+if(APPLE AND CMAKE_OSX_DEPLOYMENT_TARGET)
+    list(APPEND HGSS_RS_ENV "MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+endif()
+file(GLOB HGSS_RS_SOURCES CONFIGURE_DEPENDS "${HGSS_RS_DIR}/src/*.rs")
+add_custom_command(
+    OUTPUT "${HGSS_RS_LIB}"
+    # --unset=MAKEFLAGS: make's jobserver fds do not reach cargo, which warns about it.
+    COMMAND ${CMAKE_COMMAND} -E env --unset=MAKEFLAGS ${HGSS_RS_ENV}
+            "${CARGO}" build --release --locked
+            --manifest-path "${HGSS_RS_DIR}/Cargo.toml" --target-dir "${HGSS_RS_TARGET_DIR}"
+    DEPENDS ${HGSS_RS_SOURCES} "${HGSS_RS_DIR}/Cargo.toml" "${HGSS_RS_DIR}/Cargo.lock"
+    COMMENT "Building rust/hgss"
+    VERBATIM)
+add_custom_target(hgss_rs DEPENDS "${HGSS_RS_LIB}")
 
 add_executable(gba_emulator ${SOURCES})
 # GBA (with its cheat tables) lives on main's stack; Windows defaults to 1 MB.
@@ -349,6 +384,7 @@ set(TEST_SOURCES
     tests/test_hgss_msg.c
     tests/test_hgss_gfx.c
     tests/test_hgss_talk.c
+    tests/test_hgss_rs.c
     tests/test_follower.c
     tests/test_follower_ctx.c
     tests/test_follower_places.c
@@ -433,6 +469,11 @@ foreach(target gba_emulator gba_tests)
     if(ENABLE_REWIND)
         target_compile_definitions(${target} PRIVATE ENABLE_REWIND)
     endif()
+endforeach()
+
+foreach(target gba_emulator gba_tests)
+    add_dependencies(${target} hgss_rs)
+    target_link_libraries(${target} PRIVATE "${HGSS_RS_LIB}")
 endforeach()
 
 add_test(NAME gba_tests COMMAND gba_tests)

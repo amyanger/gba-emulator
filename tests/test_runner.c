@@ -65,6 +65,7 @@ void run_nds_fs_tests(void);
 void run_hgss_msg_tests(void);
 void run_hgss_gfx_tests(void);
 void run_hgss_talk_tests(void);
+void run_hgss_rs_tests(void);
 void run_follower_tests(void);
 void run_follower_ctx_tests(void);
 void run_follower_places_tests(void);
@@ -173,6 +174,7 @@ int main(void) {
     RUN_SUITE(run_hgss_msg_tests);
     RUN_SUITE(run_hgss_gfx_tests);
     RUN_SUITE(run_hgss_talk_tests);
+    RUN_SUITE(run_hgss_rs_tests);
     RUN_SUITE(run_follower_tests);
     RUN_SUITE(run_follower_ctx_tests);
     RUN_SUITE(run_follower_places_tests);

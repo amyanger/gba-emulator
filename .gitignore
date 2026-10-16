@@ -1,6 +1,7 @@
 # Build
 build/
 cmake-build-*/
+rust/hgss/target/
 
 # Worktrees
 .worktrees/
