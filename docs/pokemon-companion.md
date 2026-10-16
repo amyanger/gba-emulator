@@ -8,7 +8,10 @@ Pokémon Companion is a side panel that shows live info from your Pokémon Emera
 > **Pokémon Companion only works with original, unmodified US/English ROMs of Pokémon Emerald, FireRed (version 1.0) or LeafGreen (version 1.1).** These are the versions it was built and tested with.
 >
 > - **ROM hacks are not supported**, even ones based on these games. The panel shows "ROM hack not supported" instead of guessing.
-> - **Other revisions** (such as FireRed 1.1 or LeafGreen 1.0), **other languages** (Japanese, French, German, Spanish, Italian) and **other Pokemon games** (Ruby, Sapphire) are not supported. The panel shows "not supported" and names the three ROMs it works with.
+> - **Other revisions** (such as FireRed 1.1 or LeafGreen 1.0) show "ROM revision not supported".
+> - **Other languages** (Japanese, French, German, Spanish, Italian) and **other games** (Ruby, Sapphire) show "Game not supported".
+>
+> Each of these pages names the three ROMs it works with.
 >
 > In every case the game itself still runs normally. Only the panel is unavailable.
 >
@@ -27,7 +30,7 @@ Differences from Emerald:
 - In the Pokémon Tower the Battle page shows "Ghost" until the Silph Scope reveals it, and ghosts can't be caught.
 - Search says "Not in this game, trade it" for evolutions FireRed and LeafGreen can't do: high friendship by day or night, and Beauty.
 - The Run page's story beats are Kanto's: S.S. Ticket, Rocket Hideout, Mr. Fuji, Surf, Silph Co., Indigo Plateau, the Champion and the Hall of Fame (shown together, since the game only keeps that flag), the National Dex and the Sapphire. Your rival's name is used for rival and Champion battles.
-- While the game replays "Previously on your quest..." after Continue, the panel waits and nothing is logged. Teachy TV's demo battles are never logged either.
+- While the game replays "Previously on your quest..." after Continue, the panel waits and nothing is logged. Teachy TV's demo battles and the Old Man's catching demo are never logged either, and the Pokédude's Pokémon are never taken for your team.
 
 ## Keys
 
@@ -103,7 +106,7 @@ When you have Pokemon at the Daycare, or an egg is waiting there, a Daycare bloc
 
 Steps here are the steps the game counts. Walking and biking count. Steps on ice, steps carried by water currents or spin tiles, and steps where a script fires don't count, so the numbers on this page don't move for those.
 
-**Egg alert.** While you play, with or without the panel open, a toast says "Egg ready at the Daycare". Its second line is the species, followed by ", shiny" when it is. If the species can't be worked out, it says "Talk to the old man on Route 117" instead. It appears once per egg, waits until a battle is over, and stays quiet for an egg that was already waiting when you opened the game.
+**Egg alert.** While you play, with or without the panel open, a toast says "Egg ready at the Daycare". Its second line is the species, followed by ", shiny" when it is. If the species can't be worked out, it says "Talk to the old man on Route 117" instead (on Four Island in FireRed and LeafGreen). It appears once per egg, waits until a battle is over, and stays quiet for an egg that was already waiting when you opened the game.
 
 ![The Party page with two Pokemon at the Daycare and an egg waiting: the breeding row is selected and shows they get along very well (70% each roll), and the egg will be a female Ralts with a Rash nature and Synchronize. Two eggs in the party show 517 and 1,029 steps to hatch](screenshots/panel-daycare.png)
 
@@ -116,7 +119,7 @@ Press `C` to save a picture of your team as a PNG, ready to share. It works with
 
 The ace is the selected row when the panel is on the Party page. Otherwise it is the MVP of your Run log, if one is attached and that Pokemon is in your party, and failing that your first Pokemon that isn't an egg.
 
-A toast confirms the save. The card isn't made in the Battle Tents, the Battle Frontier facilities (Tower, Dome, Palace, Pyramid, Arena, Factory and Pike) or Trainer Hill, in partner battles or in link battles. It needs a game in progress with at least one Pokemon, since it reads the party from RAM and works before the first save.
+A toast confirms the save. The card isn't made in the Battle Tents, the Battle Frontier facilities (Tower, Dome, Palace, Pyramid, Arena, Factory and Pike) or Trainer Hill, in partner battles or in link battles. In FireRed and LeafGreen it also isn't made during the Old Man's catching demo or Teachy TV's demo battles. It needs a game in progress with at least one Pokemon, since it reads the party from RAM and works before the first save.
 
 ![A trainer card in the team grid style: trainer details across the top and six Pokemon tiles below](screenshots/trainer-card-grid.png)
 
@@ -241,7 +244,7 @@ Press **D** for the Details sheet: every Pokemon that has been in your team, wit
 
 The run is saved as `<rom>.<trainer id>.run` next to the ROM, one event per line, and is only ever added to. Loading a savestate, loading an older in-game save or rewinding more than about a second takes the run back with you, so nothing you undid stays on the page and nothing is counted twice. A shorter rewind is treated as a misread and changes nothing.
 
-Tracking starts the first time you open a save in this emulator. Anything that happened before that (badges you already had, Pokemon already in your team or PC) is shown with a "·" instead of a time, because there is no way to know when it happened. The game's play time clock stops at 999 hours, so after that new events all share one time and reloads are no longer noticed. A knockout from a delayed move such as Future Sight is credited to whichever of your Pokemon is out when it lands.
+Tracking starts the first time you open a save in this emulator. In FireRed and LeafGreen it waits until the game has loaded your PC boxes, so boxed Pokemon count as already yours, not as gifts. Anything that happened before that (badges you already had, Pokemon already in your team or PC) is shown with a "·" instead of a time, because there is no way to know when it happened. The game's play time clock stops at 999 hours, so after that new events all share one time and reloads are no longer noticed. A knockout from a delayed move such as Future Sight is credited to whichever of your Pokemon is out when it lands.
 
 ## Details
 
