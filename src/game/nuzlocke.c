@@ -339,9 +339,7 @@ uint8_t nuz_track_step(NuzTracker* t, const NuzRun* run, const NuzFacts* f, cons
     if (rising) {
         t->outcome = 0;
         t->deadused_logged = false;
-        t->battle_ignored = !t->have_prev || f->enemy_species == 0 ||
-                            (f->battle_flags & (NUZ_BATTLE_TRAINER | NUZ_BATTLE_FIRST_BATTLE |
-                                                NUZ_BATTLE_WALLY_TUTORIAL));
+        t->battle_ignored = !t->have_prev || f->enemy_species == 0 || f->ignore_battle;
         if (!t->battle_ignored) {
             bool shiny = nuz_is_shiny(f->enemy_pid, f->enemy_ot);
             NuzEvent* ev = &out[n++];
@@ -372,8 +370,9 @@ uint8_t nuz_track_step(NuzTracker* t, const NuzRun* run, const NuzFacts* f, cons
     t->prev_in_battle = f->in_battle;
     t->have_prev = true;
 
+    bool swapped = nuz_party_swapped(&t->party_base, f);
     /* New Pokemon. A catch lands in the party before the battle ends, so wait for it. */
-    if (!f->in_battle) {
+    if (!f->in_battle && !swapped) {
         n = track_joins(t, run, f->party, f->party_count, sec_count, pt, out, n);
         if (f->has_boxes) n = track_joins(t, run, f->boxes, f->box_count, sec_count, pt, out, n);
     }

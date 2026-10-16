@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "game/game_mem.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 
 /* The Route 119 tiles that give Feebas, worked out the way the game does
  * (pret src/wild_encounter.c CheckFeebas, src/item_use.c CanFish). */

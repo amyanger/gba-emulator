@@ -1,5 +1,100 @@
-#include "game/emerald_profile.h"
-#include <string.h>
+#include "game/game_profile.h"
+
+/* gBattleTypeFlags bits (pokeemerald include/constants/battle.h) */
+#define BT_LINK             (1u << 1)
+#define BT_TRAINER          (1u << 3)
+#define BT_FIRST_BATTLE     (1u << 4)
+#define BT_BATTLE_TOWER     (1u << 8)
+#define BT_WALLY_TUTORIAL   (1u << 9)
+#define BT_EREADER_TRAINER  (1u << 11)
+#define BT_DOME             (1u << 16)
+#define BT_PALACE           (1u << 17)
+#define BT_ARENA            (1u << 18)
+#define BT_FACTORY          (1u << 19)
+#define BT_PIKE             (1u << 20)
+#define BT_PYRAMID          (1u << 21)
+#define BT_INGAME_PARTNER   (1u << 22)
+#define BT_TOWER_LINK_MULTI (1u << 23)
+#define BT_RECORDED         (1u << 24)
+#define BT_RECORDED_LINK    (1u << 25)
+#define BT_TRAINER_HILL     (1u << 26)
+#define BT_SECRET_BASE      (1u << 27)
+#define BT_FRONTIER (BT_BATTLE_TOWER | BT_DOME | BT_PALACE | BT_ARENA | BT_FACTORY | BT_PIKE | BT_PYRAMID) /* 0x003F0100 */
+#define TRAINER_FLAGS_START 0x500
+
+/* Battle Tent, Battle Frontier facility and Trainer Hill maps, from pret
+ * data/maps/map_groups.json (group index, map index). The Frontier's outside
+ * areas, lounges, Center and Mart are left out: the player's own party is there. */
+static const MapRange k_emerald_facility_maps[] = {
+    {5, 1, 3},    /* FallarborTown_BattleTent Lobby, Corridor, BattleRoom */
+    {6, 0, 2},    /* VerdanturfTown_BattleTent Lobby, Corridor, BattleRoom */
+    {9, 2, 4},    /* SlateportCity_BattleTent Lobby, Corridor, BattleRoom */
+    {26, 5, 8},   /* BattleFrontier_BattleTower Lobby, Elevator, Corridor, BattleRoom */
+    {26, 15, 39}, /* BattleTower multi rooms, Dome, Palace, Pyramid, Arena, Factory, Pike */
+    {26, 60, 65}, /* TrainerHill Entrance, 1F-4F, Roof */
+    {26, 88, 88}, /* TrainerHill_Elevator */
+};
+
+/* Index = RunStory (runlog_read.h), the id .run files store. */
+static const RunStoryDef k_emerald_story[] = {
+    {STORY_FLAG, 0x860, 0, STORY_TEXT_STARTER, 0, "Chose %s"},                    /* FLAG_SYS_POKEMON_GET */
+    {STORY_FLAG, 0x861, 0, STORY_TEXT_PLAIN, 0, "Got the Pok\xC3\xA9" "dex"},     /* FLAG_SYS_POKEDEX_GET */
+    {STORY_FLAG, 0x8B, 0, STORY_TEXT_PLAIN, 0, "Stopped Team Magma at Mt. Chimney"}, /* FLAG_DEFEATED_EVIL_TEAM_MT_CHIMNEY */
+    {STORY_VAR_AT_LEAST, 0x40B3, 1, STORY_TEXT_PLAIN, 0, "Saved the Weather Institute"}, /* VAR_WEATHER_INSTITUTE_STATE */
+    {STORY_FLAG, 0x7A, 0, STORY_TEXT_PLAIN, 0, "Got Surf"},                       /* FLAG_RECEIVED_HM_SURF */
+    {STORY_FLAG, 0x6F, 0, STORY_TEXT_SPECIES, 405, "%s awakened"},                /* FLAG_GROUDON_AWAKENED_MAGMA_HIDEOUT */
+    {STORY_FLAG, 0x81, 0, STORY_TEXT_SPECIES, 404, "%s escaped"},                 /* FLAG_KYOGRE_ESCAPED_SEAFLOOR_CAVERN */
+    {STORY_VAR_AT_LEAST, 0x40CA, 2, STORY_TEXT_PLAIN, 0, "Calmed Sootopolis"},    /* VAR_SKY_PILLAR_STATE */
+    {STORY_FLAG, 0x107, 0, STORY_TEXT_PLAIN, 0, "Entered the Elite Four"},        /* FLAG_ENTERED_ELITE_FOUR */
+    {STORY_FLAG, TRAINER_FLAGS_START + 335, 0, STORY_TEXT_CHAMPION, 0, "Beat Champion %s"}, /* TRAINER_WALLACE */
+    {STORY_FLAG, 0x864, 0, STORY_TEXT_PLAIN, 0, "Entered the Hall of Fame"},      /* FLAG_SYS_GAME_CLEAR */
+    {STORY_FLAG, 0x896, 0, STORY_TEXT_PLAIN, 0, "Got the National Dex"},          /* FLAG_SYS_NATIONAL_DEX */
+};
+
+/* Values the old emerald_layout.h macros and reader #defines held; Emerald output is unchanged. */
+const GameRules g_emerald_rules = {
+    .region = GAME_REGION_HOENN,
+    .features = FEAT_BERRIES | FEAT_HUNT | FEAT_MIRAGE | FEAT_FEEBAS | FEAT_OVERWORLD | FEAT_FOLLOWER,
+    .sb1_min_size = 0x3E08,
+    .sb1_flags = 0x1270, .sb1_flag_bytes = 300,
+    .sb1_vars = 0x139C,
+    .sb1_game_stats = 0x159C,
+    .sb1_ball_pocket = 0x650, .ball_pocket_slots = 16,
+    .sb1_dex_seen1 = 0x988, .sb1_dex_seen2 = 0x3B24,
+    .sb1_rival_name = 0,
+    .sb2_encryption_key = 0xAC,
+    .daycare_offspring_off = 0x118, .daycare_offspring_size = 4, .daycare_step_counter_off = 0x11C,
+    .daycare_fire_halves = true,
+    .pokedex_entry_size = 0x20,
+    .mapsec_name_stride = 8, .mapsec_name_off = 4, .mapsec_first = 0, /* struct RegionMapLocation */
+    .badge_boost_off_mask = BT_LINK | BT_EREADER_TRAINER | BT_RECORDED_LINK | BT_FRONTIER,
+    .secret_base_trainer = 1024,                                       /* TRAINER_SECRET_BASE */
+    .soul_dew_off_mask = BT_FRONTIER,
+    .run_facility_mask = BT_LINK | BT_FRONTIER | BT_INGAME_PARTNER | BT_TOWER_LINK_MULTI | BT_RECORDED |
+                         BT_RECORDED_LINK | BT_TRAINER_HILL,
+    .run_not_plain_mask = BT_LINK | BT_FRONTIER | BT_TOWER_LINK_MULTI | BT_RECORDED | BT_RECORDED_LINK |
+                          BT_TRAINER_HILL | BT_SECRET_BASE | BT_EREADER_TRAINER,
+    .partner_battle_mask = BT_INGAME_PARTNER,
+    .nuz_ignore_mask = BT_TRAINER | BT_FIRST_BATTLE | BT_WALLY_TUTORIAL,
+    .uncatchable_mask = 0, .ghost_mask = 0, .ghost_unveiled_mask = 0,
+    .facility_maps = k_emerald_facility_maps,
+    .facility_map_count = (uint8_t)(sizeof(k_emerald_facility_maps) / sizeof(k_emerald_facility_maps[0])),
+    .flag_badge01 = 0x867, .var_starter = 0x4023, .var_altering_cave = 0x403E,
+    .partner_otid = 61226,  /* Steven's mons: pret pokeemerald 731ad5b src/battle_tower.c STEVEN_OTID */
+    .leaders = {265, 266, 267, 268, 269, 270, 271, 272},              /* TRAINER_ROXANNE_1 .. TRAINER_JUAN_1 */
+    .league = {261, 262, 263, 264, 335}, .league_count = 5,           /* Sidney .. Drake, Wallace */
+    .champion_trainer = 335,
+    .rival_classes = {0, 0, 0},
+    .starters = {277, 280, 283},                                       /* SPECIES_TREECKO, TORCHIC, MUDKIP */
+    .badge_names = {"Stone", "Knuckle", "Dynamo", "Heat", "Balance", "Feather", "Mind", "Rain"},
+    .story = k_emerald_story,
+    .story_count = (uint8_t)(sizeof(k_emerald_story) / sizeof(k_emerald_story[0])),
+    .story_hof = 10,
+    .daycare_toast = "Talk to the old man on Route 117",
+    .route_footer = "\xE2\x9C\x93 caught. Not shown: outbreaks, roamers, lead abilities, Pyramid/Pike.",
+    .evo_day_night_beauty = true,
+    .clock_tv_stats = true,
+};
 
 /* Pokemon Emerald (US) rev 0, game code BPEE. Addresses come from pret/pokeemerald's
  * pokeemerald.sym (symbols branch). The ROM table addresses were checked against the
@@ -7,10 +102,14 @@
  * enemy RAM addresses were checked live with --game-dump. */
 const GameProfile g_emerald_profile = {
     .name = "Pokemon Emerald (US)",
+    .game_name = "Pok\xC3\xA9mon Emerald",
+    .short_name = "Emerald",
     /* "Pokemon - Emerald Version (USA, Europe)", the retail cartridge dump. Any ROM
      * hack changes the bytes, so it is rejected instead of being misread. */
     .game_code = {'B', 'P', 'E', 'E'},
+    .version = 0,
     .rom_size = 0x1000000, .rom_crc32 = 0x1F1C08FB,
+    .rules = &g_emerald_rules,
 
     .battle_type_flags = 0x02022FEC,
     .battlers_count = 0x0202406C,
@@ -141,36 +240,3 @@ const GameProfile g_emerald_profile = {
                                     * live: empty, stepCounter (+0x11C) +1 per step */
     .match_call_state = 0x0203CD80, /* sym (static); live: stepCounter +6 counts 0-9 per step */
 };
-
-uint32_t game_crc32_update(uint32_t crc, const uint8_t* data, uint32_t len) {
-    static uint32_t table[256];
-    static bool ready;
-    if (!ready) {
-        for (uint32_t i = 0; i < 256; i++) {
-            uint32_t c = i;
-            for (int k = 0; k < 8; k++) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
-            table[i] = c;
-        }
-        ready = true;
-    }
-    crc ^= 0xFFFFFFFFu;
-    for (uint32_t i = 0; i < len; i++) crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
-    return crc ^ 0xFFFFFFFFu;
-}
-
-uint32_t game_crc32(const uint8_t* data, uint32_t len) {
-    return game_crc32_update(0, data, len);
-}
-
-GameSupport game_profile_match(const GameProfile* p, const uint8_t* rom, uint32_t rom_size) {
-    if (!rom || rom_size <= 0xAF || memcmp(rom + 0xAC, p->game_code, 4) != 0)
-        return GAME_SUPPORT_OTHER_GAME;
-    if (rom_size != p->rom_size || game_crc32(rom, rom_size) != p->rom_crc32)
-        return GAME_SUPPORT_MODIFIED;
-    return GAME_SUPPORT_OK;
-}
-
-const GameProfile* game_profile_detect(const uint8_t* rom, uint32_t rom_size, GameSupport* support) {
-    *support = game_profile_match(&g_emerald_profile, rom, rom_size);
-    return *support == GAME_SUPPORT_OK ? &g_emerald_profile : NULL;
-}

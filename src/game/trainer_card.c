@@ -22,7 +22,9 @@ static uint32_t fnv1a_u32(uint32_t h, uint32_t v) {
 CardStatus trainer_card_read(const GameState* gs, const GameMem* m, TrainerCardData* out) {
     memset(out, 0, sizeof(*out));
     const GameProfile* p = gs->profile;
-    if (!p || gs->support != GAME_SUPPORT_OK) return CARD_NOT_EMERALD;
+    if (!p || gs->support != GAME_SUPPORT_OK) return CARD_NOT_SUPPORTED;
+    out->game_name = p->game_name;
+    out->region = (uint8_t)p->rules->region;
     run_read(p, m, 0, &s_rf);
     nuz_read(p, m, false, &s_nf);
     if (!s_rf.valid || !s_nf.valid) return CARD_NO_TEAM;

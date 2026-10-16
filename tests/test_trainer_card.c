@@ -11,7 +11,7 @@ static uint8_t s_rom[0x8000];
 #define PARTY 0x02000400u
 
 static const GameProfile k_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .battle_type_flags = 0x02000E10, .battlers_count = 0x02000E00,
     .battler_party_indexes = 0x02000E08, .battler_positions = 0x02000E04,
     .battle_mons = 0x02001000, .player_party_count = 0x02000000,
@@ -88,15 +88,29 @@ TEST(trainer_card_read_fresh_state) {
     ASSERT_EQ_HEX(s_d.keys[1].ot, 0x0000BEEF);
 }
 
-TEST(trainer_card_read_not_emerald) {
+TEST(trainer_card_read_not_supported) {
     build(2);
     GameMem m = mem();
     GameState* gs = state();
     gs->support = GAME_SUPPORT_MODIFIED;
-    ASSERT_EQ(trainer_card_read(gs, &m, &s_d), CARD_NOT_EMERALD);
+    ASSERT_EQ(trainer_card_read(gs, &m, &s_d), CARD_NOT_SUPPORTED);
     gs = state();
     gs->profile = NULL;
-    ASSERT_EQ(trainer_card_read(gs, &m, &s_d), CARD_NOT_EMERALD);
+    ASSERT_EQ(trainer_card_read(gs, &m, &s_d), CARD_NOT_SUPPORTED);
+}
+
+TEST(trainer_card_read_carries_game_and_region) {
+    build(2);
+    static GameProfile p;
+    p = k_profile;
+    p.rules = &g_frlg_rules;
+    p.game_name = "Pok\xC3\xA9mon FireRed";
+    GameState* gs = state();
+    gs->profile = &p;
+    GameMem m = mem();
+    ASSERT_EQ(trainer_card_read(gs, &m, &s_d), CARD_OK);
+    ASSERT_STR_EQ(s_d.game_name, "Pok\xC3\xA9mon FireRed");
+    ASSERT_EQ(s_d.region, GAME_REGION_KANTO);
 }
 
 TEST(trainer_card_read_empty_party) {
@@ -169,7 +183,8 @@ TEST(trainer_card_ace_order) {
 
 void run_trainer_card_tests(void) {
     RUN_TEST(trainer_card_read_fresh_state);
-    RUN_TEST(trainer_card_read_not_emerald);
+    RUN_TEST(trainer_card_read_not_supported);
+    RUN_TEST(trainer_card_read_carries_game_and_region);
     RUN_TEST(trainer_card_read_empty_party);
     RUN_TEST(trainer_card_bad_slot_keeps_index);
     RUN_TEST(trainer_card_read_facility);

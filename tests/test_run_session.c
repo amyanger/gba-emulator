@@ -19,7 +19,7 @@ static uint8_t s_rom[0x8000];
 #define DOT "\xC2\xB7"
 
 static const GameProfile k_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .battle_type_flags = 0x02000E10, .battlers_count = 0x02000E00,
     .battler_party_indexes = 0x02000E08, .battler_positions = 0x02000E04,
     .battle_mons = 0x02001000, .battler_attacker = 0x02000E40, .trainer_battle_opponent_a = 0x02000E44,
@@ -91,6 +91,7 @@ static void build(void) {
     memset(s_rom, 0, sizeof(s_rom));
     fixture_put32(at(0x03000000), SB1);
     fixture_put32(at(0x03000004), SB2);
+    fixture_put32(at(0x03000008), 0x02020000);  /* empty PokemonStorage */
     fixture_put32(at(SB2 + 0x0A), 0x0000BEEF);
     set_pt(216000);  /* 1:00:00 */
     put_str(SB2, "MAY");
@@ -420,6 +421,25 @@ TEST(run_session_view_waits_for_tid_switch) {
     ASSERT_TRUE(s_a.view_version != version);
 }
 
+/* FRLG boot: the party is readable before the storage pointer is set. Boxed mons found once it
+ * is set are a backfill, not "Got X" gifts. */
+TEST(run_session_unset_storage_boxes_are_backfill) {
+    remove(FILE_A);
+    build();
+    fixture_put32(at(0x03000008), 0);
+    uint8_t plain[4][12];
+    fixture_plain_mon(plain, 3);
+    plain[3][1] = 3;
+    fixture_encode_mon(at(0x02020000 + 4), 0x55556666, 0x0000BEEF, plain, 0x02);
+    start(&s_a, ROM, FILE_A);
+    frames(&s_a, 120, 1);
+    fixture_put32(at(0x03000008), 0x02020000);
+    frames(&s_a, 120, 1);
+    ASSERT_EQ(lines_with(FILE_A, "join ", "how=backfill"), 3);
+    ASSERT_EQ(lines_with(FILE_A, "join ", "how=gift"), 0);
+    remove(FILE_A);
+}
+
 TEST(run_session_team_total) {
     ready();
     for (uint32_t i = 0; i < 50; i++) {
@@ -584,7 +604,41 @@ TEST(run_session_split_skips_untimed) {
     ASSERT_STR_EQ(s_a.view.badges[2].split, "+0:04");
 }
 
+/* FRLG: Kanto badge names, leaders from the rules, and the Champion shown with the rival's name
+ * (the ROM stores "TERRY"). Ids 20/21 stand in for 438 (Champion) and 414 (Brock): the fixture ROM
+ * is 32 KB. */
+TEST(run_frlg_badges_and_rival_champion) {
+    static GameRules r;
+    r = g_frlg_rules;
+    r.champion_trainer = 20;
+    r.leaders[0] = 21;
+    static GameProfile p;
+    p = k_profile;
+    p.rules = &r;
+    remove(FILE_A);
+    build();
+    at(SB1 + 0xEE0 + (0x820 >> 3))[0] |= (uint8_t)(1u << (0x820 & 7));   /* Boulder Badge */
+    at(SB1 + 0xEE0 + (0x82C >> 3))[0] |= (uint8_t)(1u << (0x82C & 7));   /* FLAG_SYS_GAME_CLEAR */
+    put_str(TRAINERS + 21u * 0x28 + 4, "BROCK");
+    at(TRAINERS + 20u * 0x28 + 1)[0] = 90;   /* TRAINER_CLASS_CHAMPION */
+    put_str(TRAINERS + 20u * 0x28 + 4, "TERRY");
+    put_str(SB1 + 0x3A4C, "GARY");
+    nuz_session_init(&s_nuz, &p, NULL, NULL);
+    run_session_init(&s_a, &p, ROM, FILE_A);
+    frames(&s_a, 130, 1);
+    const RunView* v = &s_a.view;
+    ASSERT_EQ(v->state, RUN_VIEW_RUN);
+    ASSERT_STR_EQ(v->badges[0].name, "Boulder");
+    ASSERT_TRUE(v->badges[0].have);
+    ASSERT_TRUE(feed_has("Boulder Badge, beat Brock"));
+    ASSERT_TRUE(feed_has("Beat Champion Gary"));
+    ASSERT_TRUE(feed_has("Entered the Hall of Fame"));
+    ASSERT_TRUE(v->no_clock);
+    remove(FILE_A);
+}
+
 void run_run_session_tests(void) {
+    RUN_TEST(run_frlg_badges_and_rival_champion);
     RUN_TEST(run_session_attach_writes_start_and_backfill);
     RUN_TEST(run_session_replay_restores);
     RUN_TEST(run_session_other_tid_ignored);
@@ -593,6 +647,7 @@ void run_run_session_tests(void) {
     RUN_TEST(run_session_write_failure_keeps_memory);
     RUN_TEST(run_session_feed_needs_ram_bit);
     RUN_TEST(run_session_view_waits_for_tid_switch);
+    RUN_TEST(run_session_unset_storage_boxes_are_backfill);
     RUN_TEST(run_session_team_total);
     RUN_TEST(run_session_mvp);
     RUN_TEST(run_session_closest_call);

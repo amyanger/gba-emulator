@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "game/damage.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 #include "game/game_mem.h"
 
 /* Builds damage.h inputs from emulated memory. Pure observer: game_mem_* reads only. */

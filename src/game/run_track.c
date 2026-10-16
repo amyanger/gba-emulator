@@ -22,9 +22,9 @@ static void new_event(RunEvent* ev, uint8_t type, uint32_t pt) {
     ev->low = 1000;
 }
 
-/* A party slot that belongs to the run: not empty, not an egg, not Steven's. */
-static bool own_mon(const NuzMon* m) {
-    return m->species != 0 && !m->egg && m->key.ot != RUN_STEVEN_OTID;
+/* A party slot that belongs to the run: not empty, not an egg, not an in-game partner's. */
+static bool own_mon(const RunTracker* t, const NuzMon* m) {
+    return m->species != 0 && !m->egg && !(t->partner_ot != 0 && m->key.ot == t->partner_ot);
 }
 
 /* Where the logged timeline ends. RELOADs are not kept in the log, so use the events a
@@ -54,7 +54,7 @@ static void rebaseline(RunTracker* t, const NuzFacts* nf, const RunFacts* rf, ui
     memset(t->hp, 0, sizeof(t->hp));
     for (uint8_t i = 0; i < nf->party_count && i < NUZ_PARTY_MAX; i++) {
         const NuzMon* m = &nf->party[i];
-        if (!own_mon(m)) continue;
+        if (!own_mon(t, m)) continue;
         t->hp[i].key = m->key;
         t->hp[i].alive_seen = m->hp > 0;
     }
@@ -125,7 +125,7 @@ static void stamp(const RunTracker* t, const RunLog* log, const RunFacts* rf, Ru
         ev->pt = log->orphan_pt[idx];
         return;
     }
-    if (idx == RUN_BADGES + RUN_STORY_HOF && rf->stats[RUN_STAT_ENTERED_HOF] > 0) {
+    if (idx == RUN_BADGES + rf->hof_story && rf->stats[RUN_STAT_ENTERED_HOF] > 0) {
         uint32_t s = rf->stats[RUN_STAT_FIRST_HOF_TIME];  /* h << 16 | m << 8 | s */
         uint32_t hof = (((s >> 16) * 60u + ((s >> 8) & 0xFF)) * 60u + (s & 0xFF)) * 60u;
         if (hof <= pt) {
@@ -148,7 +148,7 @@ static bool track_milestones(RunTracker* t, const RunLog* log, const NuzFacts* n
         uint32_t sum = 0, cnt = 0;
         for (uint8_t i = 0; i < nf->party_count && i < NUZ_PARTY_MAX; i++) {
             const NuzMon* m = &nf->party[i];
-            if (!own_mon(m)) continue;
+            if (!own_mon(t, m)) continue;
             if (m->level > ev->team_max) ev->team_max = m->level;
             sum += m->level;
             cnt++;
@@ -183,7 +183,8 @@ static bool track_joins(RunTracker* t, const RunLog* log, const NuzFacts* nf, co
     if (log->events_full || log->member_count >= RUN_MEMBERS_MAX) return true;
     for (uint16_t i = 0; i < count; i++) {
         const NuzMon* m = &mons[i];
-        if (!own_mon(m) || run_find_member(log, m->key) >= 0 || emitted_key(out, *n, m->key)) continue;
+        if (!own_mon(t, m) || run_find_member(log, m->key) >= 0 || emitted_key(out, *n, m->key))
+            continue;
         if (*n >= RUN_EVENTS_FRAME_MAX) return false;
         RunEvent* ev = &out[(*n)++];
         new_event(ev, RUN_EV_JOIN, pt);
@@ -218,7 +219,7 @@ static void track_evolutions(RunTracker* t, const RunLog* log, const NuzFacts* n
     for (uint8_t i = 0; i < NUZ_PARTY_MAX; i++) {
         RunEvoWatch* w = &t->evo[i];
         const NuzMon* m = &nf->party[i];
-        int mb = i < nf->party_count && own_mon(m) ? run_find_member(log, m->key) : -1;
+        int mb = i < nf->party_count && own_mon(t, m) ? run_find_member(log, m->key) : -1;
         if (mb < 0 || log->members[mb].species == m->species) {
             memset(w, 0, sizeof(*w));
             continue;
@@ -249,7 +250,7 @@ static void track_faints(RunTracker* t, const RunLog* log, const NuzFacts* nf, u
     memset(next, 0, sizeof(next));
     for (uint8_t i = 0; i < nf->party_count && i < NUZ_PARTY_MAX; i++) {
         const NuzMon* m = &nf->party[i];
-        if (!own_mon(m) || run_find_member(log, m->key) < 0) continue;
+        if (!own_mon(t, m) || run_find_member(log, m->key) < 0) continue;
         RunHpWatch* w = &next[i];
         w->key = m->key;
         for (uint8_t j = 0; j < NUZ_PARTY_MAX; j++)
@@ -316,7 +317,7 @@ static void battle_frame(RunTracker* t, const RunLog* log, const NuzFacts* nf, c
             t->battle_kind = RUN_BATTLE_TRAINER;
             t->battle_trainer = rf->opponent;
             /* Only a gym leader, Elite Four member or the Champion has an ace worth a feed row. */
-            t->battle_ace = run_is_leader(rf->opponent) ? rf->ace_species : 0;
+            t->battle_ace = rf->opponent_leader ? rf->ace_species : 0;
         } else if (t->battle_kind == RUN_BATTLE_WILD) {
             t->battle_kind = RUN_BATTLE_OTHER;
         }
@@ -325,12 +326,12 @@ static void battle_frame(RunTracker* t, const RunLog* log, const NuzFacts* nf, c
 
     uint8_t count = rf->battlers > 4 ? 4 : rf->battlers;
     bool safari = (nf->battle_flags & BT_SAFARI) != 0;
-    bool partner = (nf->battle_flags & BT_INGAME_PARTNER) != 0;
+    bool partner = rf->partner_battle;
     for (uint8_t b = 0; b < count; b++) {
         const RunBattler* rb = &rf->b[b];
         if (!(rb->pos & 1)) {
             uint16_t pi = rb->party_index;
-            if (pi < nf->party_count && pi < NUZ_PARTY_MAX && own_mon(&nf->party[pi])) {
+            if (pi < nf->party_count && pi < NUZ_PARTY_MAX && own_mon(t, &nf->party[pi])) {
                 t->fought_mask |= (uint8_t)(1u << pi);
                 t->fought_key[pi] = nf->party[pi].key;
                 t->fought_max[pi] = rb->max_hp;
@@ -361,8 +362,8 @@ static void battle_frame(RunTracker* t, const RunLog* log, const NuzFacts* nf, c
         if (a < count && a != b && !(rf->b[a].pos & 1)) {
             uint16_t pi = rf->b[a].party_index;
             bool partner_mon = partner && pi >= 3;
-            if (!partner_mon && pi < nf->party_count && pi < NUZ_PARTY_MAX && own_mon(&nf->party[pi]) &&
-                run_find_member(log, nf->party[pi].key) >= 0) {
+            if (!partner_mon && pi < nf->party_count && pi < NUZ_PARTY_MAX &&
+                own_mon(t, &nf->party[pi]) && run_find_member(log, nf->party[pi].key) >= 0) {
                 e->credited = true;
                 e->key = nf->party[pi].key;
                 e->att_level = rf->b[a].level;
@@ -454,6 +455,7 @@ uint8_t run_track_step(RunTracker* t, const RunLog* log, const NuzFacts* nf, con
     }
     if (t->invalid_frames > RUN_INVALID_FRAMES) t->have_prev = false;
     t->invalid_frames = 0;
+    t->partner_ot = rf->partner_otid;
     uint32_t pt = nf->play_time;
     if (!t->seeded) {
         t->high = log_max_pt(log);
@@ -502,10 +504,12 @@ uint8_t run_track_step(RunTracker* t, const RunLog* log, const NuzFacts* nf, con
     }
     t->high = pt;
 
-    /* R6: rentals, link, frontier, partner battles and Steven's mons are not the run's party. */
-    bool gate = rf->facility;
+    /* R6 + R16: rentals, link, partner battles, Steven's mons and Teachy TV's Pokedude party. */
+    bool swapped = nuz_party_swapped(&t->party_base, nf);
+    bool gate = rf->facility || swapped;
     for (uint8_t i = 0; i < nf->party_count && i < NUZ_PARTY_MAX && !gate; i++)
-        gate = nf->party[i].species != 0 && nf->party[i].key.ot == RUN_STEVEN_OTID;
+        gate = t->partner_ot != 0 && nf->party[i].species != 0 &&
+               nf->party[i].key.ot == t->partner_ot;
 
     bool disc = reload || !t->have_prev || pt > t->prev_pt + RUN_JUMP_FRAMES ||
                 (t->was_facility && !gate) || nf->trainer_id != t->prev_tid;

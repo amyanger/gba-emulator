@@ -1,6 +1,6 @@
 #include "test_harness.h"
 #include "frontend/cry_player.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 #include "game/game_mem.h"
 #include <string.h>
 
@@ -58,6 +58,7 @@ TEST(cry_index_ranges) {
     rom[0x100 + 2 * 130 + 1] = 0x01;
     GameProfile p;
     memset(&p, 0, sizeof(p));
+    p.rules = &g_emerald_rules;
     p.hoenn_cry_ids = 0x08000100;
     GameMem m = {NULL, NULL, rom, sizeof(rom)};
     uint32_t idx = 0;

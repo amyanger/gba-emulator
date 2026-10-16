@@ -231,7 +231,7 @@ void berry_read(const BerryPlaces* bp, const GameProfile* p, const GameMem* m, c
     out->valid = true;
     out->place_count = bp->count;
     memcpy(out->place, bp->place, sizeof(out->place));
-    out->clock_set = game_mem_read8(m, sb1 + SB1_FLAGS + (FLAG_SYS_CLOCK_SET >> 3), &flag) &&
+    out->clock_set = game_mem_read8(m, sb1 + p->rules->sb1_flags + (FLAG_SYS_CLOCK_SET >> 3), &flag) &&
                      (flag & (1u << (FLAG_SYS_CLOCK_SET & 7)));
     out->in_battle = game_mem_read8(m, p->main_in_battle, &in_battle) && (in_battle & 0x02);
     if (game_mem_read8(m, p->map_header + MAP_HEADER_REGION_MAP_SEC, &sec))

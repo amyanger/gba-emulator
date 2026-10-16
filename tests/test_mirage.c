@@ -12,7 +12,7 @@ static uint8_t s_rom[0x4000];
 #define STORAGE 0x02020000u
 
 static const GameProfile k_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .player_party = 0x02000400,
     .save_block1_ptr = 0x03000000, .save_block2_ptr = 0x03000004,
     .pokemon_storage_ptr = 0x03000008,

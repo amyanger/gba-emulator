@@ -3,6 +3,8 @@
 
 #define TID 0x0000BEEFu
 #define SECS 100
+#define BT_FIRST_BATTLE (1u << 4)
+#define BT_WALLY_TUTORIAL (1u << 9)
 
 /* Large: keep off the stack. */
 static NuzRun s_run;
@@ -63,6 +65,7 @@ static int count_type(uint8_t type) {
 static void enter_battle(uint16_t species, uint32_t pid, uint32_t flags) {
     s_f.in_battle = true;
     s_f.battle_flags = flags;
+    s_f.ignore_battle = (flags & g_emerald_rules.nuz_ignore_mask) != 0;   /* what nuz_read fills */
     s_f.battle_outcome = 0;
     s_f.enemy_species = species;
     s_f.enemy_level = 5;
@@ -160,7 +163,7 @@ TEST(nuz_trainer_first_battle_and_wally_ignored) {
     party_mon(0, PLAIN(1), 20, 20);
     start_run();
     step();
-    uint32_t flags[3] = { NUZ_BATTLE_TRAINER, NUZ_BATTLE_FIRST_BATTLE, NUZ_BATTLE_WALLY_TUTORIAL };
+    uint32_t flags[3] = { NUZ_BATTLE_TRAINER, BT_FIRST_BATTLE, BT_WALLY_TUTORIAL };
     for (int i = 0; i < 3; i++) {
         enter_battle(30, PLAIN(9), flags[i]);
         step();
@@ -448,6 +451,30 @@ TEST(nuz_replay_equals_live_state) {
     ASSERT_TRUE(memcmp(&replay, &s_run, sizeof(replay)) == 0);
 }
 
+/* R16: the Pokedude's party (player OT) is no gift; a real gift with the stale callback is. */
+TEST(nuz_teachy_tv_party_swap_is_not_a_gift) {
+    setup();
+    party_mon(0, PLAIN(1), 20, 20);
+    start_run();
+    step();
+    s_f.teachy_tv = true;
+    step();
+    party_mon(0, PLAIN(50), 33, 20);
+    party_mon(1, PLAIN(51), 34, 20);
+    for (int i = 0; i < 5; i++) {
+        step();
+        ASSERT_EQ(count_type(NUZ_EV_GIFT), 0);
+    }
+    s_f.party_count = 0;
+    party_mon(0, PLAIN(1), 20, 20);              /* restored */
+    step();
+    ASSERT_EQ(count_type(NUZ_EV_GIFT), 0);
+    party_mon(1, PLAIN(60), 40, 20);             /* a real gift, savedCallback still stale */
+    step();
+    ASSERT_EQ(count_type(NUZ_EV_GIFT), 1);
+    ASSERT_EQ(s_run.member_count, 2);
+}
+
 void run_nuzlocke_tests(void) {
     RUN_TEST(nuz_backfill_marks_owned_routes);
     RUN_TEST(nuz_first_encounter_then_second_is_extra);
@@ -468,4 +495,5 @@ void run_nuzlocke_tests(void) {
     RUN_TEST(nuz_format_parse_round_trip);
     RUN_TEST(nuz_parse_rejects_malformed_lines);
     RUN_TEST(nuz_replay_equals_live_state);
+    RUN_TEST(nuz_teachy_tv_party_swap_is_not_a_gift);
 }

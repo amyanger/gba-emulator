@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "game/game_mem.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 #include "game/mirage.h"
 
 #define BERRY_TREE_COUNT     128   /* SaveBlock1.berryTrees */

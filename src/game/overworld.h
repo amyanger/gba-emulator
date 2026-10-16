@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include "game/game_mem.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 #include "game/script_walk.h"
 
 typedef struct GBA GBA;

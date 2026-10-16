@@ -22,7 +22,7 @@ typedef struct {
     char code[5];              /* header 0xAC; "" when blank */
     uint32_t size;
     int64_t played;            /* unix time, 0 = never */
-    bool companion;            /* the exact ROM Emerald Companion supports */
+    bool companion;            /* the exact ROM Pokemon Companion supports */
 } LibGame;
 
 typedef struct {

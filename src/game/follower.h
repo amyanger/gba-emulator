@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 #include "game/game_mem.h"
 #include "game/overworld.h"
 #include "game/pokemon.h"

@@ -18,17 +18,11 @@
 #define ITEM_HOLD_EFFECT_PARAM 0x13
 
 /* struct PokedexEntry (include/pokedex.h) */
-#define DEX_ENTRY_SIZE   0x20
 #define DEX_ENTRY_WEIGHT 0x0E
 
 /* struct BattleResources: flags pointer at +4; struct ResourceFlags is u32 flags[4]. */
 #define RESOURCES_FLAGS        0x04
 #define RESOURCE_FLAG_FLASH_FIRE 1
-
-#define BATTLE_TYPE_LINK            (1u << 1)
-#define BATTLE_TYPE_EREADER_TRAINER (1u << 11)
-#define BATTLE_TYPE_RECORDED_LINK   (1u << 25)
-#define TRAINER_SECRET_BASE         1024
 
 #define STATUS3_MUDSPORT   (1u << 16)
 #define STATUS3_WATERSPORT (1u << 17)
@@ -112,7 +106,7 @@ static bool hold_effect(const GameMem* m, const GameProfile* p, DamageMon* d) {
 static uint16_t dex_weight(const GameMem* m, const GameProfile* p, uint16_t species) {
     uint16_t national = game_species_national(m, p, species), weight = 0;
     if (national == 0 || national >= p->pokedex_count ||
-        !game_mem_read16(m, p->pokedex_entries + (uint32_t)national * DEX_ENTRY_SIZE + DEX_ENTRY_WEIGHT,
+        !game_mem_read16(m, p->pokedex_entries + (uint32_t)national * p->rules->pokedex_entry_size + DEX_ENTRY_WEIGHT,
                          &weight))
         return 0;
     return weight;
@@ -163,16 +157,17 @@ static bool flash_fire_flags(const GameMem* m, const GameProfile* p, uint8_t b, 
     return game_mem_read32(m, flags + 4u * b, out);
 }
 
-/* Bit n = FLAG_BADGE0(n+1)_GET, read from SaveBlock1 like FlagGet (the block moves, so the
- * pointer is re-read every call). */
+/* Bit n = badge n+1, read from SaveBlock1 like FlagGet (the block moves, so the pointer is
+ * re-read every call). */
 static bool read_badges(const GameMem* m, const GameProfile* p, uint8_t* out) {
+    const GameRules* r = p->rules;
     uint32_t sb1;
     uint8_t lo, hi;
-    uint32_t at = SB1_FLAGS + FLAG_BADGE01_GET / 8;
+    uint32_t at = r->sb1_flags + r->flag_badge01 / 8u;
     if (!game_mem_read32(m, p->save_block1_ptr, &sb1) || !game_mem_in_ewram(sb1 + at, 2) ||
         !game_mem_read8(m, sb1 + at, &lo) || !game_mem_read8(m, sb1 + at + 1, &hi))
         return false;
-    uint16_t bits = (uint16_t)(lo | (hi << 8)) >> (FLAG_BADGE01_GET % 8);
+    uint16_t bits = (uint16_t)(lo | (hi << 8)) >> (r->flag_badge01 % 8u);
     *out = (uint8_t)bits;
     return true;
 }
@@ -234,10 +229,13 @@ bool damage_read_battle(const GameMem* m, const GameProfile* p, uint8_t player_b
         !read_mon(m, p, enemy_battler, em, pos[enemy_battler], absent, ff_enemy, enemy))
         return false;
 
-    /* ShouldGetStatBadgeBoost: player side only, not link/e-Reader/Frontier, not a secret base. */
-    bool badges_ok = !(ctx->battle_flags & (BATTLE_TYPE_LINK | BATTLE_TYPE_EREADER_TRAINER |
-                                            BATTLE_TYPE_RECORDED_LINK | BATTLE_TYPE_FRONTIER)) &&
-                     !((ctx->battle_flags & BATTLE_TYPE_TRAINER) && opponent_a == TRAINER_SECRET_BASE);
+    /* ShouldGetStatBadgeBoost: player side only, not in the family's no-badge battles, not against
+     * Emerald's secret base trainer. */
+    const GameRules* r = p->rules;
+    bool badges_ok = !(ctx->battle_flags & r->badge_boost_off_mask) &&
+                     !(r->secret_base_trainer && (ctx->battle_flags & BATTLE_TYPE_TRAINER) &&
+                       opponent_a == r->secret_base_trainer);
+    ctx->soul_dew_off = (ctx->battle_flags & r->soul_dew_off_mask) != 0;
     DamageMon* both[2] = {player, enemy};
     for (int i = 0; i < 2; i++) {
         both[i]->badges = badges;

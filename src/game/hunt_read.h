@@ -1,7 +1,7 @@
 #ifndef HUNT_READ_H
 #define HUNT_READ_H
 
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 #include "game/game_mem.h"
 #include "game/nuzlocke_read.h"
 #include "game/wildgen.h"

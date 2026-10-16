@@ -748,12 +748,14 @@ TEST(soul_dew_latias_latios_not_frontier) {
     a.species = SP_LATIAS;
     ASSERT_RANGE(run(&c, &a, &d, MV_THUNDERBOLT, &mv), 57, 68);
     c.battle_flags = BT_BATTLE_TOWER;
+    c.soul_dew_off = true;
     ASSERT_RANGE(run(&c, &a, &d, MV_THUNDERBOLT, &mv), 39, 46);
     plain(&a, &d, &c);
     d.species = SP_LATIOS;
     d.hold_effect = HE_SOUL_DEW;
     ASSERT_RANGE(run(&c, &a, &d, MV_THUNDERBOLT, &mv), 26, 31);
     c.battle_flags = BT_BATTLE_TOWER;
+    c.soul_dew_off = true;
     ASSERT_RANGE(run(&c, &a, &d, MV_THUNDERBOLT, &mv), 39, 46);
 }
 
@@ -1197,6 +1199,7 @@ TEST(tables_load_from_rom) {
     memset(rom, 0, sizeof(rom));
     GameProfile p;
     memset(&p, 0, sizeof(p));
+    p.rules = &g_emerald_rules;
     p.type_effectiveness = 0x08000000; p.type_effectiveness_len = 6;
     p.stat_stage_ratios = 0x08000100;
     p.hold_effect_to_type = 0x08000200; p.hold_effect_to_type_count = 2;

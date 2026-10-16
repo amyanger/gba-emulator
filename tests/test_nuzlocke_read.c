@@ -11,7 +11,7 @@ static uint8_t s_rom[0x8000];
 #define STORAGE 0x02020000u
 
 static const GameProfile k_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .battle_type_flags = 0x02000E10, .battlers_count = 0x02000E00,
     .battler_party_indexes = 0x02000E08, .battler_positions = 0x02000E04,
     .player_party_count = 0x02000000, .player_party = 0x02000400, .enemy_party = 0x02000800,
@@ -69,6 +69,21 @@ static void build(void) {
     at(0x08000C00 + 28 * 5 + 0x13)[0] = 0;
     for (uint32_t l = 1; l <= 100; l++) fixture_put32(at(0x08000D00 + 4u * l), l * l * l);
     put_mon(at(STORAGE + 4 + 80 * 7), 0xBBBB0003, 0x12345678, 5, 20, 70);
+}
+
+/* FRLG: save blocks exist on the copyright screen, the storage pointer only at the title. */
+TEST(nuz_read_unset_storage_is_not_read) {
+    build();
+    fixture_put32(at(0x03000008), 0);
+    GameMem m = mem();
+    NuzFacts f;
+    ASSERT_TRUE(nuz_read(&k_profile, &m, true, &f));
+    ASSERT_TRUE(!f.has_boxes);
+    ASSERT_EQ(f.box_count, 0);
+    fixture_put32(at(0x03000008), STORAGE);
+    ASSERT_TRUE(nuz_read(&k_profile, &m, true, &f));
+    ASSERT_TRUE(f.has_boxes);
+    ASSERT_EQ(f.box_count, 1);
 }
 
 TEST(nuz_read_waits_for_save_blocks) {
@@ -179,7 +194,81 @@ TEST(nuz_shiny_and_time_format) {
     ASSERT_STR_EQ(buf, "1:02:03");
 }
 
+TEST(nuz_read_quest_log_and_teachy_tv) {
+    build();
+    static GameProfile p;
+    p = k_profile;
+    p.quest_log_state = 0x03000040;
+    p.main_saved_callback = 0x03000044;
+    p.teachy_tv_restore_cb = 0x0815BD59;
+    GameMem m = mem();
+    static NuzFacts f;
+    at(0x03000040)[0] = 2;                       /* QL_STATE_PLAYBACK */
+    ASSERT_TRUE(!nuz_read(&p, &m, false, &f));
+    ASSERT_TRUE(!f.valid);
+    at(0x03000040)[0] = 3;                       /* the last scene runs on the real save */
+    ASSERT_TRUE(nuz_read(&p, &m, false, &f));
+    ASSERT_TRUE(!f.teachy_tv);
+    fixture_put32(at(0x03000044), 0x0815BD59);
+    ASSERT_TRUE(nuz_read(&p, &m, false, &f));
+    ASSERT_TRUE(f.teachy_tv);
+}
+
+/* R16: savedCallback stays on the restore callback after Teachy TV closes; on the overworld
+ * that is stale and must not count. */
+TEST(nuz_read_teachy_tv_stale_on_overworld) {
+    build();
+    static GameProfile p;
+    p = k_profile;
+    p.main_saved_callback = 0x03000044;
+    p.main_callback2 = 0x03000048;
+    p.cb2_overworld = 0x080565B5;
+    p.teachy_tv_restore_cb = 0x0815BD59;
+    GameMem m = mem();
+    static NuzFacts f;
+    fixture_put32(at(0x03000044), 0x0815BD59);
+    fixture_put32(at(0x03000048), 0x0815AB95);   /* TeachyTvCallback */
+    ASSERT_TRUE(nuz_read(&p, &m, false, &f));
+    ASSERT_TRUE(f.teachy_tv);
+    fixture_put32(at(0x03000048), 0x080565A9);   /* CB2_OverworldBasic: the battle transition */
+    ASSERT_TRUE(nuz_read(&p, &m, false, &f));
+    ASSERT_TRUE(f.teachy_tv);
+    fixture_put32(at(0x03000048), 0x080565B5);   /* back on CB2_Overworld, callback stale */
+    ASSERT_TRUE(nuz_read(&p, &m, false, &f));
+    ASSERT_TRUE(!f.teachy_tv);
+}
+
+static void swap_party(NuzFacts* f, uint32_t pid) {
+    f->party_count = 1;
+    f->party[0].species = 19;
+    f->party[0].key.pid = pid;
+}
+
+/* R16: attaching while the Pokedude's party is loaded must not take it as the baseline. */
+TEST(nuz_party_swapped_needs_a_baseline) {
+    static NuzFacts f;
+    memset(&f, 0, sizeof(f));
+    NuzPartyBase base;
+    memset(&base, 0, sizeof(base));
+    f.teachy_tv = true;
+    swap_party(&f, 0xDDDD0001);                  /* the Pokedude's Rattata */
+    ASSERT_TRUE(nuz_party_swapped(&base, &f));
+    ASSERT_TRUE(nuz_party_swapped(&base, &f));
+    ASSERT_EQ(base.count, 0);
+    f.teachy_tv = false;                         /* overworld: the real party is back */
+    swap_party(&f, 0xAAAA0001);
+    ASSERT_TRUE(!nuz_party_swapped(&base, &f));
+    ASSERT_EQ(base.count, 1);
+    ASSERT_EQ(base.pid[0], 0xAAAA0001u);
+    f.teachy_tv = true;                          /* the next lesson swaps again */
+    swap_party(&f, 0xDDDD0002);
+    ASSERT_TRUE(nuz_party_swapped(&base, &f));
+    swap_party(&f, 0xAAAA0001);                  /* restored, still inside Teachy TV */
+    ASSERT_TRUE(!nuz_party_swapped(&base, &f));
+}
+
 void run_nuzlocke_read_tests(void) {
+    RUN_TEST(nuz_read_unset_storage_is_not_read);
     RUN_TEST(nuz_read_waits_for_save_blocks);
     RUN_TEST(nuz_read_trainer_time_party_and_holes);
     RUN_TEST(nuz_read_party_extras);
@@ -187,4 +276,7 @@ void run_nuzlocke_read_tests(void) {
     RUN_TEST(nuz_read_battle_enemy_and_active_slot);
     RUN_TEST(nuz_families_follow_evolution_lines);
     RUN_TEST(nuz_shiny_and_time_format);
+    RUN_TEST(nuz_read_quest_log_and_teachy_tv);
+    RUN_TEST(nuz_read_teachy_tv_stale_on_overworld);
+    RUN_TEST(nuz_party_swapped_needs_a_baseline);
 }

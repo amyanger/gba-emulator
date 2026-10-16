@@ -56,6 +56,8 @@ typedef struct {
     RunViewMon team[RUN_VIEW_TEAM];
     uint32_t wild, trainer_battles, whiteouts, upsets, shiny_seen, shiny_caught, eggs, evolutions,
              centers, shops, fishing, ledges, rained, clocks, splash;
+    uint32_t dex_checks;         /* GAME_STAT_CHECKED_POKEDEX */
+    bool no_clock;               /* the game never counts clock checks (FRLG): show dex checks */
     char most_enc[40], caught_in[48];
     bool write_failed, log_full;
 } RunView;

@@ -126,9 +126,11 @@ void species_index_build(SpeciesIndex* ix, const GameProfile* p, const GameMem* 
     WildCtx wc = { ix, p, rom };
     for_each_reachable_header(p, rom, wild_visit, &wc);
 
-    uint8_t fb[4];
-    if (!game_mem_copy(rom, p->wild_feebas, fb, sizeof(fb))) return;
-    mark_wild(ix, (uint16_t)(fb[2] | (fb[3] << 8)));
+    if (p->rules->features & FEAT_FEEBAS) {
+        uint8_t fb[4];
+        if (!game_mem_copy(rom, p->wild_feebas, fb, sizeof(fb))) return;
+        mark_wild(ix, (uint16_t)(fb[2] | (fb[3] << 8)));
+    }
     ix->ok = true;
 }
 
@@ -161,6 +163,9 @@ uint16_t species_search_query(const SpeciesIndex* ix, const char* query, uint16_
 #define MAPSEC_UNKNOWN 0xFF
 #define EVO_METHOD_TRADE_ITEM 6
 #define EVO_METHOD_ITEM 7
+#define EVO_FRIENDSHIP_DAY   2
+#define EVO_FRIENDSHIP_NIGHT 3
+#define EVO_BEAUTY           15
 _Static_assert(SROW_ANY_ROD < 8, "row key packs method in 3 bits");
 #define ROW_KEY_BYTES 512 /* bitset over method (3 bits), mapsec (8), postgame (1) */
 
@@ -239,7 +244,8 @@ static void row_visit(void* vctx, uint32_t index, uint8_t group, uint8_t num) {
     const GameProfile* p = c->p;
     uint8_t sec;
     if (!map_sec(p, c->rom, group, num, &sec)) sec = MAPSEC_UNKNOWN;
-    uint8_t base_flags = sec == p->low_tide_mapsec ? SROW_LOW_TIDE : 0;
+    /* FRLG sets the Emerald-only fields to 0xFF, the same as an unknown section here. */
+    uint8_t base_flags = sec != MAPSEC_UNKNOWN && sec == p->low_tide_mapsec ? SROW_LOW_TIDE : 0;
     for (size_t i = 0; i < sizeof(p->postgame_map) / sizeof(p->postgame_map[0]); i++)
         if (p->postgame_map[i][0] == group && p->postgame_map[i][1] == num) base_flags |= SROW_POSTGAME;
 
@@ -287,6 +293,7 @@ static void collect_rows(const GameProfile* p, const GameMem* rom, SpeciesDetail
             continue;
         }
         /* sWildFeebas {u8 min, u8 max, u16 species}: any rod on hidden Route 119 tiles. */
+        if (!(p->rules->features & FEAT_FEEBAS)) continue;
         uint8_t fb[4], sec;
         if (!game_mem_copy(rom, p->wild_feebas, fb, sizeof(fb)) ||
             (uint16_t)(fb[2] | (fb[3] << 8)) != out->rows_species)
@@ -329,6 +336,9 @@ void species_search_detail(const SpeciesIndex* ix, const GameProfile* p, const G
                 if (method == 0 || target != cur) continue;
                 st->method = method;
                 st->param = param;
+                st->impossible = !p->rules->evo_day_night_beauty &&
+                                 (method == EVO_FRIENDSHIP_DAY || method == EVO_FRIENDSHIP_NIGHT ||
+                                  method == EVO_BEAUTY);
                 if (method == EVO_METHOD_TRADE_ITEM || method == EVO_METHOD_ITEM)
                     game_item_name(rom, p, param, st->item);
                 break;

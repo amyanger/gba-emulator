@@ -338,7 +338,7 @@ static bool base_damage(const DamageTables* t, const DamageCtx* ctx, const Damag
     uint16_t attack = atk->attack, defense = def->defense;
     uint16_t sp_attack = atk->sp_attack, sp_defense = def->sp_defense;
     uint8_t ahe = atk->hold_effect, dhe = def->hold_effect;
-    bool frontier = (ctx->battle_flags & BATTLE_TYPE_FRONTIER) != 0;
+    bool frontier = ctx->soul_dew_off;
 
     if (atk->ability == ABILITY_HUGE_POWER || atk->ability == ABILITY_PURE_POWER) attack *= 2;
 

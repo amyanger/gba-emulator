@@ -15,8 +15,12 @@
 #define ACE_GLOW   0xFF1C2A4Au
 #define LEFT_W     690.0f
 
-static const uint32_t k_badge_colors[8] = {0xFFA8B0C4, 0xFFD9A85B, 0xFFF2C94C, 0xFFEB5757,
-                                           0xFFC9B27C, 0xFF8DB2F0, 0xFFFF5D8F, 0xFF4C9BFF};
+/* Badge colors in badge order; presentation only (R14). */
+static const uint32_t k_hoenn_badge_colors[8] = {0xFFA8B0C4, 0xFFD9A85B, 0xFFF2C94C, 0xFFEB5757,
+                                                 0xFFC9B27C, 0xFF8DB2F0, 0xFFFF5D8F, 0xFF4C9BFF};
+/* Boulder, Cascade, Thunder, Rainbow, Soul, Marsh, Volcano, Earth */
+static const uint32_t k_kanto_badge_colors[8] = {0xFFA8B0C4, 0xFF4C9BFF, 0xFFF2C94C, 0xFFB58CFF,
+                                                 0xFFFF5D8F, 0xFFD9A85B, 0xFFEB5757, 0xFF5BBF6A};
 /* GamePartyMon.ivs is HP, Atk, Def, Spe, SpA, SpD; the card shows HP, Atk, Def, SpA, SpD, Spe. */
 static const uint8_t k_stat_order[6] = {0, 1, 2, 4, 5, 3};
 static const char* const k_stat_label[6] = {"HP", "Atk", "Def", "SpA", "SpD", "Spe"};
@@ -80,10 +84,12 @@ static void draw_pic(UiCanvas* c, float x, float y, float size, const uint32_t p
 }
 
 static void badge_row(UiCanvas* c, float x, float y, const TrainerCardData* d, float size) {
+    const uint32_t* colors =
+        d->region == GAME_REGION_KANTO ? k_kanto_badge_colors : k_hoenn_badge_colors;
     for (int i = 0; i < 8; i++) {
         float bx = x + (float)i * (size + 6.0f);
         if (d->badges & (1u << i))
-            ui_fill_round_rect(c, (UiRect){bx, y, size, size}, size / 2, k_badge_colors[i]);
+            ui_fill_round_rect(c, (UiRect){bx, y, size, size}, size / 2, colors[i]);
         else
             ui_ring(c, bx + size / 2, y + size / 2, size / 2 - 1.0f, 2.0f, UI_DIVIDER);
     }
@@ -108,7 +114,7 @@ static float type_pills(UiCanvas* c, float x, float y, const GamePartyMon* m) {
 
 static void footer(UiCanvas* c, float right) {
     ui_text(c, UI_FONT_REGULAR, 12.0f, right, (float)CARD_H - 32.0f, 0, UI_ALIGN_RIGHT, UI_FAINT,
-            "GBA Emulator \xC2\xB7 Emerald Companion");
+            "GBA Emulator \xC2\xB7 Pok\xC3\xA9mon Companion");
 }
 
 static void play_time(const TrainerCardData* d, char* out, size_t n) {
@@ -141,7 +147,8 @@ static void draw_grid(UiCanvas* c, const TrainerCardData* d, const uint32_t pics
 
     ui_text(c, UI_FONT_REGULAR, 11.0f, 40.0f, 34.0f, 0, UI_ALIGN_LEFT, UI_DIM, "TRAINER");
     ui_text(c, UI_FONT_SEMIBOLD, 34.0f, 40.0f, 48.0f, 460.0f, UI_ALIGN_LEFT, UI_TEXT, d->name);
-    snprintf(buf, sizeof buf, "ID No. %05u \xC2\xB7 Pokemon Emerald", (unsigned)d->public_id);
+    snprintf(buf, sizeof buf, "ID No. %05u \xC2\xB7 %s", (unsigned)d->public_id,
+             d->game_name ? d->game_name : "Pok\xC3\xA9mon Emerald");
     ui_text(c, UI_FONT_REGULAR, 13.0f, 40.0f, 94.0f, 0, UI_ALIGN_LEFT, UI_MUTED, buf);
 
     float right = (float)CARD_W - 40.0f, x;

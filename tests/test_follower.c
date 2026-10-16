@@ -393,7 +393,7 @@ TEST(failed_read_keeps_camera_edge) {
 #define CB2_FIELD 0x08000101u
 
 static const GameProfile k_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .save_block1_ptr = 0x03000000,
     .player_party = PARTY,
     .map_header = MAP_HDR,

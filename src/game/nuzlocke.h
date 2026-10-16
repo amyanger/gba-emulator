@@ -103,7 +103,7 @@ typedef struct {
 typedef struct {
     bool have_prev;
     bool prev_in_battle;
-    bool battle_ignored;      /* trainer, first battle or Wally's tutorial */
+    bool battle_ignored;      /* NuzFacts.ignore_battle at the start, or no foe */
     uint8_t outcome;          /* last non-zero gBattleOutcome this battle */
     uint8_t enc_sec, enc_kind;
     uint32_t enc_pid;
@@ -116,6 +116,7 @@ typedef struct {
     bool behind;              /* play time went back; reload not logged yet */
     uint32_t low;
     uint8_t behind_frames;
+    NuzPartyBase party_base;  /* R16 Teachy TV gate */
 } NuzTracker;
 
 #define NUZ_DEATH_FRAMES  30

@@ -10,9 +10,6 @@
 #define RUN_RELOAD_SLACK     2    /* play time may run this far ahead of one per frame while behind */
 #define RUN_JUMP_FRAMES      120
 #define RUN_INVALID_FRAMES   60   /* invalid facts this long are a discontinuity, shorter is frozen */
-/* OT ID of Steven's partner mons in the Mossdeep multi battle.
- * pret pokeemerald 731ad5b src/battle_tower.c: #define STEVEN_OTID 61226 */
-#define RUN_STEVEN_OTID      61226u
 
 typedef struct { NuzKey key; bool alive_seen; uint8_t zero_frames; } RunHpWatch;
 typedef struct { NuzKey key; bool credited; uint32_t pt; uint8_t foe_level, att_level, foe_slot; bool on_ace; } RunKoEntry;
@@ -20,6 +17,7 @@ typedef struct { NuzKey key; uint16_t species; uint8_t frames; } RunEvoWatch;
 
 typedef struct {
     bool have_prev;
+    uint32_t partner_ot;          /* rf->partner_otid of the current frame; 0 = none */
     uint8_t invalid_frames;       /* consecutive invalid-facts frames; over 60 is a discontinuity */
     bool seeded;                  /* high taken from the log on the first step after reset */
     uint32_t prev_pt, high, prev_tid;
@@ -57,6 +55,7 @@ typedef struct {
     uint8_t ko_count; RunKoEntry kos[12];
     bool pending; uint32_t pending_pid, pending_ot; bool pending_newdex;
     bool start_owned;             /* enemy_owned when the foe was first seen */
+    NuzPartyBase party_base;      /* R16 Teachy TV gate */
 } RunTracker;
 
 void run_tracker_reset(RunTracker* t);

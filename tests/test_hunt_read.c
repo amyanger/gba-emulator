@@ -34,7 +34,7 @@ static uint8_t s_rom[0x4000];
 #define BATTLE_TYPE_PIKE (1u << 20)
 
 static const GameProfile k_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .battle_type_flags = 0x02000E10,
     .battlers_count = 0x02000E00,
     .battler_party_indexes = 0x02000E08,

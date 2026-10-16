@@ -6,7 +6,7 @@
 #include "frontend/run_session.h"
 #include "ui/ui_canvas.h"
 
-/* The Run page of the Emerald Companion panel: the dashboard, or the Details sheet
+/* The Run page of the Pokemon Companion panel: the dashboard, or the Details sheet
  * when details is set. top is the y (points) below the tab bar. v may be NULL. */
 void run_panel_draw(UiCanvas* c, const RunView* v, float top, uint8_t scroll, bool details);
 /* Max scroll for the current view: feed rows (dashboard) or team rows (details) beyond what fits. */

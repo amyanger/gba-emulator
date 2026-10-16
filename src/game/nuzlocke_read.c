@@ -8,7 +8,6 @@
 /* SaveBlock2 (include/global.h) */
 #define SB2_PLAY_TIME  0x0E  /* u16 hours, u8 minutes, u8 seconds, u8 frames */
 #define SB2_MIN_SIZE   0x13
-#define SB1_MIN_SIZE   0x3E08
 
 #define STORAGE_SIZE    (STORAGE_BOXES + NUZ_BOX_MAX * BOX_MON_SIZE)
 
@@ -80,10 +79,12 @@ static void read_party(const GameProfile* p, const GameMem* m, NuzFacts* f) {
 
 static void read_boxes(const GameProfile* p, const GameMem* m, NuzFacts* f) {
     uint32_t base;
-    f->has_boxes = true;
-    f->box_count = 0;
+    /* FRLG loads the save blocks on the copyright screen but leaves the storage pointer NULL
+     * until the title screen: an unset pointer is "not read", never "empty boxes". */
     if (!game_mem_read32(m, p->pokemon_storage_ptr, &base) || !game_mem_in_ewram(base, STORAGE_SIZE))
         return;
+    f->has_boxes = true;
+    f->box_count = 0;
     for (uint32_t i = 0; i < NUZ_BOX_MAX; i++) {
         uint8_t raw[BOX_MON_SIZE];
         MonData d;
@@ -102,6 +103,7 @@ static void read_battle(const GameProfile* p, const GameMem* m, NuzFacts* f) {
     if (!game_mem_read8(m, p->main_in_battle, &in_battle) || !(in_battle & 0x02)) return;
     f->in_battle = true;
     game_mem_read32(m, p->battle_type_flags, &f->battle_flags);
+    f->ignore_battle = (f->battle_flags & p->rules->nuz_ignore_mask) != 0;
     game_mem_read8(m, p->battle_outcome, &f->battle_outcome);
 
     uint8_t raw[MON_PARTY_SIZE];
@@ -132,18 +134,41 @@ bool nuz_read(const GameProfile* p, const GameMem* m, bool with_boxes, NuzFacts*
     memset(f, 0, offsetof(NuzFacts, boxes));
     if (!with_boxes) f->box_count = box_count;
     f->active_party = -1;
+    if (game_quest_log_playing(p, m)) return false;
     if (!p || !game_mem_read32(m, p->save_block1_ptr, &sb1) ||
-        !game_mem_read32(m, p->save_block2_ptr, &sb2) || !game_mem_in_ewram(sb1, SB1_MIN_SIZE) ||
+        !game_mem_read32(m, p->save_block2_ptr, &sb2) || !game_mem_in_ewram(sb1, p->rules->sb1_min_size) ||
         !game_mem_in_ewram(sb2, SB2_MIN_SIZE) || !game_mem_read32(m, sb2 + SB2_TRAINER_ID, &f->trainer_id) ||
         !game_mem_copy(m, sb2 + SB2_PLAY_TIME, pt, sizeof(pt)))
         return false;
     f->valid = true;
+    /* savedCallback stays on the restore callback after Teachy TV closes (seen live on FireRed),
+     * so it only counts away from the overworld, where the Pokedude party is never loaded. */
+    uint32_t saved = 0, cb2 = 0;
+    if (p->teachy_tv_restore_cb != 0 && game_mem_read32(m, p->main_saved_callback, &saved))
+        f->teachy_tv = saved == p->teachy_tv_restore_cb &&
+                       !(game_mem_read32(m, p->main_callback2, &cb2) && cb2 == p->cb2_overworld);
     f->play_time = ((((uint32_t)(pt[0] | (pt[1] << 8)) * 60u + pt[2]) * 60u + pt[3]) * 60u) + pt[4];
     if (!game_mem_read8(m, p->map_header + MAP_HEADER_REGION_MAP_SEC, &f->mapsec)) f->mapsec = NUZ_SEC_NONE;
     read_party(p, m, f);
     read_battle(p, m, f);
     if (with_boxes) read_boxes(p, m, f);
     return true;
+}
+
+bool nuz_party_swapped(NuzPartyBase* base, const NuzFacts* f) {
+    /* No baseline yet: nothing to compare with, so wait for the overworld. */
+    if (f->teachy_tv && base->count == 0) return true;
+    if (f->teachy_tv) {
+        bool match = false;
+        for (uint8_t i = 0; i < f->party_count && i < NUZ_PARTY_MAX && !match; i++)
+            for (uint8_t j = 0; j < base->count && !match; j++)
+                match = f->party[i].species != 0 && f->party[i].key.pid == base->pid[j];
+        if (!match) return true;
+    }
+    base->count = 0;
+    for (uint8_t i = 0; i < f->party_count && i < NUZ_PARTY_MAX; i++)
+        if (f->party[i].species != 0) base->pid[base->count++] = f->party[i].key.pid;
+    return false;
 }
 
 bool nuz_families(const GameProfile* p, const GameMem* m, uint16_t family[NUZ_SPECIES_MAX]) {

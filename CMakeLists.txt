@@ -127,6 +127,8 @@ set(CORE_SOURCES
     src/trace/trace.c
     src/game/game_mem.c
     src/game/emerald_profile.c
+    src/game/game_profile.c
+    src/game/frlg_profile.c
     src/game/gen3_text.c
     src/game/pokemon.c
     src/game/battle_info.c

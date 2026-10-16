@@ -83,7 +83,7 @@ static void nuz_tick(GBA* gba, void* ctx) {
 static void berry_tick(Frontend* fe, GBA* gba) {
     static uint32_t frames;
     static BerryView view;   /* ~4 KB: keep it off the stack */
-    if (!fe->berry_alerts || !s_game.profile || ++frames % 60 != 0) return;
+    if (!fe->berry_alerts || !game_has(s_game.profile, FEAT_BERRIES) || ++frames % 60 != 0) return;
     BerryToast toasts[BERRY_TOAST_MAX];
     game_read_berries(&s_game, gba, &view);
     uint8_t n = berry_alerts_update(&fe->berry_watch, &view, toasts, BERRY_TOAST_MAX);
@@ -106,7 +106,7 @@ static void daycare_tick(Frontend* fe, GBA* gba) {
         game_panel_title_case(dc.egg_species, name, sizeof(name));
         snprintf(detail, sizeof(detail), "%s%s", name, dc.egg_shiny ? ", shiny" : "");
     } else {
-        snprintf(detail, sizeof(detail), "Talk to the old man on Route 117");
+        snprintf(detail, sizeof(detail), "%s", s_game.profile->rules->daycare_toast);
     }
     frontend_toast_keyed(fe, "daycare:egg", TOAST_INFO, "Egg ready at the Daycare", detail);
 }
@@ -170,7 +170,7 @@ static void card_tick(Frontend* fe, GBA* gba) {
     static uint8_t tries;
     GameMem gm = {gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size};
     CardStatus st = trainer_card_read(&s_game, &gm, &cur);
-    const char* warn = st == CARD_NOT_EMERALD ? "Trainer cards need Pokemon Emerald"
+    const char* warn = st == CARD_NOT_SUPPORTED ? "Trainer cards need a supported Pok\xC3\xA9mon game"
                      : st == CARD_NO_TEAM     ? "No team to show yet"
                      : st == CARD_FACILITY    ? "Not available here"
                                               : NULL;
@@ -323,8 +323,8 @@ static void print_usage(const char* prog) {
     printf("  --hash-out <file>      Headless: write per-frame framebuffer hashes\n");
     printf("  --screenshot-out <f>   Headless: write final-frame screenshot to file\n");
     printf("  --input-script <file>  Headless: scripted keypad input (see README)\n");
-    printf("  --game-dump <file>     Headless: write decoded Emerald state after the run\n");
-    printf("  --panel-out <file>     Headless: render the Emerald Companion panel to a PNG after the run\n");
+    printf("  --game-dump <file>     Headless: write the decoded game state after the run\n");
+    printf("  --panel-out <file>     Headless: render the Pokemon Companion panel to a PNG after the run\n");
     printf("  --panel-density <f>    Headless: panel pixels per point, 0.5 to 4.0 (default: 1.0)\n");
     printf("  --panel-page <p>       Headless: panel page, auto|party|route|nuzlocke|berries|search|hunt|run\n");
     printf("                         (default: auto)\n");
@@ -757,18 +757,21 @@ int main(int argc, char* argv[]) {
     if (!headless) library_record_launch(rom_path);
 
     game_init(&s_game, gba.cart.rom, gba.cart.rom_size);
-    overworld_feed_init(&s_ow, s_game.profile);
-    follower_feed_init(&s_fol, s_game.profile);
+    overworld_feed_init(&s_ow, game_has(s_game.profile, FEAT_OVERWORLD) ? s_game.profile : NULL);
+    follower_feed_init(&s_fol, game_has(s_game.profile, FEAT_FOLLOWER) ? s_game.profile : NULL);
     s_nuz_on = !headless || nuzlocke_file;
     s_run_on = !headless || run_file;
     s_hunt_on = !headless || hunt_file;
     /* Headless runs never touch sidecar files next to the ROM, only the fixed paths given. */
     nuz_session_init(&s_nuz, s_game.profile, headless ? NULL : rom_path, headless ? nuzlocke_file : NULL);
     run_session_init(&s_run, s_game.profile, headless ? NULL : rom_path, headless ? run_file : NULL);
-    hunt_session_init(&s_hunt, s_game.profile, headless ? NULL : rom_path, headless ? hunt_file : NULL);
-    if (s_game.support == GAME_SUPPORT_MODIFIED)
-        LOG_WARN("Emerald Companion (F9) is off: this ROM is a hack or modified copy of Pokemon "
-                 "Emerald. It only supports the original Pokemon Emerald (US/English) ROM.");
+    hunt_session_init(&s_hunt, game_has(s_game.profile, FEAT_HUNT) ? s_game.profile : NULL,
+                      headless ? NULL : rom_path, headless ? hunt_file : NULL);
+    if (s_game.support == GAME_SUPPORT_MODIFIED || s_game.support == GAME_SUPPORT_OTHER_REVISION)
+        LOG_WARN("Pokemon Companion (F9) is off: %s. It supports the original US/English Pokemon "
+                 "Emerald, FireRed 1.0 and LeafGreen 1.1 ROMs.",
+                 s_game.support == GAME_SUPPORT_MODIFIED ? "this ROM is a hack or modified copy"
+                                                         : "this ROM revision isn't supported");
 
     // Cheats: --cheats FILE, else <rom>.cht next to the ROM when it exists.
     // Game ID lines in pasted codes are checked against the header word at 0xAC.
@@ -842,6 +845,14 @@ int main(int argc, char* argv[]) {
             gba_destroy(&gba);
             return 1;
         }
+        const GameProfile* gp = s_game.profile;
+        bool no_berries = panel_page == GAME_PAGE_BERRIES && !game_has(gp, FEAT_BERRIES);
+        bool no_hunt = panel_page == GAME_PAGE_HUNT && !game_has(gp, FEAT_HUNT);
+        if (s_game.profile && (no_berries || no_hunt)) {
+            LOG_ERROR("--panel-page %s: not available in %s", panel_page_arg, s_game.profile->name);
+            gba_destroy(&gba);
+            return 1;
+        }
         // Fixed-size event table (~8 KB); static keeps it off the stack.
         static InputScript input_script;
         if (input_script_path && !input_script_load(&input_script, input_script_path)) {
@@ -869,7 +880,8 @@ int main(int argc, char* argv[]) {
         if (gift_audit_path) {
             FILE* f = fopen(gift_audit_path, "w");
             GameMem gm = { gba.bus.ewram, gba.bus.iwram, gba.cart.rom, gba.cart.rom_size };
-            bool ok = f && s_game.profile && overworld_gift_audit(s_game.profile, &gm, f);
+            bool ok = f && game_has(s_game.profile, FEAT_OVERWORLD) &&
+                      overworld_gift_audit(s_game.profile, &gm, f);
             if (f) fclose(f);
             if (!ok) {
                 LOG_ERROR("--gift-audit needs the original Pokemon Emerald (US) and a writable file: %s",
@@ -880,10 +892,10 @@ int main(int argc, char* argv[]) {
         }
         /* A bare Frontend: only the observer hub and the follower fields are used. */
         memset(&fe, 0, sizeof(fe));
-        fe.ow_feed = s_game.profile ? &s_ow : NULL;
-        fe.overworld_xray = s_game.profile && (game_dump_path || overworld_out_path);
+        fe.ow_feed = game_has(s_game.profile, FEAT_OVERWORLD) ? &s_ow : NULL;
+        fe.overworld_xray = fe.ow_feed && (game_dump_path || overworld_out_path);
         if (follower_hgss_path) {
-            if (!s_game.profile) {
+            if (!game_has(s_game.profile, FEAT_FOLLOWER)) {
                 LOG_ERROR("--follower-hgss needs the original Pokemon Emerald (US)");
                 gba_destroy(&gba);
                 return 1;
@@ -899,7 +911,7 @@ int main(int argc, char* argv[]) {
             fe.follower.enabled = true;
         }
         frontend_sync_observer(&fe, &gba);
-        if (overworld_out_path && !s_game.profile)
+        if (overworld_out_path && !game_has(s_game.profile, FEAT_OVERWORLD))
             LOG_WARN("--overworld-out: not the original Pokemon Emerald (US), drawing the game only");
         /* Predictions only matter for a final dump or panel image. */
         hunt_session_set_shown(&s_hunt, game_dump_path || panel_out_path);
@@ -927,11 +939,11 @@ int main(int argc, char* argv[]) {
             static FeebasState feebas;
             static GameDaycare daycare;
             GameMem gm = { gba.bus.ewram, gba.bus.iwram, gba.cart.rom, gba.cart.rom_size };
-            feebas_read(s_game.profile, &gm, &feebas);
+            if (game_has(s_game.profile, FEAT_FEEBAS)) feebas_read(s_game.profile, &gm, &feebas);
             game_read_daycare(&dump_state, &gba, &daycare);
             if (!f || !game_dump(&dump_state.snap, f) || (dump_state.profile && !game_dump_daycare(&daycare, f)) ||
-                (s_game.profile && !overworld_dump(&s_ow.shown, f)) ||
-                (s_game.profile && !feebas_dump(&feebas, f)) ||
+                (game_has(s_game.profile, FEAT_OVERWORLD) && !overworld_dump(&s_ow.shown, f)) ||
+                (game_has(s_game.profile, FEAT_FEEBAS) && !feebas_dump(&feebas, f)) ||
                 (nuzlocke_file && !nuz_session_dump(&s_nuz, f)) || (run_file && !run_session_dump(&s_run, f)) ||
                 (hunt_file && !hunt_session_dump(&s_hunt, f))) {
                 LOG_ERROR("Failed to write --game-dump file: %s", game_dump_path);
@@ -1023,7 +1035,7 @@ int main(int argc, char* argv[]) {
             static TrainerCardData card;
             CardStatus st = trainer_card_read(&dump_state, &gm, &card);
             if (st != CARD_OK) {
-                LOG_ERROR("--card-out: %s", st == CARD_NOT_EMERALD ? "not a supported Emerald ROM"
+                LOG_ERROR("--card-out: %s", st == CARD_NOT_SUPPORTED ? "not a supported Pokemon ROM"
                                             : st == CARD_NO_TEAM   ? "no party yet"
                                                                    : "party is not readable (battle facility)");
                 rc = 1;
@@ -1099,8 +1111,9 @@ int main(int argc, char* argv[]) {
     }
 
     fe.prefs = &s_prefs;
-    fe.ow_feed = s_game.profile ? &s_ow : NULL;
+    fe.ow_feed = game_has(s_game.profile, FEAT_OVERWORLD) ? &s_ow : NULL;
     fe.nuz = &s_nuz;
+    fe.page_mask = game_panel_page_mask(s_game.profile);
     fe.search_ok = s_game.search.ok;
     fe.run_view = &s_run.view;
     fe.hunt = &s_hunt;
@@ -1136,7 +1149,7 @@ int main(int argc, char* argv[]) {
     fe.color_correct = color_correct_arg || prefs_get_bool(&s_prefs, "color_correct", false);
     if (fe.ow_feed && prefs_get_bool(&s_prefs, "overworld_xray", false)) fe.overworld_xray = true;
     /* Following Pokemon: a saved HeartGold ROM that no longer opens counts as unset. */
-    fe.fol_feed = s_game.profile ? &s_fol : NULL;
+    fe.fol_feed = game_has(s_game.profile, FEAT_FOLLOWER) ? &s_fol : NULL;
     fe.hgss = &s_hgss;
     {
         const char* hp = prefs_get(&s_prefs, "hgss_rom");
@@ -1152,8 +1165,10 @@ int main(int argc, char* argv[]) {
         frontend_toast(&fe, TOAST_WARN, "BIOS file not found", path_base(pref_bios));
     else if (!bios_loaded)
         frontend_toast(&fe, TOAST_WARN, "Running without BIOS", "Using built-in BIOS");
-    if (s_game.support == GAME_SUPPORT_MODIFIED)
-        frontend_toast(&fe, TOAST_WARN, "Emerald Companion is off", "ROM hack not supported");
+    if (s_game.support == GAME_SUPPORT_MODIFIED || s_game.support == GAME_SUPPORT_OTHER_REVISION)
+        frontend_toast(&fe, TOAST_WARN, "Pok\xC3\xA9mon Companion is off",
+                       s_game.support == GAME_SUPPORT_MODIFIED ? "ROM hack not supported"
+                                                               : "ROM revision not supported");
     if (cheat_path) {
         if (cheats_loaded < 0) {
             frontend_toast(&fe, TOAST_ERROR, "Couldn't load cheats", path_base(cheat_path));

@@ -21,15 +21,64 @@
 
 static uint32_t s_buf[BUF_W * BUF_H + GUARD];
 
+static uint32_t buf_hash(const uint32_t* px, size_t n) {
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < n; i++) h = (h ^ px[i]) * 16777619u;
+    return h;
+}
+
+TEST(panel_page_mask_hides_berries_and_hunt) {
+    static GameRules r;
+    r = g_emerald_rules;
+    r.features = 0;
+    static GameProfile p;
+    p = g_emerald_profile;
+    p.rules = &r;
+    ASSERT_EQ_HEX(game_panel_page_mask(NULL), GAME_PAGE_MASK_ALL);
+    ASSERT_EQ_HEX(game_panel_page_mask(&g_emerald_profile), GAME_PAGE_MASK_ALL);
+    uint32_t mask = game_panel_page_mask(&p);
+    ASSERT_TRUE(!(mask & (1u << GAME_PAGE_BERRIES)));
+    ASSERT_TRUE(!(mask & (1u << GAME_PAGE_HUNT)));
+    ASSERT_TRUE(mask & (1u << GAME_PAGE_AUTO));
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_NUZLOCKE, mask), GAME_PAGE_SEARCH);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_SEARCH, mask), GAME_PAGE_RUN);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_RUN, mask), GAME_PAGE_AUTO);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_BERRIES, mask), GAME_PAGE_SEARCH); /* never stuck */
+    UiCanvas c;
+    ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+    ASSERT_TRUE(game_panel_tabs_width(&c, GAME_PAGE_PARTY, true, mask) <
+                game_panel_tabs_width(&c, GAME_PAGE_PARTY, true, GAME_PAGE_MASK_ALL));
+}
+
+TEST(panel_hidden_page_draws_as_auto) {
+    static GameRules r;
+    r = g_emerald_rules;
+    r.features = 0;
+    static GameProfile p;
+    p = g_emerald_profile;
+    p.rules = &r;
+    static GameSnapshot snap;
+    memset(&snap, 0, sizeof(snap));
+    snap.profile = &p;
+    snap.valid = true;
+    snap.context = GAME_CTX_OVERWORLD;
+    UiCanvas c;
+    ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+    game_panel_draw(&c, &snap, GAME_PAGE_AUTO, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL, NULL);
+    uint32_t want = buf_hash(s_buf, 600 * 480);
+    game_panel_draw(&c, &snap, GAME_PAGE_HUNT, 0, NULL, 0, 0, true, NULL, NULL, 0, false, NULL, NULL);
+    ASSERT_EQ_HEX(buf_hash(s_buf, 600 * 480), want);
+}
+
 TEST(panel_page_cycles) {
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_AUTO), GAME_PAGE_PARTY);
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_PARTY), GAME_PAGE_ENCOUNTERS);
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_ENCOUNTERS), GAME_PAGE_NUZLOCKE);
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_NUZLOCKE), GAME_PAGE_BERRIES);
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_BERRIES), GAME_PAGE_SEARCH);
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_SEARCH), GAME_PAGE_HUNT);
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_HUNT), GAME_PAGE_RUN);
-    ASSERT_EQ(game_panel_next_page(GAME_PAGE_RUN), GAME_PAGE_AUTO);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_AUTO, GAME_PAGE_MASK_ALL), GAME_PAGE_PARTY);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_PARTY, GAME_PAGE_MASK_ALL), GAME_PAGE_ENCOUNTERS);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_ENCOUNTERS, GAME_PAGE_MASK_ALL), GAME_PAGE_NUZLOCKE);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_NUZLOCKE, GAME_PAGE_MASK_ALL), GAME_PAGE_BERRIES);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_BERRIES, GAME_PAGE_MASK_ALL), GAME_PAGE_SEARCH);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_SEARCH, GAME_PAGE_MASK_ALL), GAME_PAGE_HUNT);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_HUNT, GAME_PAGE_MASK_ALL), GAME_PAGE_RUN);
+    ASSERT_EQ(game_panel_next_page(GAME_PAGE_RUN, GAME_PAGE_MASK_ALL), GAME_PAGE_AUTO);
 }
 
 TEST(panel_auto_page_follows_context) {
@@ -57,7 +106,7 @@ TEST(panel_battle_keeps_page_chosen_during_battle) {
     PanelBattleFollow f = { 0 };
     GamePage page = game_panel_follow_battle(GAME_PAGE_ENCOUNTERS, GAME_CTX_BATTLE_TRAINER, &f);
     ASSERT_EQ(page, GAME_PAGE_AUTO);
-    page = game_panel_next_page(page); /* what F10 does */
+    page = game_panel_next_page(page, GAME_PAGE_MASK_ALL); /* what F10 does */
     f.restore = false;
     page = game_panel_follow_battle(page, GAME_CTX_BATTLE_TRAINER, &f);
     ASSERT_EQ(page, GAME_PAGE_PARTY);
@@ -295,6 +344,19 @@ TEST(panel_party_daycare_draw_smoke) {
                 }
             }
         }
+    /* FRLG card: an egg is waiting, no nature or shiny rows, longer footer */
+    fill_daycare(&dc, 2, true);
+    dc.pid_partial = true;
+    dc.egg_nature[0] = '\0';
+    for (uint8_t sel = 0; sel < game_panel_party_rows(&snap, &dc); sel++) {
+        int w = 600, h = 480;
+        for (int i = 0; i < GUARD; i++) s_buf[w * h + i] = SENTINEL;
+        UiCanvas c;
+        ui_canvas_init(&c, s_buf, w, h, 1.0f);
+        game_panel_draw(&c, &snap, GAME_PAGE_PARTY, sel, NULL, 0, 0, true, NULL, NULL, 0, false,
+                        NULL, &dc);
+        for (int i = 0; i < GUARD; i++) ASSERT_TRUE(s_buf[w * h + i] == SENTINEL);
+    }
 }
 
 static bool draw_checked_full(float density, const GameSnapshot* snap, GamePage page, uint8_t sel,
@@ -416,6 +478,20 @@ TEST(panel_pages_stay_in_bounds_at_all_densities) {
     }
 }
 
+TEST(panel_ghost_and_uncatchable_battle_stay_in_bounds) {
+    static const float densities[] = {0.75f, 1.0f, 2.0f};
+    static GameSnapshot ghost, veiled;
+    fill_battle(&ghost, GAME_CTX_BATTLE_WILD);
+    ghost.ghost = true;
+    ghost.uncatchable = true;
+    fill_battle(&veiled, GAME_CTX_BATTLE_WILD);
+    veiled.uncatchable = true;
+    for (size_t d = 0; d < sizeof(densities) / sizeof(densities[0]); d++) {
+        ASSERT_TRUE(draw_checked(densities[d], &ghost, GAME_PAGE_AUTO, 0));
+        ASSERT_TRUE(draw_checked(densities[d], &veiled, GAME_PAGE_AUTO, 0));
+    }
+}
+
 TEST(panel_long_names_stay_in_columns) {
     static GameSnapshot snap;
     fill_battle(&snap, GAME_CTX_BATTLE_TRAINER);
@@ -457,8 +533,9 @@ static int lit_rows(int y0, int y1) {
 
 TEST(panel_unsupported_rom_explains_why) {
     static GameSnapshot snap;
-    const GameSupport kinds[2] = {GAME_SUPPORT_MODIFIED, GAME_SUPPORT_OTHER_GAME};
-    for (int k = 0; k < 2; k++) {
+    const GameSupport kinds[3] = {GAME_SUPPORT_MODIFIED, GAME_SUPPORT_OTHER_GAME,
+                                  GAME_SUPPORT_OTHER_REVISION};
+    for (int k = 0; k < 3; k++) {
         memset(&snap, 0, sizeof(snap));
         snap.support = kinds[k];
         UiCanvas c;
@@ -1120,8 +1197,8 @@ TEST(panel_search_page_draws_in_bounds) {
             s_detail.kind = m == 16 ? SPECIES_EVOLVE_NOT_WILD : SPECIES_EVOLVE;
             s_detail.rows_species = 1;
             s_detail.step_count = 2;
-            s_detail.steps[0] = (SpeciesStep){2, m, 100, ""};
-            s_detail.steps[1] = (SpeciesStep){1, 6, 0, ""};
+            s_detail.steps[0] = (SpeciesStep){2, m, 100, "", false};
+            s_detail.steps[1] = (SpeciesStep){1, 6, 0, "", false};
             game_strcpy(s_detail.steps[0].item, SPECIES_NAME_LEN, "DEEPSEATOOTH");
             game_strcpy(s_detail.steps[1].item, SPECIES_NAME_LEN, "DEEPSEATOOTH");
             if (m != 16) fill_rows(&s_detail, 40);
@@ -1335,7 +1412,7 @@ TEST(panel_tab_bar_fits_every_hint) {
                 for (int det = 0; det < 4; det++) {
                     nuz.state = (uint8_t)ns;
                     const char* hint = game_panel_hint((GamePage)p, &nuz, det >= 2, &run, det % 2 != 0);
-                    float used = game_panel_tabs_width(&c, (GamePage)p, true);
+                    float used = game_panel_tabs_width(&c, (GamePage)p, true, GAME_PAGE_MASK_ALL);
                     float hw = ui_text_width(&c, UI_FONT_REGULAR, UI_SIZE_LABEL, hint);
                     ASSERT_TRUE(16.0f + used + 12.0f <= 584.0f - hw);
                 }
@@ -1567,6 +1644,7 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_party_egg_steps_with_empty_daycare);
     RUN_TEST(panel_party_daycare_draw_smoke);
     RUN_TEST(panel_pages_stay_in_bounds_at_all_densities);
+    RUN_TEST(panel_ghost_and_uncatchable_battle_stay_in_bounds);
     RUN_TEST(panel_long_names_stay_in_columns);
     RUN_TEST(panel_invalid_snapshot_shows_reason);
     RUN_TEST(panel_unsupported_rom_explains_why);
@@ -1589,6 +1667,8 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_mirage_key_refuses_when_not_useful);
     RUN_TEST(panel_follow_battle_hold_keeps_page);
     RUN_TEST(panel_title_case_search_names);
+    RUN_TEST(panel_page_mask_hides_berries_and_hunt);
+    RUN_TEST(panel_hidden_page_draws_as_auto);
     RUN_TEST(panel_search_layout_matches_tabs);
     RUN_TEST(panel_search_page_draws_in_bounds);
     RUN_TEST(panel_search_chain_truncated_adds_a_line);

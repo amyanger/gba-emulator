@@ -11,14 +11,9 @@
 #include <string.h>
 #include <time.h>
 
-/* SaveBlock1 / SaveBlock2 (pokeemerald include/global.h) */
-#define SB1_BALL_POCKET  0x650
-#define SB1_DEX_SEEN1    0x988
-#define SB1_DEX_SEEN2    0x3B24
-#define SB1_MIN_SIZE     (SB1_DEX_SEEN2 + 52)
-#define SB2_ENCRYPT_KEY  0xAC
-#define SB2_MIN_SIZE     (SB2_ENCRYPT_KEY + 4)
-#define BALL_POCKET_SLOTS 16
+/* Smallest SaveBlock1 / SaveBlock2 the snapshot reads: through seen2 and the encryption key. */
+static uint32_t sb1_min_size(const GameProfile* p) { return p->rules->sb1_dex_seen2 + 52u; }
+static uint32_t sb2_min_size(const GameProfile* p) { return p->rules->sb2_encryption_key + 4u; }
 
 #define ITEM_NAME_LEN     14
 #define SPECIES_NAME_STRIDE 11
@@ -29,9 +24,6 @@
 #define MAP_HEADER_MAP_TYPE 0x17
 #define MAP_TYPE_UNDERWATER 5
 #define TYPE_TABLE_MAX 512
-/* struct RegionMapLocation (include/region_map.h): x, y, width, height, name */
-#define REGION_MAP_ENTRY_SIZE 8
-#define REGION_MAP_ENTRY_NAME 4
 /* Move id from the ROM's move-name table; its matchup type comes from the user's IVs. */
 #define MOVE_HIDDEN_POWER 237
 
@@ -84,14 +76,17 @@ void game_nature_name(const GameMem* m, const GameProfile* p, uint8_t nature, ch
     if (n > 0) gen3_decode(raw, n, out, GAME_NAME_LEN);
 }
 
-/* gRegionMapEntries[sec].name, as GetMapName reads it; empty when unknown. */
+/* GetMapName: Emerald gRegionMapEntries[sec].name, FRLG sMapNames[sec - KANTO_MAPSEC_START];
+ * empty when unknown. */
 void game_mapsec_name(const GameMem* m, const GameProfile* p, uint8_t sec, char* out) {
+    const GameRules* r = p->rules;
     uint32_t ptr;
     uint8_t raw[GAME_MAP_NAME_LEN];
     uint32_t n = 0;
     out[0] = '\0';
-    if (sec >= p->region_map_count ||
-        !game_mem_read32(m, p->region_map_entries + sec * REGION_MAP_ENTRY_SIZE + REGION_MAP_ENTRY_NAME,
+    if (sec < r->mapsec_first || sec >= p->region_map_count ||
+        !game_mem_read32(m, p->region_map_entries + (uint32_t)(sec - r->mapsec_first) * r->mapsec_name_stride +
+                                r->mapsec_name_off,
                          &ptr))
         return;
     while (n < sizeof(raw) && game_mem_read8(m, ptr + n, &raw[n]) && raw[n] != 0xFF) n++;
@@ -134,7 +129,8 @@ static bool dex_caught(const GameMem* m, const GameProfile* p, uint32_t sb1, uin
     uint16_t national = game_species_national(m, p, species);
     if (national == 0) return false;
     return dex_bit(m, sb2 + SB2_DEX_OWNED, national) && dex_bit(m, sb2 + SB2_DEX_SEEN, national) &&
-           dex_bit(m, sb1 + SB1_DEX_SEEN1, national) && dex_bit(m, sb1 + SB1_DEX_SEEN2, national);
+           dex_bit(m, sb1 + p->rules->sb1_dex_seen1, national) &&
+           dex_bit(m, sb1 + p->rules->sb1_dex_seen2, national);
 }
 
 static uint32_t exp_to_next(const GameMem* m, const GameProfile* p, uint8_t growth,
@@ -359,7 +355,7 @@ static void read_catch_rows(const GameMem* m, const GameProfile* p, uint32_t sb1
         return;
     }
     if (!species_info(m, p, species, info)) return;
-    game_mem_read32(m, sb2 + SB2_ENCRYPT_KEY, &key);
+    game_mem_read32(m, sb2 + p->rules->sb2_encryption_key, &key);
 
     CatchInput in = {0};
     in.catch_rate = info[SI_CATCH_RATE];
@@ -375,9 +371,9 @@ static void read_catch_rows(const GameMem* m, const GameProfile* p, uint32_t sb1
     game_mem_read8(m, p->map_header + MAP_HEADER_MAP_TYPE, &map_type);
     in.underwater = map_type == MAP_TYPE_UNDERWATER;
 
-    for (int i = 0; i < BALL_POCKET_SLOTS && s->catch_count < 16; i++) {
+    for (int i = 0; i < p->rules->ball_pocket_slots && s->catch_count < 16; i++) {
         uint16_t id, qty;
-        uint32_t slot = sb1 + SB1_BALL_POCKET + 4u * i;
+        uint32_t slot = sb1 + p->rules->sb1_ball_pocket + 4u * i;
         if (!game_mem_read16(m, slot, &id) || !game_mem_read16(m, slot + 2, &qty)) break;
         qty ^= (uint16_t)key;
         if (id < BALL_MASTER || id > BALL_PREMIER || qty == 0) continue;
@@ -414,7 +410,7 @@ void game_init(GameState* gs, const uint8_t* rom, uint32_t rom_size) {
     memset(gs, 0, sizeof(*gs));
     gs->profile = game_profile_detect(rom, rom_size, &gs->support);
     GameMem m = { NULL, NULL, rom, rom_size };
-    berry_places_build(&gs->places, gs->profile, &m);
+    berry_places_build(&gs->places, game_has(gs->profile, FEAT_BERRIES) ? gs->profile : NULL, &m);
     species_index_build(&gs->search, gs->profile, &m);
     if (gs->profile) damage_tables_load(&m, gs->profile, &gs->dmg_tables);
 }
@@ -425,16 +421,21 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     uint32_t sb1 = 0, sb2 = 0;
 
     memset(s, 0, sizeof(*s));
+    s->profile = p;
     if (!p) {
-        s->support = gs->support == GAME_SUPPORT_MODIFIED ? GAME_SUPPORT_MODIFIED
-                                                          : GAME_SUPPORT_OTHER_GAME;
+        s->support = gs->support == GAME_SUPPORT_OK ? GAME_SUPPORT_OTHER_GAME : gs->support;
         game_strcpy(s->reason, sizeof(s->reason),
-                    s->support == GAME_SUPPORT_MODIFIED ? "ROM hack or modified ROM not supported"
-                                                        : "Game not supported");
+                    s->support == GAME_SUPPORT_MODIFIED         ? "ROM hack or modified ROM not supported"
+                    : s->support == GAME_SUPPORT_OTHER_REVISION ? "This ROM revision isn't supported"
+                                                                : "Game not supported");
+        return;
+    }
+    if (game_quest_log_playing(p, m)) {
+        game_strcpy(s->reason, sizeof(s->reason), "Replaying your quest log");
         return;
     }
     if (!game_mem_read32(m, p->save_block1_ptr, &sb1) || !game_mem_read32(m, p->save_block2_ptr, &sb2) ||
-        !game_mem_in_ewram(sb1, SB1_MIN_SIZE) || !game_mem_in_ewram(sb2, SB2_MIN_SIZE)) {
+        !game_mem_in_ewram(sb1, sb1_min_size(p)) || !game_mem_in_ewram(sb2, sb2_min_size(p))) {
         game_strcpy(s->reason, sizeof(s->reason), "Waiting for save data");
         return;
     }
@@ -449,8 +450,8 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     game_mem_read8(m, p->map_header + MAP_HEADER_MAP_TYPE, &s->map_type);
     map_name(m, p, s->map_name);
     read_party(m, p, s);
-    mirage_read(&gs->mirage, p, m, &gs->clock, sb1, sb2, &s->mirage);
-    berry_read(&gs->places, p, m, &gs->clock, &s->berries);
+    if (game_has(p, FEAT_MIRAGE)) mirage_read(&gs->mirage, p, m, &gs->clock, sb1, sb2, &s->mirage);
+    if (game_has(p, FEAT_BERRIES)) berry_read(&gs->places, p, m, &gs->clock, &s->berries);
 
     uint8_t enemies[2][BMON_SIZE], player[BMON_SIZE], enemy_ids[2] = {0, 0};
     bool have_player;
@@ -464,6 +465,9 @@ void game_update_mem(GameState* gs, const GameMem* m) {
 
     uint32_t flags = 0;
     game_mem_read32(m, p->battle_type_flags, &flags);
+    const GameRules* r = p->rules;
+    s->ghost = r->ghost_mask && (flags & r->ghost_mask) && !(flags & r->ghost_unveiled_mask);
+    s->uncatchable = (flags & r->uncatchable_mask) != 0;
     s->context = (flags & BATTLE_TYPE_TRAINER) ? GAME_CTX_BATTLE_TRAINER : GAME_CTX_BATTLE_WILD;
     uint8_t type_table[TYPE_TABLE_MAX];
     uint32_t type_len = p->type_effectiveness_len <= TYPE_TABLE_MAX ? p->type_effectiveness_len : 0;
@@ -481,7 +485,8 @@ void game_update_mem(GameState* gs, const GameMem* m) {
                    &s->enemies[i]);
     s->enemy_count = n;
     if (have_player) read_active_name(m, p, player_battler, s);
-    if (s->context == GAME_CTX_BATTLE_WILD) read_catch_rows(m, p, sb1, sb2, enemies[0], flags, s);
+    if (s->context == GAME_CTX_BATTLE_WILD && !s->uncatchable)
+        read_catch_rows(m, p, sb1, sb2, enemies[0], flags, s);
 }
 
 /* The RTC date as the S-3511A reports it; only host-side cartridge state is read. */
@@ -506,6 +511,10 @@ void game_update(GameState* gs, const GBA* gba) {
 
 void game_read_berries(GameState* gs, const GBA* gba, BerryView* out) {
     GameMem m = { gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size };
+    if (!game_has(gs->profile, FEAT_BERRIES)) {
+        memset(out, 0, sizeof(*out));
+        return;
+    }
     read_clock(gba, &gs->clock);
     berry_read(&gs->places, gs->profile, &m, &gs->clock, out);
 }
@@ -527,6 +536,16 @@ typedef struct {
     MonData d;
     uint8_t info[SPECIES_INFO_SIZE];
 } DaycareRead;
+
+/* offspringPersonality: u32 on Emerald, u16 on FRLG (the upper half is Random() at pickup). */
+static bool read_offspring(const GameMem* m, const GameProfile* p, uint32_t dc, uint32_t* out) {
+    uint16_t lo;
+    if (p->rules->daycare_offspring_size == 4)
+        return game_mem_read32(m, dc + p->rules->daycare_offspring_off, out);
+    if (!game_mem_read16(m, dc + p->rules->daycare_offspring_off, &lo)) return false;
+    *out = lo;
+    return true;
+}
 
 /* Egg guess from the two clean parents and offspringPersonality (CreateMon with that PID). */
 static void daycare_egg_guess(const GameState* gs, const GameMem* m, uint32_t sb2,
@@ -550,13 +569,17 @@ static void daycare_egg_guess(const GameState* gs, const GameMem* m, uint32_t sb
     out->egg_known = true;
     game_species_name(m, p, egg, out->egg_species);
     out->egg_gender = pokemon_gender(info[SI_GENDER_RATIO], pid);
-    uint8_t nature = pokemon_nature(pid);
-    game_nature_name(m, p, nature, out->egg_nature);
-    pokemon_nature_effect(nature, &out->egg_nature_up, &out->egg_nature_down);
+    out->pid_partial = p->rules->daycare_offspring_size != 4;
+    if (!out->pid_partial) {
+        uint8_t nature = pokemon_nature(pid);
+        game_nature_name(m, p, nature, out->egg_nature);
+        pokemon_nature_effect(nature, &out->egg_nature_up, &out->egg_nature_down);
+    }
     /* CreateBoxMon: the PID's low bit picks the slot only when the species has two abilities. */
     ability_name(m, p, info[SI_ABILITY2] != 0 && (pid & 1) ? info[SI_ABILITY2] : info[SI_ABILITY1],
                  out->egg_ability);
-    out->egg_shiny = ((tid >> 16) ^ (tid & 0xFFFF) ^ (pid >> 16) ^ (pid & 0xFFFF)) < 8;
+    if (!out->pid_partial)
+        out->egg_shiny = ((tid >> 16) ^ (tid & 0xFFFF) ^ (pid >> 16) ^ (pid & 0xFFFF)) < 8;
 }
 
 /* Flame Body check and hatch countdown for the party's eggs. Left at zero when a party mon's
@@ -586,7 +609,8 @@ static void daycare_party(const GameMem* m, const GameProfile* p, uint8_t step_c
         uint8_t ability = info[d.ability_num ? SI_ABILITY2 : SI_ABILITY1];
         s->egg = d.is_egg;
         s->cycles = d.friendship;
-        s->fire = ability == ABILITY_MAGMA_ARMOR || ability == ABILITY_FLAME_BODY;
+        s->fire = p->rules->daycare_fire_halves &&
+                  (ability == ABILITY_MAGMA_ARMOR || ability == ABILITY_FLAME_BODY);
         if (!s->egg && s->fire) fire = true;
     }
     out->fire = fire;
@@ -608,9 +632,9 @@ static void daycare_read_once(const GameState* gs, const GameMem* m, GameDaycare
         pid[i] = 0;
         clean[i] = torn[i] = false;
     }
-    if (!p || !game_mem_read32(m, p->save_block1_ptr, &sb1) ||
-        !game_mem_read32(m, p->save_block2_ptr, &sb2) || !game_mem_in_ewram(sb1, SB1_MIN_SIZE) ||
-        !game_mem_in_ewram(sb2, SB2_MIN_SIZE))
+    if (!p || game_quest_log_playing(p, m) || !game_mem_read32(m, p->save_block1_ptr, &sb1) ||
+        !game_mem_read32(m, p->save_block2_ptr, &sb2) || !game_mem_in_ewram(sb1, sb1_min_size(p)) ||
+        !game_mem_in_ewram(sb2, sb2_min_size(p)))
         return;
     out->valid = true;
     *sb1_out = sb1;
@@ -642,9 +666,9 @@ static void daycare_read_once(const GameState* gs, const GameMem* m, GameDaycare
         game_fill_mon(m, p, &shown, &out->mon[n]);
     }
 
-    game_mem_read32(m, dc + DAYCARE_OFFSPRING, &offspring);
-    game_mem_read8(m, dc + DAYCARE_STEP_COUNTER, &counter);
-    game_mem_read8(m, sb1 + SB1_FLAGS + p->pending_egg_flag / 8u, &flags);
+    read_offspring(m, p, dc, &offspring);
+    game_mem_read8(m, dc + p->rules->daycare_step_counter_off, &counter);
+    game_mem_read8(m, sb1 + p->rules->sb1_flags + p->pending_egg_flag / 8u, &flags);
     out->egg_waiting = offspring != 0 && ((flags >> (p->pending_egg_flag % 8u)) & 1);
     /* Both slots present means par[0] is slot 0 and par[1] slot 1. */
     if (out->parent_count == 2 && clean[0] && clean[1]) {
@@ -727,11 +751,11 @@ bool game_read_daycare_egg(const GameState* gs, const GBA* gba, uint32_t* pid, u
     uint8_t flags;
     *pid = 0;
     *sb1 = 0;
-    if (!p || !game_mem_read32(&m, p->save_block1_ptr, sb1) ||
-        !game_mem_read32(&m, p->save_block2_ptr, &sb2) || !game_mem_in_ewram(*sb1, SB1_MIN_SIZE) ||
-        !game_mem_in_ewram(sb2, SB2_MIN_SIZE) ||
-        !game_mem_read32(&m, *sb1 + p->daycare_sb1_offset + DAYCARE_OFFSPRING, &offspring) ||
-        !game_mem_read8(&m, *sb1 + SB1_FLAGS + p->pending_egg_flag / 8u, &flags))
+    if (!p || game_quest_log_playing(p, &m) || !game_mem_read32(&m, p->save_block1_ptr, sb1) ||
+        !game_mem_read32(&m, p->save_block2_ptr, &sb2) || !game_mem_in_ewram(*sb1, sb1_min_size(p)) ||
+        !game_mem_in_ewram(sb2, sb2_min_size(p)) ||
+        !read_offspring(&m, p, *sb1 + p->daycare_sb1_offset, &offspring) ||
+        !game_mem_read8(&m, *sb1 + p->rules->sb1_flags + p->pending_egg_flag / 8u, &flags))
         return false;
     if ((flags >> (p->pending_egg_flag % 8u)) & 1) *pid = offspring;
     return true;
@@ -783,6 +807,8 @@ bool game_dump(const GameSnapshot* s, FILE* out) {
     if (!s->valid) return fprintf(out, "invalid: %s\n", s->reason) >= 0;
     ok &= fprintf(out, "context %d map %u:%u type %u name %s\n", (int)s->context, s->map_group,
                   s->map_num, s->map_type, s->map_name) >= 0;
+    if (s->ghost) ok &= fprintf(out, "ghost\n") >= 0;
+    if (s->uncatchable) ok &= fprintf(out, "uncatchable\n") >= 0;
     for (uint8_t i = 0; i < s->party_count; i++) {
         const GamePartyMon* p = &s->party[i];
         if (p->bad) { ok &= fprintf(out, "party %u bad\n", i) >= 0; continue; }

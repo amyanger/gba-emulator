@@ -7,8 +7,6 @@
 /* struct SaveBlock1 (include/global.h) */
 #define SB1_LOC_GROUP 0x04   /* location.mapGroup */
 #define SB1_LOC_NUM   0x05   /* location.mapNum */
-#define SB1_FLAGS     0x1270 /* u8 flags[NUM_FLAG_BYTES] */
-#define SB1_VARS      0x139C /* u16 vars[], index id - 0x4000 */
 
 /* struct SaveBlock2 (include/global.h) */
 #define SB2_TRAINER_ID        0x0A
@@ -92,17 +90,13 @@
 #define STORAGE_BOXES    4    /* boxes[14][30] after the u8 currentBox and padding */
 
 /* Game constants (include/constants/) */
-#define FLAG_BADGE01_GET     0x867
-#define FLAG_SYS_CLOCK_SET   0x895 /* SYSTEM_FLAGS (0x860) + 0x35 */
+#define FLAG_SYS_CLOCK_SET   0x895 /* Emerald only: berry.c and mirage.c run behind FEAT_BERRIES / FEAT_MIRAGE */
 #define BATTLE_TYPE_TRAINER  (1u << 3)
 #define BATTLE_TYPE_SAFARI   (1u << 7)
-#define BT_INGAME_PARTNER    (1u << 22)
-#define BATTLE_TYPE_FRONTIER 0x003F0100u
 #define STATUS2_FORESIGHT    (1u << 29)
 #define TYPE_ELECTRIC        13
 #define ABILITY_HUSTLE       55
 #define ABILITY_PLUS         57
 #define ABILITY_MINUS        58
-#define TRAINER_WALLACE      335
 
 #endif // EMERALD_LAYOUT_H

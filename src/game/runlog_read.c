@@ -2,19 +2,12 @@
 #include "game/emerald_layout.h"
 #include <string.h>
 
-/* SaveBlock1 / SaveBlock2 (pret include/global.h) */
+/* SaveBlock1 / SaveBlock2 (pret include/global.h); per-game offsets come from GameRules. */
 #define SB1_LOCATION   0x04     /* struct WarpData: s8 mapGroup, s8 mapNum */
-#define SB1_GAME_STATS 0x159C   /* u32 gameStats[64], stored ^ SB2 encryptionKey */
-#define SB1_READ_SIZE  (SB1_GAME_STATS + 4 * RUN_STATS)
-#define SB1_FLAG_BYTES 300      /* NUM_FLAG_BYTES */
+#define FLAG_BYTES_MAX 300      /* largest NUM_FLAG_BYTES (Emerald) */
 #define SB2_NAME       0x00
-#define SB2_KEY        0xAC     /* u32 encryptionKey */
-#define SB2_READ_SIZE  (SB2_KEY + 4)
+#define SB2_READ_MAX   0xF24    /* largest encryptionKey + 4 (FRLG key at 0xF20) */
 #define DEX_COUNT      386      /* NATIONAL_DEX_COUNT, bit n-1 = national dex n */
-
-/* include/constants/flags.h, vars.h */
-#define TRAINER_FLAGS_START 0x500
-#define VAR_STARTER_MON 0x4023
 
 /* struct Trainer (include/data.h); ROM party entries are 16 bytes with custom
  * moves (F_TRAINER_PARTY_CUSTOM_MOVESET), else 8, species at +4. */
@@ -22,66 +15,15 @@
 #define TRAINER_PARTY_PTR  0x24
 
 /* gBattleTypeFlags bits (include/constants/battle.h) */
-#define BT_LINK             (1u << 1)
-#define BT_TRAINER          (1u << 3)
-#define BT_BATTLE_TOWER     (1u << 8)
-#define BT_EREADER_TRAINER  (1u << 11)
-#define BT_DOME             (1u << 16)
-#define BT_PALACE           (1u << 17)
-#define BT_ARENA            (1u << 18)
-#define BT_FACTORY          (1u << 19)
-#define BT_PIKE             (1u << 20)
-#define BT_PYRAMID          (1u << 21)
-#define BT_TOWER_LINK_MULTI (1u << 23)
-#define BT_RECORDED         (1u << 24)
-#define BT_RECORDED_LINK    (1u << 25)
-#define BT_TRAINER_HILL     (1u << 26)
-#define BT_SECRET_BASE      (1u << 27)
-#define BT_FRONTIER (BT_BATTLE_TOWER | BT_DOME | BT_PALACE | BT_ARENA | BT_FACTORY | BT_PIKE | BT_PYRAMID)
+#define BT_TRAINER (1u << 3)
 
-/* Battles whose player party is not the run's own (rentals, frontier picks, link,
- * recorded playback) or that bring a partner's mons (Steven). */
-#define BT_FACILITY (BT_LINK | BT_FRONTIER | BT_INGAME_PARTNER | BT_TOWER_LINK_MULTI | BT_RECORDED | \
-                     BT_RECORDED_LINK | BT_TRAINER_HILL)
-/* gTrainerBattleOpponent_A is a gTrainers id only without these. */
-#define BT_NOT_PLAIN (BT_LINK | BT_FRONTIER | BT_TOWER_LINK_MULTI | BT_RECORDED | BT_RECORDED_LINK | \
-                      BT_TRAINER_HILL | BT_SECRET_BASE | BT_EREADER_TRAINER)
-
-/* Battle Tent, Battle Frontier facility and Trainer Hill maps, from pret
- * data/maps/map_groups.json (group index, map index). The Frontier's outside
- * areas, lounges, Center and Mart are left out: the player's own party is there. */
-typedef struct { uint8_t group, first, last; } MapRange;
-static const MapRange k_facility_maps[] = {
-    {5, 1, 3},    /* FallarborTown_BattleTent Lobby, Corridor, BattleRoom */
-    {6, 0, 2},    /* VerdanturfTown_BattleTent Lobby, Corridor, BattleRoom */
-    {9, 2, 4},    /* SlateportCity_BattleTent Lobby, Corridor, BattleRoom */
-    {26, 5, 8},   /* BattleFrontier_BattleTower Lobby, Elevator, Corridor, BattleRoom */
-    {26, 15, 39}, /* BattleTower multi rooms, Dome, Palace, Pyramid, Arena, Factory, Pike */
-    {26, 60, 65}, /* TrainerHill Entrance, 1F-4F, Roof */
-    {26, 88, 88}, /* TrainerHill_Elevator */
-};
-
-typedef struct { uint8_t story; uint16_t flag; } StoryFlag;
-static const StoryFlag k_story_flags[] = {
-    {RUN_STORY_STARTER, 0x860},  /* FLAG_SYS_POKEMON_GET */
-    {RUN_STORY_POKEDEX, 0x861},  /* FLAG_SYS_POKEDEX_GET */
-    {RUN_STORY_CHIMNEY, 0x8B},   /* FLAG_DEFEATED_EVIL_TEAM_MT_CHIMNEY */
-    {RUN_STORY_SURF, 0x7A},      /* FLAG_RECEIVED_HM_SURF */
-    {RUN_STORY_GROUDON, 0x6F},   /* FLAG_GROUDON_AWAKENED_MAGMA_HIDEOUT */
-    {RUN_STORY_KYOGRE, 0x81},    /* FLAG_KYOGRE_ESCAPED_SEAFLOOR_CAVERN */
-    {RUN_STORY_E4, 0x107},       /* FLAG_ENTERED_ELITE_FOUR */
-    {RUN_STORY_CHAMPION, TRAINER_FLAGS_START + TRAINER_WALLACE},
-    {RUN_STORY_HOF, 0x864},      /* FLAG_SYS_GAME_CLEAR */
-    {RUN_STORY_NATDEX, 0x896},   /* FLAG_SYS_NATIONAL_DEX */
-};
-
-static bool flag_set(const uint8_t* flags, uint16_t id) {
-    return (id >> 3) < SB1_FLAG_BYTES && (flags[id >> 3] >> (id & 7)) & 1;
+static bool flag_set(const uint8_t* flags, uint16_t bytes, uint16_t id) {
+    return (id >> 3) < bytes && (flags[id >> 3] >> (id & 7)) & 1;
 }
 
-static uint16_t var_get(const GameMem* m, uint32_t sb1, uint16_t id) {
+static uint16_t var_get(const GameMem* m, const GameRules* r, uint32_t sb1, uint16_t id) {
     uint16_t v = 0;
-    game_mem_read16(m, sb1 + SB1_VARS + 2u * (uint32_t)(id - 0x4000u), &v);
+    game_mem_read16(m, sb1 + r->sb1_vars + 2u * (uint32_t)(id - 0x4000u), &v);
     return v;
 }
 
@@ -91,14 +33,19 @@ static uint16_t dex_count(const uint8_t* bits) {
     return n;
 }
 
-bool run_is_leader(uint16_t trainer) {
-    return (trainer >= 261 && trainer <= 272) || trainer == TRAINER_WALLACE;
+bool run_is_leader(const GameRules* r, uint16_t trainer) {
+    if (trainer == 0) return false;
+    for (uint8_t i = 0; i < 8; i++)
+        if (r->leaders[i] == trainer) return true;
+    for (uint8_t i = 0; i < r->league_count && i < 16; i++)
+        if (r->league[i] == trainer) return true;
+    return false;
 }
 
-static bool facility_map(uint8_t group, uint8_t num) {
-    for (uint32_t i = 0; i < sizeof(k_facility_maps) / sizeof(k_facility_maps[0]); i++) {
-        const MapRange* r = &k_facility_maps[i];
-        if (group == r->group && num >= r->first && num <= r->last) return true;
+static bool facility_map(const GameRules* r, uint8_t group, uint8_t num) {
+    for (uint8_t i = 0; i < r->facility_map_count; i++) {
+        const MapRange* m = &r->facility_maps[i];
+        if (group == m->group && num >= m->first && num <= m->last) return true;
     }
     return false;
 }
@@ -127,7 +74,8 @@ static void read_battle(const GameProfile* p, const GameMem* m, RunFacts* f) {
         !game_mem_read8(m, p->battlers_count, &count) || (count != 2 && count != 4))
         return;
     game_mem_read32(m, p->battle_type_flags, &flags);
-    if (flags & BT_FACILITY) f->facility = true;
+    if (flags & p->rules->run_facility_mask) f->facility = true;
+    f->partner_battle = (flags & p->rules->partner_battle_mask) != 0;
     f->battlers = count;
     for (uint32_t b = 0; b < count; b++) {
         RunBattler* rb = &f->b[b];
@@ -142,23 +90,29 @@ static void read_battle(const GameProfile* p, const GameMem* m, RunFacts* f) {
     game_mem_read8(m, p->battler_attacker, &f->attacker);
 
     uint16_t opp = 0;
-    if ((flags & BT_TRAINER) && !(flags & BT_NOT_PLAIN) &&
+    if ((flags & BT_TRAINER) && !(flags & p->rules->run_not_plain_mask) &&
         game_mem_read16(m, p->trainer_battle_opponent_a, &opp) && opp > 0 && opp < p->trainer_count) {
         f->opponent = opp;
         f->ace_species = trainer_ace(p, m, opp);
+        f->opponent_leader = run_is_leader(p->rules, opp);
     }
 }
 
 bool run_read(const GameProfile* p, const GameMem* m, uint16_t enemy_species, RunFacts* f) {
-    uint8_t flags[SB1_FLAG_BYTES];
-    uint8_t sb2[SB2_READ_SIZE];
+    static uint8_t sb2[SB2_READ_MAX];   /* static: 0xF24 bytes on FRLG */
+    uint8_t flags[FLAG_BYTES_MAX];
     uint32_t sb1_addr = 0, sb2_addr = 0;
     memset(f, 0, sizeof(*f));
-    if (!p || !game_mem_read32(m, p->save_block1_ptr, &sb1_addr) ||
-        !game_mem_read32(m, p->save_block2_ptr, &sb2_addr) ||
-        !game_mem_in_ewram(sb1_addr, SB1_READ_SIZE) || !game_mem_in_ewram(sb2_addr, SB2_READ_SIZE) ||
-        !game_mem_copy(m, sb1_addr + SB1_FLAGS, flags, sizeof(flags)) ||
-        !game_mem_copy(m, sb2_addr, sb2, sizeof(sb2)))
+    if (!p || game_quest_log_playing(p, m)) return false;
+    const GameRules* r = p->rules;
+    uint16_t flag_bytes = r->sb1_flag_bytes < FLAG_BYTES_MAX ? r->sb1_flag_bytes : FLAG_BYTES_MAX;
+    uint32_t sb1_len = r->sb1_game_stats + 4u * RUN_STATS;
+    uint32_t sb2_len = r->sb2_encryption_key + 4u;
+    if (sb2_len < SB2_DEX_SEEN + 52u) sb2_len = SB2_DEX_SEEN + 52u;
+    if (sb2_len > SB2_READ_MAX ||
+        !game_mem_read32(m, p->save_block1_ptr, &sb1_addr) || !game_mem_read32(m, p->save_block2_ptr, &sb2_addr) ||
+        !game_mem_in_ewram(sb1_addr, sb1_len) || !game_mem_in_ewram(sb2_addr, sb2_len) ||
+        !game_mem_copy(m, sb1_addr + r->sb1_flags, flags, flag_bytes) || !game_mem_copy(m, sb2_addr, sb2, sb2_len))
         return false;
     f->valid = true;
     f->sb1 = sb1_addr;
@@ -166,21 +120,26 @@ bool run_read(const GameProfile* p, const GameMem* m, uint16_t enemy_species, Ru
     memcpy(f->player_name, sb2 + SB2_NAME, sizeof(f->player_name));
 
     /* Stats and key come from this same frame: the key changes on new game. */
-    uint32_t key = (uint32_t)sb2[SB2_KEY] | ((uint32_t)sb2[SB2_KEY + 1] << 8) |
-                   ((uint32_t)sb2[SB2_KEY + 2] << 16) | ((uint32_t)sb2[SB2_KEY + 3] << 24);
+    uint32_t k = r->sb2_encryption_key;
+    uint32_t key = (uint32_t)sb2[k] | ((uint32_t)sb2[k + 1] << 8) | ((uint32_t)sb2[k + 2] << 16) |
+                   ((uint32_t)sb2[k + 3] << 24);
     for (uint32_t i = 0; i < RUN_STATS; i++) {
         uint32_t v = 0;
-        game_mem_read32(m, sb1_addr + SB1_GAME_STATS + 4 * i, &v);
+        game_mem_read32(m, sb1_addr + r->sb1_game_stats + 4 * i, &v);
         f->stats[i] = v ^ key;
     }
 
     for (uint16_t b = 0; b < RUN_BADGES; b++)
-        if (flag_set(flags, (uint16_t)(FLAG_BADGE01_GET + b))) f->badges |= (uint8_t)(1u << b);
-    for (uint32_t i = 0; i < sizeof(k_story_flags) / sizeof(k_story_flags[0]); i++)
-        if (flag_set(flags, k_story_flags[i].flag)) f->story |= (uint16_t)(1u << k_story_flags[i].story);
-    if (var_get(m, sb1_addr, 0x40B3) >= 1) f->story |= 1u << RUN_STORY_WEATHER;    /* VAR_WEATHER_INSTITUTE_STATE */
-    if (var_get(m, sb1_addr, 0x40CA) >= 2) f->story |= 1u << RUN_STORY_SOOTOPOLIS; /* VAR_SKY_PILLAR_STATE */
-    f->starter = (uint8_t)var_get(m, sb1_addr, VAR_STARTER_MON);
+        if (flag_set(flags, flag_bytes, (uint16_t)(r->flag_badge01 + b))) f->badges |= (uint8_t)(1u << b);
+    for (uint8_t i = 0; i < r->story_count && i < RUN_STORY_COUNT; i++) {
+        const RunStoryDef* d = &r->story[i];
+        bool done = d->kind == STORY_FLAG ? flag_set(flags, flag_bytes, d->id)
+                                          : var_get(m, r, sb1_addr, d->id) >= d->at_least;
+        if (done) f->story |= (uint16_t)(1u << i);
+    }
+    f->starter = (uint8_t)var_get(m, r, sb1_addr, r->var_starter);
+    f->partner_otid = r->partner_otid;
+    f->hof_story = r->story_hof;
 
     f->dex_owned = dex_count(sb2 + SB2_DEX_OWNED);
     f->dex_seen = dex_count(sb2 + SB2_DEX_SEEN);
@@ -194,7 +153,7 @@ bool run_read(const GameProfile* p, const GameMem* m, uint16_t enemy_species, Ru
     f->whiteout = f->callback2 != 0 && f->callback2 == p->cb2_whiteout;
     game_mem_read8(m, sb1_addr + SB1_LOCATION, &f->map_group);
     game_mem_read8(m, sb1_addr + SB1_LOCATION + 1, &f->map_num);
-    f->facility = facility_map(f->map_group, f->map_num);
+    f->facility = facility_map(r, f->map_group, f->map_num);
     read_battle(p, m, f);
     return true;
 }

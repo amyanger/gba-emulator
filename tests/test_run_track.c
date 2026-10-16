@@ -10,6 +10,7 @@
 #define B_DOUBLE  (1u << 0)
 #define B_SAFARI  (1u << 7)
 #define B_PARTNER (1u << 22)
+#define STEVEN_OT 61226u
 
 /* Large: keep off the stack. */
 static RunLog s_log, s_replay;
@@ -106,6 +107,8 @@ static void setup(void) {
     s_rf.sb1 = SB1;
     s_rf.sb2 = SB2;
     s_rf.stats[RUN_STAT_STEPS] = STEPS;
+    s_rf.partner_otid = STEVEN_OT;
+    s_rf.hof_story = RUN_STORY_HOF;
     RunEvent start;
     memset(&start, 0, sizeof(start));
     start.type = RUN_EV_START;
@@ -142,6 +145,7 @@ static void leave_battle(uint8_t outcome) {
     s_nf.battle_flags = 0;
     s_rf.battlers = 0;
     s_rf.opponent = 0;
+    s_rf.partner_battle = false;
     step_n(1);
     s_nf.battle_outcome = 0;
 }
@@ -344,10 +348,11 @@ TEST(track_steven_gate) {
     mark();
     for (uint8_t i = 3; i < 6; i++) {
         party_mon(i, 0x100u + i, 300, 30);
-        s_nf.party[i].key.ot = RUN_STEVEN_OTID;
+        s_nf.party[i].key.ot = STEVEN_OT;
     }
     enter_battle(320, 0x999);
     s_nf.battle_flags = (1u << 3) | B_DOUBLE | B_PARTNER;
+    s_rf.partner_battle = true;
     s_rf.battlers = 4;
     s_rf.b[2] = (RunBattler){ .hp = 30, .max_hp = 30, .species = 300, .level = 40, .pos = 2, .party_index = 4 };
     s_rf.b[3] = (RunBattler){ .hp = 20, .max_hp = 20, .species = 320, .level = 30, .pos = 3, .party_index = 1 };
@@ -424,6 +429,7 @@ TEST(track_ko_upset_and_ace) {
     s_nf.battle_flags = 1u << 3;
     s_rf.opponent = 269;
     s_rf.ace_species = 289;
+    s_rf.opponent_leader = true;
     s_rf.b[1].level = 25;
     step_n(5);
     s_rf.b[1].hp = 0;
@@ -486,6 +492,7 @@ TEST(track_ko_partner) {
     attached();
     enter_battle(10, 0x999);
     s_nf.battle_flags = B_PARTNER;
+    s_rf.partner_battle = true;
     s_rf.b[0].party_index = 4;
     step_n(5);
     s_rf.b[1].hp = 0;
@@ -1059,6 +1066,36 @@ TEST(track_events_in_range) {
     }
 }
 
+TEST(track_teachy_tv_swap_logs_nothing) {
+    attached();
+    s_nf.teachy_tv = true;
+    step_n(5);
+    party_mon(0, 0x500, 1, 20);                  /* the Pokedude's mon, player OT */
+    step_n(100);
+    ASSERT_EQ(count(RUN_EV_JOIN), 0);
+    party_mon(0, 1, 280, 30);                    /* the real party is back */
+    step_n(200);
+    ASSERT_EQ(count(RUN_EV_JOIN), 0);
+    party_mon(1, 2, 283, 30);                    /* then a real gift */
+    step_n(30);
+    ASSERT_EQ(count(RUN_EV_JOIN), 1);
+}
+
+/* R16: first attach while the Pokedude's party is loaded: nothing until the real party is back. */
+TEST(track_attach_during_teachy_tv_waits) {
+    setup();
+    s_nf.teachy_tv = true;
+    party_mon(0, 0x500, 1, 20);                  /* the Pokedude's mon, player OT */
+    step_n(100);
+    ASSERT_EQ(count(RUN_EV_JOIN), 0);
+    s_nf.teachy_tv = false;                      /* overworld, savedCallback stale */
+    party_mon(0, 1, 280, 30);
+    step_n(30);
+    ASSERT_EQ(count(RUN_EV_JOIN), 1);
+    ASSERT_EQ(find(RUN_EV_JOIN, 0)->key.pid, 1u);
+    ASSERT_EQ(find(RUN_EV_JOIN, 0)->how, RUN_HOW_BACKFILL);
+}
+
 void run_run_track_tests(void) {
     RUN_TEST(track_first_attach_backfills);
     RUN_TEST(track_badge_timed);
@@ -1104,4 +1141,6 @@ void run_run_track_tests(void) {
     RUN_TEST(track_stale_battle_mons_no_ko);
     RUN_TEST(track_backfill_many_boxes);
     RUN_TEST(track_events_in_range);
+    RUN_TEST(track_teachy_tv_swap_logs_nothing);
+    RUN_TEST(track_attach_during_teachy_tv_waits);
 }

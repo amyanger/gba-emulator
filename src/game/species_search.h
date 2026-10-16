@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "game/game_mem.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 #include "game/encounters.h"
 
 #define SPECIES_MAX 412
@@ -51,6 +51,7 @@ typedef struct {
     uint16_t from;                    /* species that evolves */
     uint16_t method, param;           /* raw evolution method 1..15 and param */
     char item[SPECIES_NAME_LEN];      /* item name for methods 6/7, else empty */
+    bool impossible;                  /* this game can't trigger method (FRLG: day/night, Beauty) */
 } SpeciesStep;
 
 typedef struct {

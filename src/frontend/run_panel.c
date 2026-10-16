@@ -353,7 +353,10 @@ static void counters(UiCanvas* c, const RunView* v) {
                                 {"Fishing", v->fishing, UI_TEXT, NULL}};
     const Counter fun[4] = {{"Ledges", v->ledges, UI_TEXT, NULL},
                             {"Rained on", v->rained, UI_TEXT, NULL},
-                            {"Clock checks", v->clocks, UI_TEXT, NULL},
+                            v->no_clock
+                                ? (Counter){"Pok\xC3\xA9" "dex checks", v->dex_checks, UI_TEXT,
+                                            NULL}
+                                : (Counter){"Clock checks", v->clocks, UI_TEXT, NULL},
                             {"Splash used", v->splash, UI_TEXT, NULL}};
     counter_col(c, LEFT, w, "BATTLES", battles);
     counter_col(c, LEFT + (w + gap), w, "POKEMON", mons);

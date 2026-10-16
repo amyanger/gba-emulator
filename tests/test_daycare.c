@@ -99,7 +99,7 @@ TEST(daycare_level_and_cost) {
 #define S_ILLUMISE 387
 
 static const GameProfile k_prof = {
-    .incense_baby = {S_AZURILL, S_WYNAUT}, .incense_item = {220, 221},
+    .rules = &g_emerald_rules, .incense_baby = {S_AZURILL, S_WYNAUT}, .incense_item = {220, 221},
     .species_ditto = S_DITTO, .species_nidoran_f = S_NIDORAN_F, .species_nidoran_m = S_NIDORAN_M,
     .species_volbeat = S_VOLBEAT, .species_illumise = S_ILLUMISE,
 };
@@ -158,7 +158,7 @@ static uint8_t s_rom[0x2000];
 #define R_MODEST 15
 
 static const GameProfile k_dc_prof = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .save_block1_ptr = 0x03000000, .save_block2_ptr = 0x03000004,
     .player_party_count = 0x02000000, .player_party = 0x02000400,
     .species_names = 0x08000100, .species_count = 6,
@@ -243,7 +243,7 @@ static void dc_party(uint8_t i, uint16_t species, uint32_t pid, bool egg, uint8_
 }
 
 static void dc_egg(uint32_t sb1, uint32_t pid, bool flag) {
-    fixture_put32(dc_at(sb1 + DC_OFF + DAYCARE_OFFSPRING), pid);
+    fixture_put32(dc_at(sb1 + DC_OFF + g_emerald_rules.daycare_offspring_off), pid);
     if (flag) dc_at(sb1 + 0x1270 + 0x10)[0] |= 0x40;
 }
 
@@ -399,7 +399,7 @@ TEST(daycare_read_party_hatch_steps) {
     GameDaycare d;
     dc_party(0, R_RALTS, 0x100, true, 3);
     dc_party(1, R_SLUGMA, 0x200, false, 70);  /* abilityNum 1: Flame Body */
-    dc_at(DC_SB1A + DC_OFF + DAYCARE_STEP_COUNTER)[0] = 0;
+    dc_at(DC_SB1A + DC_OFF + g_emerald_rules.daycare_step_counter_off)[0] = 0;
     game_read_daycare_mem(gs, &m, &d);
     ASSERT_TRUE(d.fire);
     ASSERT_EQ(d.hatch_steps[0], 255u + 256u * 2);  /* 3 -> 1 -> 0 -> hatch */
@@ -507,7 +507,7 @@ TEST(daycare_dump_lines) {
     GameDaycare d;
     dc_two_gardevoir(DC_SB1A);
     dc_party(0, R_RALTS, 0x100, true, 0);
-    dc_at(DC_SB1A + DC_OFF + DAYCARE_STEP_COUNTER)[0] = 250;
+    dc_at(DC_SB1A + DC_OFF + g_emerald_rules.daycare_step_counter_off)[0] = 250;
     game_read_daycare_mem(gs, &m, &d);
     FILE* f = tmpfile();
     ASSERT_TRUE(f != NULL);
@@ -521,6 +521,57 @@ TEST(daycare_dump_lines) {
     ASSERT_TRUE(strstr(buf, "daycare parent 0 GARDEVOIR lv 11 gained 1 steps 331 cost 200\n") != NULL);
     ASSERT_TRUE(strstr(buf, "daycare parent 1 GARDEVOIR lv 11 gained 1 steps 474 cost 200\n") != NULL);
     ASSERT_TRUE(strstr(buf, "daycare hatch 0 5\n") != NULL);
+}
+
+static GameProfile* frlg_layout(GameState* gs) {
+    static GameRules r;
+    static GameProfile p;
+    r = g_emerald_rules;   /* Emerald fixture offsets, FRLG daycare rules */
+    r.daycare_offspring_size = 2;
+    r.daycare_step_counter_off = 0x11A;
+    r.daycare_fire_halves = false;
+    p = k_dc_prof;
+    p.rules = &r;
+    gs->profile = &p;
+    return &p;
+}
+
+/* A u32 read at +0x118 would see stepCounter (+0x11A) as a phantom egg. */
+TEST(daycare_frlg_offspring_is_u16) {
+    GameState* gs = dc_world();
+    frlg_layout(gs);
+    GameMem m = { s_ew, s_iw, s_rom, sizeof(s_rom) };
+    GameDaycare d;
+    dc_two_gardevoir(DC_SB1A);
+    dc_at(DC_SB1A + 0x1270 + 0x10)[0] |= 0x40;               /* pending egg flag 0x86 */
+    dc_at(DC_SB1A + DC_OFF + 0x11A)[0] = 39;
+    game_read_daycare_now_mem(gs, &m, &d);
+    ASSERT_TRUE(d.valid);
+    ASSERT_TRUE(!d.egg_waiting);
+    fixture_put16(dc_at(DC_SB1A + DC_OFF + 0x118), 0x8013);
+    game_read_daycare_now_mem(gs, &m, &d);
+    ASSERT_TRUE(d.egg_waiting);
+    ASSERT_TRUE(d.egg_known);
+    ASSERT_TRUE(d.pid_partial);
+    ASSERT_STR_EQ(d.egg_species, "RALTS");
+    ASSERT_EQ(d.egg_gender, MON_GENDER_FEMALE);              /* low byte 0x13 < 127 */
+    ASSERT_STR_EQ(d.egg_ability, "SYNCHRONIZE");             /* bit 0 set */
+    ASSERT_STR_EQ(d.egg_nature, "");
+    ASSERT_TRUE(!d.egg_shiny);
+}
+
+/* FRLG GetEggCyclesToSubtract always returns 1. */
+TEST(daycare_frlg_no_flame_body_speedup) {
+    GameState* gs = dc_world();
+    frlg_layout(gs);
+    GameMem m = { s_ew, s_iw, s_rom, sizeof(s_rom) };
+    GameDaycare d;
+    dc_party(0, R_RALTS, 0x100, true, 3);
+    dc_party(1, R_SLUGMA, 0x200, false, 70);                 /* Flame Body */
+    dc_at(DC_SB1A + DC_OFF + 0x11A)[0] = 0;
+    game_read_daycare_mem(gs, &m, &d);
+    ASSERT_TRUE(!d.fire);
+    ASSERT_EQ(d.hatch_steps[0], 255u + 256u * 3);             /* 3 -> 2 -> 1 -> 0 -> hatch */
 }
 
 void run_daycare_tests(void) {
@@ -548,4 +599,6 @@ void run_daycare_tests(void) {
     RUN_TEST(daycare_hold_on_torn_slot);
     RUN_TEST(daycare_hold_on_torn_party_slot);
     RUN_TEST(daycare_dump_lines);
+    RUN_TEST(daycare_frlg_offspring_is_u16);
+    RUN_TEST(daycare_frlg_no_flame_body_speedup);
 }

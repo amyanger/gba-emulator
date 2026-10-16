@@ -42,6 +42,7 @@ typedef struct Frontend {
     float panel_density;          /* canvas pixels per point */
     bool panel_visible;           /* F9 */
     uint8_t panel_page;           /* GamePage, F10 */
+    uint32_t page_mask;           /* game_panel_page_mask of the ROM; set by main */
     PanelBattleFollow panel_follow; /* switches to Auto while a battle runs */
     uint8_t panel_sel;            /* selected party slot, [ and ] */
     uint8_t nuz_sub;              /* NuzSubView on the Nuzlocke page, [ and ] */

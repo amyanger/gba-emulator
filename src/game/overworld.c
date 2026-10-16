@@ -31,7 +31,6 @@
 #define SB1_POS            0x00   /* s16 x, y: map coords of the screen's top-left tile */
 #define SB1_TEMPLATES      0xC70  /* ObjectEventTemplate[64] */
 #define SB1_TEMPLATE_CAP   64
-#define SB1_OW_MIN_SIZE    (SB1_FLAGS + 300)
 
 #define TEMPLATE_SCRIPT    0x10
 #define TEMPLATE_FLAG      0x14
@@ -88,7 +87,7 @@ static int16_t s16_at(const uint8_t* b) { return (int16_t)(b[0] | (b[1] << 8)); 
 
 static bool flag_set(const OwCtx* c, uint32_t flag) {
     uint8_t v = 0;
-    if (!game_mem_read8(c->m, c->sb1 + SB1_FLAGS + (flag >> 3), &v)) return false;
+    if (!game_mem_read8(c->m, c->sb1 + c->p->rules->sb1_flags + (flag >> 3), &v)) return false;
     return ((v >> (flag & 7)) & 1) != 0;
 }
 
@@ -561,7 +560,7 @@ void overworld_read_cached(const GameProfile* p, const GameMem* m, OwGiftCache* 
     memset(&c, 0, sizeof(c));
     c.p = p;
     c.m = m;
-    if (!game_mem_read32(m, p->save_block1_ptr, &c.sb1) || !game_mem_in_ewram(c.sb1, SB1_OW_MIN_SIZE) ||
+    if (!game_mem_read32(m, p->save_block1_ptr, &c.sb1) || !game_mem_in_ewram(c.sb1, (uint32_t)p->rules->sb1_flags + p->rules->sb1_flag_bytes) ||
         !game_mem_copy(m, c.sb1 + SB1_POS, sb, sizeof(sb)))
         return;
     c.pos_x = s16_at(sb);

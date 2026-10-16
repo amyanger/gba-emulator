@@ -1,23 +1,120 @@
-#ifndef EMERALD_PROFILE_H
-#define EMERALD_PROFILE_H
+#ifndef GAME_PROFILE_H
+#define GAME_PROFILE_H
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "game/game_mem.h"
 
-/* Every address the game layer needs, for one ROM. Nothing else in
- * src/game/ hardcodes an address, so supporting another build (e.g. a
- * pokeemerald-expansion hack) means adding a second profile. */
 /* Why a ROM does or doesn't get game info. */
 typedef enum {
     GAME_SUPPORT_OK,
-    GAME_SUPPORT_OTHER_GAME, /* not Pokemon Emerald (US/English) */
-    GAME_SUPPORT_MODIFIED,   /* Emerald header, other contents: a ROM hack or altered dump */
+    GAME_SUPPORT_OTHER_GAME,     /* no profile has this game code (or the header is short) */
+    GAME_SUPPORT_MODIFIED,       /* known code and revision, other contents: a ROM hack or altered dump */
+    GAME_SUPPORT_OTHER_REVISION, /* known game code, other version byte (0xBC), e.g. FireRed 1.1 */
 } GameSupport;
 
+/* ---- Per family: values every ROM of one engine shares (Emerald; FireRed + LeafGreen) ---- */
+
+typedef enum { GAME_REGION_HOENN, GAME_REGION_KANTO } GameRegion;
+
+/* GameRules.features: Companion parts that exist only in some games. */
+enum {
+    FEAT_BERRIES   = 1u << 0, /* Berries page and berry toasts */
+    FEAT_HUNT      = 1u << 1, /* Hunt page */
+    FEAT_MIRAGE    = 1u << 2, /* Mirage Island card, J key */
+    FEAT_FEEBAS    = 1u << 3, /* Feebas tiles: Search row, egg guess index, X-Ray */
+    FEAT_OVERWORLD = 1u << 4, /* Overworld X-Ray (F4), --overworld-out, --gift-audit */
+    FEAT_FOLLOWER  = 1u << 5, /* Following Pokemon (F1), --follower-hgss */
+};
+
+/* A run of maps in one map group (data/maps/map_groups.json indexes). */
+typedef struct { uint8_t group, first, last; } MapRange;
+
+typedef enum { STORY_FLAG, STORY_VAR_AT_LEAST } StoryKind;
+typedef enum { STORY_TEXT_PLAIN, STORY_TEXT_STARTER, STORY_TEXT_SPECIES, STORY_TEXT_CHAMPION } StoryText;
+/* One Run page story beat. Its index in GameRules.story is the RUN_EV_STORY id in .run files. */
 typedef struct {
-    const char* name;
+    uint8_t kind;       /* StoryKind */
+    uint16_t id;        /* flag id, or var id for STORY_VAR_AT_LEAST */
+    uint16_t at_least;  /* STORY_VAR_AT_LEAST: done once the var reaches this */
+    uint8_t text_kind;  /* StoryText: what fills the %s in text */
+    uint16_t species;   /* STORY_TEXT_SPECIES */
+    const char* text;   /* "Got Surf", "%s awakened", "Beat Champion %s" */
+} RunStoryDef;
+
+typedef struct {
+    GameRegion region;
+    uint32_t features;                 /* FEAT_* */
+
+    /* struct SaveBlock1 (pret include/global.h) */
+    uint16_t sb1_min_size;             /* nuzlocke_read's SaveBlock1 bounds check */
+    uint16_t sb1_flags;                /* u8 flags[] */
+    uint16_t sb1_flag_bytes;           /* NUM_FLAG_BYTES */
+    uint16_t sb1_vars;                 /* u16 vars[], index id - 0x4000 */
+    uint16_t sb1_game_stats;           /* u32 gameStats[], stored ^ SaveBlock2 encryptionKey */
+    uint16_t sb1_ball_pocket;          /* bagPocket_PokeBalls {u16 id, u16 qty ^ key} */
+    uint8_t ball_pocket_slots;
+    uint16_t sb1_dex_seen1, sb1_dex_seen2; /* u8[52] each */
+    uint16_t sb1_rival_name;           /* u8 rivalName[8]; 0 = the game has none */
+    /* struct SaveBlock2 */
+    uint16_t sb2_encryption_key;       /* u32 */
+    /* struct DayCare, from GameProfile.daycare_sb1_offset */
+    uint16_t daycare_offspring_off;
+    uint8_t daycare_offspring_size;    /* 4; 2 on FRLG, where the upper PID half rolls at pickup */
+    uint16_t daycare_step_counter_off; /* u8 stepCounter */
+    bool daycare_fire_halves;          /* Flame Body / Magma Armor in the party halve egg cycles */
+    /* struct PokedexEntry */
+    uint8_t pokedex_entry_size;
+    /* Region map section names: entry (sec - mapsec_first) * stride, name pointer at +off,
+     * valid for mapsec_first <= sec < GameProfile.region_map_count. */
+    uint8_t mapsec_name_stride, mapsec_name_off, mapsec_first;
+
+    /* gBattleTypeFlags masks (include/constants/battle.h) */
+    uint32_t badge_boost_off_mask;     /* ShouldGetStatBadgeBoost: no badge boosts */
+    uint16_t secret_base_trainer;      /* no boosts against this trainer id either; 0 = no such rule */
+    uint32_t soul_dew_off_mask;        /* Soul Dew does nothing */
+    uint32_t run_facility_mask;        /* the player's party isn't the run's own (R6) */
+    uint32_t run_not_plain_mask;       /* gTrainerBattleOpponent_A is not a gTrainers id */
+    uint32_t partner_battle_mask;      /* in-game partner battle: party slots 3+ are the partner's */
+    uint32_t nuz_ignore_mask;          /* battles that never use a Nuzlocke encounter */
+    uint32_t uncatchable_mask;         /* balls always miss */
+    uint32_t ghost_mask, ghost_unveiled_mask; /* the foe shows as GHOST until unveiled (R21) */
+    const MapRange* facility_maps;     /* Run R6 gate outside battle */
+    uint8_t facility_map_count;
+
+    /* ids (include/constants/) */
+    uint16_t flag_badge01;             /* FLAG_BADGE01_GET; badges 2-8 follow */
+    uint16_t var_starter;              /* VAR_STARTER_MON */
+    uint16_t var_altering_cave;        /* VAR_ALTERING_CAVE_WILD_SET */
+    uint32_t partner_otid;             /* OT ID of in-game partner mons; 0 = none */
+    uint16_t leaders[8];               /* gym leaders in badge order */
+    uint16_t league[16];               /* Elite Four and Champion trainer ids */
+    uint8_t league_count;
+    uint16_t champion_trainer;         /* trainer named in the Champion story beat */
+    uint8_t rival_classes[3];          /* trainer classes printed with the rival's name; 0 = unused */
+    uint16_t starters[3];              /* species by VAR_STARTER_MON value */
+    const char* badge_names[8];
+    const RunStoryDef* story;          /* at most RUN_STORY_COUNT entries */
+    uint8_t story_count;
+    uint8_t story_hof;                 /* index of the Hall of Fame beat (time backfill) */
+
+    /* Text and rules the panel shows */
+    const char* daycare_toast;         /* egg toast detail when the egg can't be guessed */
+    const char* route_footer;
+    bool evo_day_night_beauty;         /* EVO_FRIENDSHIP_DAY/NIGHT and EVO_BEAUTY can happen */
+    bool clock_tv_stats;               /* GAME_STAT_CHECKED_CLOCK / WATCHED_TV are counted */
+} GameRules;
+
+/* ---- Per ROM: every address the game layer needs. Nothing else in src/game/ hardcodes one. ---- */
+
+typedef struct {
+    const char* name;                /* for logs: "Pokemon Emerald (US)" */
+    const char* game_name;           /* for UI text: "Pokémon Emerald" */
+    const char* short_name;          /* "Emerald", for "in %s"; NULL in test fixtures */
     char game_code[4];               /* header bytes 0xAC-0xAF */
+    uint8_t version;                 /* header byte 0xBC */
     uint32_t rom_size, rom_crc32;    /* the exact retail ROM the addresses were verified on */
+    const GameRules* rules;          /* never NULL */
 
     /* RAM */
     uint32_t battle_type_flags;     /* u32 gBattleTypeFlags */
@@ -49,7 +146,7 @@ typedef struct {
     uint32_t hold_effect_to_type; uint8_t hold_effect_to_type_count; /* u8 pairs sHoldEffectToType */
     uint32_t flail_table;                                 /* u8[6][2] sFlailHpScaleToPowerTable */
     uint32_t weight_table;                                /* u16[6][2] sWeightToDamageTable */
-    uint32_t pokedex_entries;     uint16_t pokedex_count; /* 0x20-byte stride, by national dex */
+    uint32_t pokedex_entries;     uint16_t pokedex_count; /* rules->pokedex_entry_size stride, by national dex */
 
     /* ROM tables */
     uint32_t species_names;      uint16_t species_count;  /* 11-byte stride */
@@ -67,7 +164,7 @@ typedef struct {
     uint32_t experience_tables;                           /* u32[growth][101] */
     uint32_t species_to_national;                         /* u16, index species-1 */
     uint32_t wild_mon_headers;   uint16_t wild_header_cap; /* 20-byte stride */
-    uint32_t region_map_entries; uint8_t region_map_count; /* 8-byte stride */
+    uint32_t region_map_entries; uint8_t region_map_count; /* section names (rules shape); count = MAPSEC_NONE */
     uint32_t evolution_table;                             /* 5 x 8-byte entries per species */
     uint32_t berries;                                     /* gBerries, 28-byte stride, index berry-1 */
 
@@ -143,16 +240,40 @@ typedef struct {
     uint16_t match_call_flag;      /* FLAG_HAS_MATCH_CALL */
     uint16_t daycare_sb1_offset;   /* struct DayCare in SaveBlock1 */
     uint32_t match_call_state;     /* sMatchCallState: u32 minutes, u16 trainerId, u8 stepCounter */
+
+    /* FireRed / LeafGreen only; 0 on Emerald */
+    uint32_t quest_log_state;      /* u8 gQuestLogState: 2 = "Previously on your quest" (R15) */
+    uint32_t teachy_tv_restore_cb; /* gMain.savedCallback while Teachy TV swaps the party (R16) */
 } GameProfile;
 
+extern const GameRules g_emerald_rules;
 extern const GameProfile g_emerald_profile;
+extern const GameRules g_frlg_rules;
+extern const GameProfile g_firered_profile, g_leafgreen_profile;
+/* Every shipped profile, in detection order, and how many there are. */
+extern const GameProfile* const g_game_profiles[];
+extern const uint8_t g_game_profile_count;
+
+static inline bool game_has(const GameProfile* p, uint32_t feat) {
+    return p && (p->rules->features & feat) != 0;
+}
 
 /* Whether this ROM is exactly the one profile p was verified against. */
 GameSupport game_profile_match(const GameProfile* p, const uint8_t* rom, uint32_t rom_size);
-/* Returns the profile matching this ROM, or NULL when unsupported; *support says why. */
+/* The shipped profile with this game code, or NULL. */
+const GameProfile* game_profile_find(const char code[4]);
+/* The profile in list whose game code the ROM has, when version and contents match too;
+ * NULL otherwise, and *support says why. */
+const GameProfile* game_profile_detect_in(const GameProfile* const* list, uint8_t count, const uint8_t* rom,
+                                          uint32_t rom_size, GameSupport* support);
+/* game_profile_detect_in over g_game_profiles. */
 const GameProfile* game_profile_detect(const uint8_t* rom, uint32_t rom_size, GameSupport* support);
 /* Standard CRC-32 (zlib, IEEE 802.3). _update continues a running value (start at 0), like zlib's crc32(). */
 uint32_t game_crc32(const uint8_t* data, uint32_t len);
 uint32_t game_crc32_update(uint32_t crc, const uint8_t* data, uint32_t len);
 
-#endif // EMERALD_PROFILE_H
+/* R15: FRLG's quest log replay writes a recorded scene's flags, vars and party into the live save.
+ * Nothing in the save blocks is the player's while this is true. */
+bool game_quest_log_playing(const GameProfile* p, const GameMem* m);
+
+#endif // GAME_PROFILE_H

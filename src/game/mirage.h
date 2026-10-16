@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "game/game_mem.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 
 #define MIRAGE_FORECAST_MAX 3
 #define MIRAGE_BOX_MONS     420  /* 14 boxes x 30 */

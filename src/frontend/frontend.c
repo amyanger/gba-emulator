@@ -105,6 +105,7 @@ bool frontend_init(Frontend* fe, int scale) {
     /* The panel texture and buffer are sized by frontend_apply_layout. */
     fe->panel_visible = false;
     fe->panel_page = GAME_PAGE_AUTO;
+    fe->page_mask = GAME_PAGE_MASK_ALL;
 
     fe->running = true;
     fe->savestate_slot = 0;
@@ -1295,7 +1296,8 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 frontend_apply_layout(fe);
             }
             if (event.key.keysym.scancode == SDL_SCANCODE_F10 && !event.key.repeat) {
-                fe->panel_page = (uint8_t)game_panel_next_page((GamePage)fe->panel_page);
+                fe->panel_page = (uint8_t)game_panel_next_page((GamePage)fe->panel_page,
+                                                               fe->page_mask);
                 fe->panel_follow.restore = false;
                 if (fe->panel_page == GAME_PAGE_RUN) fe->run_scroll = 0;
             }

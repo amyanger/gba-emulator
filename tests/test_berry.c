@@ -13,7 +13,7 @@ static uint8_t s_rom[0x1000];
 
 /* ROM: one map group with two maps (sections 10 and 11), gBerries at 0x800. */
 static const GameProfile k_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .save_block1_ptr = 0x03000000, .save_block2_ptr = 0x03000004,
     .main_in_battle = 0x03000010,
     .map_header = MAP_HEADER,

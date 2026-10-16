@@ -49,6 +49,7 @@ typedef struct {
 
 typedef struct {
     uint32_t battle_flags;          /* gBattleTypeFlags */
+    bool soul_dew_off;              /* battle type turns Soul Dew off (Emerald Frontier, FRLG Battle Tower) */
     uint16_t weather;               /* gBattleWeather */
     bool weather_negated;           /* Cloud Nine/Air Lock via ABILITY_ON_FIELD2 (no HP check), base damage */
     bool weather_has_effect;        /* WEATHER_HAS_EFFECT (HP-checked), Weather Ball only */

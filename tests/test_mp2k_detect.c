@@ -1,6 +1,6 @@
 #include "test_harness.h"
 #include "mp2k/mp2k_detect.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 #include <string.h>
 
 #define SM 0x100u   /* SoundMain offset in the fake ROM */

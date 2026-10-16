@@ -37,9 +37,9 @@ TEST(card_display_name) {
     ASSERT_STR_EQ(trainer_card_display_name(&m), "Egg");
 }
 
-static bool has_red(void) {
+static bool has_color(uint32_t argb) {
     for (int i = 0; i < CARD_W * CARD_H; i++)
-        if (s_px[i] == 0xFFFF0000u) return true;
+        if (s_px[i] == argb) return true;
     return false;
 }
 
@@ -75,7 +75,7 @@ TEST(card_draw_smoke_both_styles) {
         ui_canvas_init(&c, s_px, CARD_W, CARD_H, 1.0f);
         trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, (CardStyle)style, 0);
         ASSERT_EQ_HEX(s_px[5 * CARD_W + CARD_W - 5], UI_BG);
-        ASSERT_TRUE(has_red());
+        ASSERT_TRUE(has_color(0xFFFF0000u));
     }
     d.count = 2;
     ok[1] = false;
@@ -86,6 +86,25 @@ TEST(card_draw_smoke_both_styles) {
         trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, (CardStyle)style, 0);
         trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, (CardStyle)style, -1);
     }
+}
+
+/* Badge 2 is Cascade blue in Kanto and Knuckle gold in Hoenn. */
+TEST(card_badge_colors_follow_the_region) {
+    static TrainerCardData d;
+    memset(&d, 0, sizeof d);
+    strcpy(d.name, "RED");
+    d.badges = 0x02;
+    bool ok[6] = {false, false, false, false, false, false};
+    UiCanvas c;
+    memset(s_px, 0, sizeof s_px);
+    ui_canvas_init(&c, s_px, CARD_W, CARD_H, 1.0f);
+    trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, CARD_STYLE_GRID, -1);
+    ASSERT_TRUE(!has_color(0xFF4C9BFFu));
+    d.region = GAME_REGION_KANTO;
+    memset(s_px, 0, sizeof s_px);
+    ui_canvas_init(&c, s_px, CARD_W, CARD_H, 1.0f);
+    trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, CARD_STYLE_GRID, -1);
+    ASSERT_TRUE(has_color(0xFF4C9BFFu));
 }
 
 /* R9: Cmd+C (copy), Ctrl/Alt chords and key repeat never export. */
@@ -107,5 +126,6 @@ void run_trainer_card_draw_tests(void) {
     RUN_TEST(card_style_names);
     RUN_TEST(card_display_name);
     RUN_TEST(card_draw_smoke_both_styles);
+    RUN_TEST(card_badge_colors_follow_the_region);
     RUN_TEST(card_key_request);
 }

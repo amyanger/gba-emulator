@@ -20,7 +20,7 @@ static uint8_t s_rom[0x4000];
 #define TILEBITS  0x08002100u   /* u8[256] */
 
 static const GameProfile k_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .save_block1_ptr = 0x03000000,
     .map_header = MAP_HDR,
     .backup_map_layout = BACKUP, .backup_map_data = GRID,

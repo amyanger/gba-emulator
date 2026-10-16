@@ -34,8 +34,20 @@
 #define NDASH "\xE2\x80\x93"  /* – */
 #define MDOT  " \xC2\xB7 "    /* " · " */
 
-GamePage game_panel_next_page(GamePage page) {
-    return (GamePage)((page + 1) % GAME_PAGE_COUNT);
+uint32_t game_panel_page_mask(const GameProfile* p) {
+    uint32_t m = GAME_PAGE_MASK_ALL;
+    if (!p) return m;
+    if (!game_has(p, FEAT_BERRIES)) m &= ~(1u << GAME_PAGE_BERRIES);
+    if (!game_has(p, FEAT_HUNT)) m &= ~(1u << GAME_PAGE_HUNT);
+    return m;
+}
+
+GamePage game_panel_next_page(GamePage page, uint32_t mask) {
+    for (int i = 1; i <= GAME_PAGE_COUNT; i++) {
+        GamePage next = (GamePage)((page + i) % GAME_PAGE_COUNT);
+        if (mask & (1u << next)) return next;
+    }
+    return GAME_PAGE_AUTO;
 }
 
 GamePage game_panel_resolve_page(GamePage page, GameContext ctx) {
@@ -478,6 +490,19 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
                 UI_MUTED, "Waiting for battle data");
         return;
     }
+    if (s->ghost) {
+        float gy = top + 4.0f;
+        ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, LEFT, gy, 220.0f, UI_ALIGN_LEFT, UI_TEXT,
+                "Ghost");
+        gy += 28.0f;
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, gy, RIGHT - LEFT, UI_ALIGN_LEFT, UI_MUTED,
+                "The Silph Scope shows what it really is.");
+        gy += KV_LINE + 8.0f;
+        section(c, LEFT, gy, RIGHT - LEFT, "CATCH CHANCE");
+        gy += SECTION_ADV;
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, gy, 0, UI_ALIGN_LEFT, UI_MUTED, "Can't catch");
+        return;
+    }
     const GameEnemy* e = &s->enemies[0];
     bool wild = s->context == GAME_CTX_BATTLE_WILD;
     char buf[64];
@@ -597,6 +622,10 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
     y = (ly > ry ? ly : ry) + 8.0f;
     section(c, LEFT, y, RIGHT - LEFT, "CATCH CHANCE");
     y += SECTION_ADV;
+    if (s->uncatchable) {
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, y, 0, UI_ALIGN_LEFT, UI_MUTED, "Can't catch");
+        return;
+    }
     if (s->catch_count == 0)
         ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, y, 0, UI_ALIGN_LEFT, UI_MUTED,
                 "No balls in bag");
@@ -887,8 +916,10 @@ static void breeding_detail(UiCanvas* c, const GameDaycare* dc, float top) {
         ui_gender(c, gx, y + 1.0f, 11.0f, dc->egg_gender == MON_GENDER_FEMALE);
     }
     y += KV_LINE;
-    nature_row(c, x, y, lw, w, dc->egg_nature, dc->egg_nature_up, dc->egg_nature_down);
-    y += KV_LINE;
+    if (!dc->pid_partial) {
+        nature_row(c, x, y, lw, w, dc->egg_nature, dc->egg_nature_up, dc->egg_nature_down);
+        y += KV_LINE;
+    }
     Name ab = title(dc->egg_ability);
     kv_row(c, x, y, lw, w, "Ability", ab.s, UI_TEXT);
     y += KV_LINE;
@@ -898,7 +929,8 @@ static void breeding_detail(UiCanvas* c, const GameDaycare* dc, float top) {
     }
     y += 6.0f;
     ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, x, y, w, UI_ALIGN_LEFT, UI_MUTED,
-            "IVs are rolled when you pick it up.");
+            dc->pid_partial ? "Nature, IVs and shininess are rolled when you pick it up."
+                            : "IVs are rolled when you pick it up.");
 }
 
 static void draw_party(UiCanvas* c, const GameSnapshot* s, float top, uint8_t sel,
@@ -1122,7 +1154,7 @@ static void draw_route(UiCanvas* c, const GameSnapshot* s, float top) {
     ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, PANEL_H - top - 4.0f});
     if (s->mirage.valid) draw_mirage(c, &s->mirage, MIRAGE_Y);
     ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, 456.0f, RIGHT - LEFT, UI_ALIGN_LEFT, UI_FAINT,
-            "\xE2\x9C\x93 caught. Not shown: outbreaks, roamers, lead abilities, Pyramid/Pike.");
+            (s->profile ? s->profile : &g_emerald_profile)->rules->route_footer);
 }
 
 /* ---- Nuzlocke page ---- */
@@ -1824,6 +1856,10 @@ static const char* search_method_name(uint8_t method) {
 }
 
 static void search_evo_text(const SpeciesStep* st, char* out, size_t size) {
+    if (st->impossible) {
+        snprintf(out, size, "Not in this game, trade it");
+        return;
+    }
     Name item = title(st->item);
     switch (st->method) {
     case 1: snprintf(out, size, "High friendship"); break;
@@ -1875,7 +1911,7 @@ static void search_note_line(UiCanvas* c, float x, float y, float w, uint8_t fla
 }
 
 static void search_detail_line(UiCanvas* c, const SpeciesIndex* ix, const SpeciesDetail* d,
-                               SearchLine line, float y) {
+                               SearchLine line, float y, const char* game) {
     const float x = COL2_X, w = RIGHT - COL2_X;
     char buf[96], how[64];
     Name n;
@@ -1909,8 +1945,8 @@ static void search_detail_line(UiCanvas* c, const SpeciesIndex* ix, const Specie
         snprintf(buf, sizeof(buf), "Hold %s on a parent", n.s);
         break;
     case SL_NOT_WILD:
-        ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, w, UI_ALIGN_LEFT, UI_MUTED,
-                "Not found in the wild in Emerald");
+        snprintf(buf, sizeof(buf), "Not found in the wild in %s", game);
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, w, UI_ALIGN_LEFT, UI_MUTED, buf);
         return;
     case SL_HEADING: {
         char upper[16];
@@ -1951,13 +1987,15 @@ static void search_detail(UiCanvas* c, const GameSnapshot* snap, const GamePanel
     if (search_caught(snap, national))
         ui_check(c, RIGHT - 14.0f, y + 3.0f, 14.0f, UI_GOOD);
 
+    const GameProfile* prof = snap->profile ? snap->profile : &g_emerald_profile;
+    const char* game = prof->short_name ? prof->short_name : "Emerald";
     uint16_t visible = 0;
     uint16_t total = game_panel_search_detail_lines(d, &visible);
     search_lines(d, lines);
     uint16_t first = s->view->detail_top;
     if (first > total - visible) first = (uint16_t)(total - visible);
     for (uint16_t i = 0; i < visible; i++)
-        search_detail_line(c, ix, d, lines[first + i], SEARCH_BODY_Y + i * SEARCH_LINE_H);
+        search_detail_line(c, ix, d, lines[first + i], SEARCH_BODY_Y + i * SEARCH_LINE_H, game);
     uint16_t below = (uint16_t)(total - first - visible);
     if (below) {
         char more[24];
@@ -2037,24 +2075,29 @@ static void draw_search(UiCanvas* c, const GameSnapshot* snap, const GamePanelSe
 /* The ROM itself is unsupported: say so plainly, since a hack would otherwise look broken. */
 static void draw_unsupported(UiCanvas* c, GameSupport support) {
     static const char* const hack[] = {
-        "This ROM identifies itself as Pok\xC3\xA9mon Emerald, but its contents",
-        "don't match the original game. It is most likely a ROM hack.",
+        "This ROM identifies itself as a supported Pok\xC3\xA9mon game, but its",
+        "contents don't match the original. It is most likely a ROM hack.",
+    };
+    static const char* const revision[] = {
+        "This is a different revision of a supported Pok\xC3\xA9mon game.",
     };
     static const char* const other[] = {
-        "This ROM isn't Pok\xC3\xA9mon Emerald (US/English).",
+        "This ROM isn't one of the games Pok\xC3\xA9mon Companion supports.",
     };
     static const char* const scope[] = {
-        "Emerald Companion only works with the original, unmodified",
-        "Pok\xC3\xA9mon Emerald (US/English) ROM. That is the version it was",
-        "built and tested with. The game itself still plays normally.",
+        "Pok\xC3\xA9mon Companion works with the original US/English ROMs of",
+        "Pok\xC3\xA9mon Emerald, FireRed (version 1.0) and LeafGreen (version 1.1).",
+        "The game itself still plays normally.",
     };
-    bool is_hack = support == GAME_SUPPORT_MODIFIED;
-    const char* const* lead = is_hack ? hack : other;
-    int lead_n = is_hack ? 2 : 1;
+    const char* const* lead = support == GAME_SUPPORT_MODIFIED ? hack
+                              : support == GAME_SUPPORT_OTHER_REVISION ? revision : other;
+    int lead_n = support == GAME_SUPPORT_MODIFIED ? 2 : 1;
+    const char* heading = support == GAME_SUPPORT_MODIFIED           ? "ROM hack not supported"
+                          : support == GAME_SUPPORT_OTHER_REVISION ? "ROM revision not supported"
+                                                                     : "Game not supported";
     float x = PANEL_W / 2, w = RIGHT - LEFT, y = 170.0f, line = 20.0f;
 
-    ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, x, y, w, UI_ALIGN_CENTER, UI_TEXT,
-            is_hack ? "ROM hack not supported" : "Game not supported");
+    ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_TITLE, x, y, w, UI_ALIGN_CENTER, UI_TEXT, heading);
     y += 36.0f;
     for (int i = 0; i < lead_n; i++, y += line)
         ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, x, y, w, UI_ALIGN_CENTER, UI_MUTED, lead[i]);
@@ -2065,6 +2108,23 @@ static void draw_unsupported(UiCanvas* c, GameSupport support) {
 
 static const char* const k_tab_labels[8] = {"Battle", "Party", "Route", "Nuzlocke", "Berries",
                                             "Search", "Hunt", "Run"};
+
+/* Page of each tab slot (tab_index order); slot 0 is the battle page, always shown. */
+static const GamePage k_tab_pages[8] = {GAME_PAGE_COUNT, GAME_PAGE_PARTY, GAME_PAGE_ENCOUNTERS,
+                                        GAME_PAGE_NUZLOCKE, GAME_PAGE_BERRIES, GAME_PAGE_SEARCH,
+                                        GAME_PAGE_HUNT, GAME_PAGE_RUN};
+
+/* Labels of the shown tabs in slot order; *active becomes the shown position of slot active. */
+static int visible_tabs(uint32_t mask, int* active, const char* labels[8]) {
+    int n = 0, at = 0;
+    for (int s = 0; s < 8; s++) {
+        if (s != 0 && !(mask & (1u << k_tab_pages[s]))) continue;
+        if (s == *active) at = n;
+        labels[n++] = k_tab_labels[s];
+    }
+    *active = at;
+    return n;
+}
 
 /* Tab index for the shown page: 0 is the battle page (GAME_PAGE_COUNT). */
 static int tab_index(GamePage shown) {
@@ -2096,12 +2156,14 @@ const char* game_panel_hint(GamePage shown, const NuzView* nuz, bool search_focu
 }
 
 /* Mirrors the spacing in ui_tabs. */
-float game_panel_tabs_width(const UiCanvas* c, GamePage shown, bool auto_badge) {
+float game_panel_tabs_width(const UiCanvas* c, GamePage shown, bool auto_badge, uint32_t mask) {
+    const char* labels[8];
     int active = tab_index(shown);
+    int n = visible_tabs(mask, &active, labels);
     float w = 0;
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < n; i++)
         w += ui_text_width(c, i == active ? UI_FONT_SEMIBOLD : UI_FONT_REGULAR, UI_SIZE_SMALL,
-                           k_tab_labels[i]) + 18.0f;
+                           labels[i]) + 18.0f;
     if (auto_badge) w += ui_text_width(c, UI_FONT_SEMIBOLD, UI_SIZE_PILL, "Auto") + 10.0f;
     return w;
 }
@@ -2110,6 +2172,8 @@ void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8
                      const NuzView* nuz, uint8_t nuz_sub, uint8_t berry_sel, bool berry_alerts,
                      const GamePanelSearch* search, const RunView* run, uint8_t run_scroll,
                      bool run_details, const HuntView* hunt, const GameDaycare* daycare) {
+    uint32_t mask = game_panel_page_mask(snap->profile);
+    if (!(mask & (1u << page))) page = GAME_PAGE_AUTO; /* a hidden page never shows */
     GamePage shown = game_panel_resolve_page(page, snap->context);
     int active = tab_index(shown);
     bool search_focused = search && search->view && search->view->focused;
@@ -2117,7 +2181,10 @@ void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8
 
     ui_canvas_unclip(c);
     ui_canvas_clear(c, UI_BG);
-    float top = ui_tabs(c, LEFT, 12.0f, RIGHT - LEFT, k_tab_labels, 8, active,
+    const char* labels[8];
+    int tab_at = active;
+    int tab_n = visible_tabs(mask, &tab_at, labels);
+    float top = ui_tabs(c, LEFT, 12.0f, RIGHT - LEFT, labels, tab_n, tab_at,
                         page == GAME_PAGE_AUTO ? "Auto" : NULL, hint);
 
     ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, PANEL_H - top - 4.0f});

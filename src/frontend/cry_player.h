@@ -3,7 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 #include "game/game_mem.h"
 
 #define CRY_MAX_SAMPLES 32768        /* ~3.1 s at 10512 Hz */

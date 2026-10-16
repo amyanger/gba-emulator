@@ -13,7 +13,7 @@ static uint8_t s_rom[0x8000];
 #define BATTLE_MONS 0x02001000u
 
 static const GameProfile k_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .battle_type_flags = 0x02000E10, .battlers_count = 0x02000E00,
     .battler_party_indexes = 0x02000E08, .battler_positions = 0x02000E04,
     .battle_mons = BATTLE_MONS, .battler_attacker = 0x02000E40,
@@ -115,12 +115,12 @@ TEST(run_read_champion_trainer_flag) {
     static RunFacts f;
     ASSERT_TRUE(run_read(&k_profile, &m, 0, &f));
     ASSERT_EQ_HEX(f.story, 1u << RUN_STORY_CHAMPION);
-    ASSERT_TRUE(run_is_leader(335));
-    ASSERT_TRUE(run_is_leader(261));
-    ASSERT_TRUE(run_is_leader(272));
-    ASSERT_TRUE(!run_is_leader(260));
-    ASSERT_TRUE(!run_is_leader(273));
-    ASSERT_TRUE(!run_is_leader(0));
+    ASSERT_TRUE(run_is_leader(&g_emerald_rules, 335));
+    ASSERT_TRUE(run_is_leader(&g_emerald_rules, 261));
+    ASSERT_TRUE(run_is_leader(&g_emerald_rules, 272));
+    ASSERT_TRUE(!run_is_leader(&g_emerald_rules, 260));
+    ASSERT_TRUE(!run_is_leader(&g_emerald_rules, 273));
+    ASSERT_TRUE(!run_is_leader(&g_emerald_rules, 0));
 }
 
 TEST(run_read_dex_counts) {
@@ -173,11 +173,13 @@ TEST(run_read_facility_flags) {
     ASSERT_TRUE(!f.facility);
     ASSERT_EQ(f.opponent, 335);
     ASSERT_EQ(f.ace_species, 350);
+    ASSERT_TRUE(f.opponent_leader);
 
     battle((1u << 3) | (1u << 22), 4);                 /* Steven multi: gated, still a trainer */
     ASSERT_TRUE(run_read(&k_profile, &m, 0, &f));
     ASSERT_TRUE(f.facility);
     ASSERT_EQ(f.opponent, 335);
+    ASSERT_TRUE(f.partner_battle);
 
     battle((1u << 3) | (1u << 27), 2);                 /* secret base: not a plain trainer */
     ASSERT_TRUE(run_read(&k_profile, &m, 0, &f));
@@ -271,6 +273,63 @@ TEST(run_read_invalid) {
     ASSERT_TRUE(!f.valid);
 }
 
+/* The story table, badge flag, starter var and masks come from the rules. */
+TEST(run_read_story_ids_and_masks_from_rules) {
+    build();
+    static const RunStoryDef story[2] = {
+        {STORY_FLAG, 0x830, 0, STORY_TEXT_PLAIN, 0, "a"},
+        {STORY_VAR_AT_LEAST, 0x4050, 3, STORY_TEXT_PLAIN, 0, "b"},
+    };
+    static GameRules r;
+    r = g_emerald_rules;
+    r.story = story;
+    r.story_count = 2;
+    r.story_hof = 1;
+    r.flag_badge01 = 0x820;
+    r.var_starter = 0x4031;
+    r.partner_otid = 0;
+    r.run_facility_mask = 1u << 16;
+    r.run_not_plain_mask = 1u << 19;
+    r.partner_battle_mask = 0;
+    r.leaders[0] = 335;
+    r.league_count = 0;
+    static GameProfile p;
+    p = k_profile;
+    p.rules = &r;
+    set_flag(0x830);
+    set_flag(0x822);
+    set_var(0x4050, 3);
+    set_var(0x4031, 2);
+    GameMem m = mem();
+    static RunFacts f;
+    ASSERT_TRUE(run_read(&p, &m, 0, &f));
+    ASSERT_EQ_HEX(f.story, 0x3);
+    ASSERT_EQ_HEX(f.badges, 0x04);
+    ASSERT_EQ(f.starter, 2);
+    ASSERT_EQ(f.hof_story, 1);
+    ASSERT_EQ(f.partner_otid, 0);
+    set_var(0x4050, 2);
+    ASSERT_TRUE(run_read(&p, &m, 0, &f));
+    ASSERT_EQ_HEX(f.story, 0x1);
+
+    trainer(335, 0x00, 1, 0x08007000);
+    fixture_put16(at(0x08007000 + 4), 25);
+    fixture_put16(at(0x02000E44), 335);
+    battle((1u << 3) | (1u << 22), 2);       /* Emerald's partner bit means nothing here */
+    ASSERT_TRUE(run_read(&p, &m, 0, &f));
+    ASSERT_TRUE(!f.facility);
+    ASSERT_TRUE(!f.partner_battle);
+    ASSERT_EQ(f.opponent, 335);
+    ASSERT_TRUE(f.opponent_leader);
+    battle((1u << 3) | (1u << 19), 2);       /* not a plain trainer under these rules */
+    ASSERT_TRUE(run_read(&p, &m, 0, &f));
+    ASSERT_EQ(f.opponent, 0);
+    battle(1u << 16, 2);                     /* party swapped */
+    ASSERT_TRUE(run_read(&p, &m, 0, &f));
+    ASSERT_TRUE(f.facility);
+    ASSERT_TRUE(!run_is_leader(&r, 261));
+}
+
 void run_run_read_tests(void) {
     RUN_TEST(run_read_stats_xor);
     RUN_TEST(run_read_badges_story);
@@ -279,4 +338,5 @@ void run_run_read_tests(void) {
     RUN_TEST(run_read_facility_flags);
     RUN_TEST(run_read_battlers);
     RUN_TEST(run_read_invalid);
+    RUN_TEST(run_read_story_ids_and_masks_from_rules);
 }

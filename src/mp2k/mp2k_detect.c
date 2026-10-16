@@ -1,5 +1,5 @@
 #include "mp2k/mp2k_detect.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 
 #define POOL_INFO 0x6Cu
 #define POOL_ID   0x70u

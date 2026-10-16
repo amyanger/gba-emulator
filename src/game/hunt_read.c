@@ -24,7 +24,6 @@
 /* include/constants: flags.h, vars.h, global.fieldmap.h, items.h, abilities.h, battle.h */
 #define FLAG_SYS_ENC_UP_ITEM 0x8AD   /* White Flute */
 #define FLAG_SYS_ENC_DOWN_ITEM 0x8AE /* Black Flute */
-#define VAR_ALTERING_CAVE_WILD_SET 0x403E
 #define NUM_ALTERING_CAVE_TABLES 9
 #define AVATAR_MACH_BIKE 0x02
 #define AVATAR_ACRO_BIKE 0x04
@@ -51,14 +50,14 @@
 #define FRIENDSHIP_STEPS 128
 #define POISON_STEPS 4
 
-static bool flag_get(const GameMem* m, uint32_t sb1, uint16_t flag) {
+static bool flag_get(const GameProfile* p, const GameMem* m, uint32_t sb1, uint16_t flag) {
     uint8_t b;
-    return game_mem_read8(m, sb1 + SB1_FLAGS + flag / 8u, &b) && (b >> (flag % 8u)) & 1;
+    return game_mem_read8(m, sb1 + p->rules->sb1_flags + flag / 8u, &b) && (b >> (flag % 8u)) & 1;
 }
 
-static uint16_t var_get(const GameMem* m, uint32_t sb1, uint16_t var) {
+static uint16_t var_get(const GameProfile* p, const GameMem* m, uint32_t sb1, uint16_t var) {
     uint16_t v = 0;
-    game_mem_read16(m, sb1 + SB1_VARS + 2u * (uint32_t)(var - VARS_START), &v);
+    game_mem_read16(m, sb1 + p->rules->sb1_vars + 2u * (uint32_t)(var - VARS_START), &v);
     return v;
 }
 
@@ -99,7 +98,7 @@ bool hunt_wild_header(const GameProfile* p, const GameMem* m, uint32_t sb1, uint
         if (g != group || n != num)
             continue;
         if (group == p->altering_cave_map[0] && num == p->altering_cave_map[1]) {
-            uint16_t set = var_get(m, sb1, VAR_ALTERING_CAVE_WILD_SET);
+            uint16_t set = var_get(p, m, sb1, p->rules->var_altering_cave);
             i = (uint16_t)(i + (set < NUM_ALTERING_CAVE_TABLES ? set : 0));
         }
         *index = i;
@@ -143,7 +142,7 @@ static bool read_land(const GameProfile* p, const GameMem* m, uint16_t index, Wi
  * NuzFacts (checksum failure) before that mon makes the answer unknown. */
 static bool read_repel(const GameMem* m, uint32_t sb1, const GameProfile* p, const NuzFacts* nf,
                        WildInput* w) {
-    w->repel_active = var_get(m, sb1, p->repel_var) != 0;
+    w->repel_active = var_get(p, m, sb1, p->repel_var) != 0;
     if (!w->repel_active)
         return true;
     w->repel_level = 0xFF; /* none found: the game lets nothing through */
@@ -177,11 +176,11 @@ static const char* step_scripts(const GameProfile* p, const GameMem* m, const Nu
     /* UpdateFriendshipStepCounter (:614): every 128th step AdjustFriendship (pokemon.c:5914)
      * draws Random() & 1 per party mon. Live, that work also runs past the next VBlank, whose draw
      * then lands inside the sequence, so the count alone can't be modelled. */
-    if ((var_get(m, sb1, p->friendship_step_var) + 1u) % FRIENDSHIP_STEPS == 0)
+    if ((var_get(p, m, sb1, p->friendship_step_var) + 1u) % FRIENDSHIP_STEPS == 0)
         return k_next;
     /* UpdatePoisonStepCounter (:637): every 4th step DoPoisonFieldEffect (field_poison.c:120)
      * takes 1 HP from each poisoned mon; one dropping to 0 starts the faint script. */
-    if ((var_get(m, sb1, p->poison_step_var) + 1u) % POISON_STEPS == 0) {
+    if ((var_get(p, m, sb1, p->poison_step_var) + 1u) % POISON_STEPS == 0) {
         for (uint8_t i = 0; i < PARTY_SIZE; i++) {
             uint32_t status;
             uint16_t hp;
@@ -200,9 +199,9 @@ static const char* step_scripts(const GameProfile* p, const GameMem* m, const Nu
     uint32_t offspring, steps1;
     if (!game_mem_read8(m, dc + BOX_FLAGS, &f0) ||
         !game_mem_read8(m, dc + DAYCARE_MON_SIZE + BOX_FLAGS, &f1) ||
-        !game_mem_read32(m, dc + DAYCARE_OFFSPRING, &offspring) ||
+        !game_mem_read32(m, dc + p->rules->daycare_offspring_off, &offspring) ||
         !game_mem_read32(m, dc + DAYCARE_MON_SIZE + DAYCARE_MON_STEPS, &steps1) ||
-        !game_mem_read8(m, dc + DAYCARE_STEP_COUNTER, &counter))
+        !game_mem_read8(m, dc + p->rules->daycare_step_counter_off, &counter))
         return k_next;
     /* The egg roll: Random() when both parents are in and no egg waits, on every 255th step of
      * the second parent; a success draws more (TriggerPendingDaycareEgg). */
@@ -223,12 +222,12 @@ static const char* step_scripts(const GameProfile* p, const GameMem* m, const Nu
      * Random() % 10 decides on a call. The minutes check needs the live RTC, so that step is
      * never predicted. */
     uint8_t mc_steps;
-    if (flag_get(m, sb1, p->match_call_flag) &&
+    if (flag_get(p, m, sb1, p->match_call_flag) &&
         (!game_mem_read8(m, p->match_call_state + MATCH_CALL_STEP_COUNTER, &mc_steps) ||
          mc_steps + 1u >= MATCH_CALL_STEPS))
         return k_next;
     /* UpdateRepelCounter (wild_encounter.c:850): the last Repel step runs the "wore off" script. */
-    if (var_get(m, sb1, p->repel_var) == 1)
+    if (var_get(p, m, sb1, p->repel_var) == 1)
         return "Repel is wearing off";
     return NULL;
 }
@@ -249,7 +248,7 @@ static const char* read_prediction(const GameProfile* p, const GameMem* m, const
         return "Lead Pokemon unreadable";
     if (avatar & AVATAR_SURFING)
         return "Not predicted while surfing";
-    if (flag_get(m, sb1, p->safari_flag))
+    if (flag_get(p, m, sb1, p->safari_flag))
         return "Not predicted in the Safari Zone";
     if (!hunt_wild_header(p, m, sb1, out->map_group, out->map_num, &header) ||
         !read_land(p, m, header, w, &rate_byte))
@@ -296,9 +295,9 @@ static const char* read_prediction(const GameProfile* p, const GameMem* m, const
     uint32_t rate = rate_byte * 16u;
     if (avatar & (AVATAR_MACH_BIKE | AVATAR_ACRO_BIKE))
         rate = rate * 80 / 100;
-    if (flag_get(m, sb1, FLAG_SYS_ENC_UP_ITEM))
+    if (flag_get(p, m, sb1, FLAG_SYS_ENC_UP_ITEM))
         rate += rate / 2;
-    else if (flag_get(m, sb1, FLAG_SYS_ENC_DOWN_ITEM))
+    else if (flag_get(p, m, sb1, FLAG_SYS_ENC_DOWN_ITEM))
         rate /= 2;
     if (lead.held_item == ITEM_CLEANSE_TAG)
         rate = rate * 2 / 3;

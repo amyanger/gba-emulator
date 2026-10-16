@@ -11,7 +11,7 @@ static uint8_t s_rom[0x10000];
 #define FEEBAS 0x08002800u
 
 static const GameProfile k_profile = {
-    .name = "test", .species_count = 12, .species_names = NAMES,
+    .name = "test", .rules = &g_emerald_rules, .species_count = 12, .species_names = NAMES,
     .species_to_national = NATL, .evolution_table = EVOS,
     .wild_mon_headers = HEADERS, .wild_header_cap = 8, .wild_feebas = FEEBAS,
 };
@@ -196,7 +196,7 @@ enum { S_MILOTIC = 12, S_MARILL, S_AZURILL, S_CHIKORITA, S_SNORUNT, S_GLALIE, S_
        S_WYNAUT, S_DITTO, S_COUNT };
 
 static const GameProfile k_detail = {
-    .name = "detail", .species_count = S_COUNT, .species_names = NAMES,
+    .name = "detail", .rules = &g_emerald_rules, .species_count = S_COUNT, .species_names = NAMES,
     .species_to_national = NATL, .evolution_table = EVOS,
     .wild_mon_headers = HDR2, .wild_header_cap = 16, .wild_feebas = FEEBAS,
     .map_groups = MAPGROUPS, .map_group_count = 2,
@@ -548,6 +548,61 @@ TEST(detail_rows_sorted_by_mapsec_within_method) {
     ASSERT_EQ(det.rows[2].mapsec, 30);
 }
 
+/* FRLG has no Feebas tiles: the index must still build (Search and the egg guess need it). */
+TEST(index_without_feebas_feature_skips_the_feebas_read) {
+    build();
+    GameMem m = mem();
+    species_index_build(&ix, &k_profile, &m);
+    ASSERT_TRUE(ix.ok);
+    ASSERT_TRUE(species_index_is_wild(&ix, 11));    /* Feebas, from sWildFeebas */
+    static GameRules r;
+    r = g_emerald_rules;
+    r.features = 0;
+    GameProfile p = k_profile;
+    p.rules = &r;
+    p.wild_feebas = 0;
+    species_index_build(&ix, &p, &m);
+    ASSERT_TRUE(ix.ok);
+    ASSERT_TRUE(!species_index_is_wild(&ix, 11));
+}
+
+/* FRLG fills Emerald-only map fields with 0xFF; map_sec's own "unknown" is 0xFF too. */
+TEST(detail_sentinels_never_match_unknown_sections) {
+    build_detail();
+    static GameRules r;
+    r = g_emerald_rules;
+    r.features = 0;
+    GameProfile p = k_detail;
+    p.rules = &r;
+    p.map_group_count = 1;                       /* group 1's maps have no section: 0xFF */
+    p.wild_feebas = 0;
+    p.feebas_map_group = p.feebas_map_num = 0xFF;
+    p.mirage_map_group = p.mirage_map_num = p.mirage_mapsec = 0xFF;
+    memset(p.dive_map, 0xFF, sizeof(p.dive_map));
+    memset(p.dive_surface_mapsec, 0xFF, sizeof(p.dive_surface_mapsec));
+    memset(p.postgame_map, 0xFF, sizeof(p.postgame_map));
+    p.low_tide_mapsec = 0xFF;
+    detail_of(&p, S_DITTO);
+    ASSERT_EQ(det.kind, SPECIES_WILD);
+    ASSERT_TRUE(det.row_count > 0);
+    for (uint16_t i = 0; i < det.row_count; i++) ASSERT_EQ(det.rows[i].flags, 0);
+}
+
+TEST(detail_marks_evolutions_this_game_cannot_do) {
+    build_detail();
+    detail_of(&k_detail, S_MILOTIC);
+    ASSERT_TRUE(det.step_count > 0);
+    ASSERT_EQ(det.steps[0].method, 15);           /* EVO_BEAUTY */
+    ASSERT_TRUE(!det.steps[0].impossible);
+    static GameRules r;
+    r = g_emerald_rules;
+    r.evo_day_night_beauty = false;
+    GameProfile p = k_detail;
+    p.rules = &r;
+    detail_of(&p, S_MILOTIC);
+    ASSERT_TRUE(det.steps[0].impossible);
+}
+
 void run_species_search_tests(void) {
     RUN_TEST(index_builds_names_and_gender);
     RUN_TEST(index_skips_placeholders);
@@ -556,6 +611,7 @@ void run_species_search_tests(void) {
     RUN_TEST(query_exact_then_prefix_then_substring);
     RUN_TEST(query_punctuation_only_is_empty);
     RUN_TEST(index_rejects_bad_tables);
+    RUN_TEST(index_without_feebas_feature_skips_the_feebas_read);
     RUN_TEST(detail_wild_rows_merged);
     RUN_TEST(detail_rows_ordered_by_method);
     RUN_TEST(detail_dive_uses_surface_name);
@@ -569,4 +625,6 @@ void run_species_search_tests(void) {
     RUN_TEST(detail_rows_sorted_by_mapsec_within_method);
     RUN_TEST(detail_bad_species_is_empty);
     RUN_TEST(detail_truncates_and_counts);
+    RUN_TEST(detail_sentinels_never_match_unknown_sections);
+    RUN_TEST(detail_marks_evolutions_this_game_cannot_do);
 }

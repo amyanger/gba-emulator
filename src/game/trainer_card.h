@@ -6,10 +6,12 @@
 #include "game/game.h"
 #include "game/nuzlocke_read.h"
 
-typedef enum { CARD_OK, CARD_NOT_EMERALD, CARD_NO_TEAM, CARD_FACILITY } CardStatus;
+typedef enum { CARD_OK, CARD_NOT_SUPPORTED, CARD_NO_TEAM, CARD_FACILITY } CardStatus;
 
 typedef struct {
     char name[GAME_NAME_LEN];   /* decoded player name */
+    const char* game_name;      /* "Pok\xC3\xA9mon FireRed"; NULL in hand-built cards = Emerald */
+    uint8_t region;             /* GameRegion: picks the badge colors */
     uint16_t public_id;         /* trainer_id & 0xFFFF only */
     uint32_t play_frames;
     uint8_t badges;             /* bit n-1 = badge n */

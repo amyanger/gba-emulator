@@ -16,18 +16,10 @@
 /* struct Trainer (include/data.h): u8 trainerName[12] at +4, 0x28 bytes each. */
 #define TRAINER_NAME     4
 #define TRAINER_NAME_LEN 12
-/* include/constants/opponents.h: TRAINER_ROXANNE_1 265 .. TRAINER_JUAN_1 272, in badge order. */
-#define TRAINER_GYM_FIRST 265
-/* include/constants/species.h */
-#define SPECIES_KYOGRE  404
-#define SPECIES_GROUDON 405
-static const uint16_t k_starters[3] = { 277, 280, 283 };   /* SPECIES_TREECKO, TORCHIC, MUDKIP */
+#define TRAINER_CLASS    1   /* u8 trainerClass */
+#define RIVAL_NAME_LEN   8   /* u8 rivalName[PLAYER_NAME_LENGTH + 1] */
 /* include/constants/items.h: ITEM_MASTER_BALL 1 .. ITEM_PREMIER_BALL 12 */
 #define BALL_LAST 12
-
-static const char* const k_badge_names[RUN_BADGES] = {
-    "Stone", "Knuckle", "Dynamo", "Heat", "Balance", "Feather", "Mind", "Rain",
-};
 
 void run_session_init(RunSession* s, const GameProfile* p, const char* rom_path, const char* fixed_path) {
     memset(s, 0, sizeof(*s));
@@ -164,13 +156,22 @@ static void place_name(const RunSession* s, const GameMem* m, uint8_t sec, char 
 }
 
 static void trainer_name(const RunSession* s, const GameMem* m, uint16_t id, char out[GAME_NAME_LEN]) {
-    uint8_t raw[TRAINER_NAME_LEN];
+    uint8_t raw[TRAINER_NAME_LEN], rival[RIVAL_NAME_LEN], cls = 0;
     char txt[GAME_NAME_LEN];
     const GameProfile* p = s->profile;
-    if (id >= p->trainer_count ||
-        !game_mem_copy(m, p->trainers + (uint32_t)id * TRAINER_SIZE + TRAINER_NAME, raw, sizeof(raw))) {
+    const GameRules* r = p->rules;
+    uint32_t t = p->trainers + (uint32_t)id * TRAINER_SIZE;
+    if (id >= p->trainer_count || !game_mem_copy(m, t + TRAINER_NAME, raw, sizeof(raw))) {
         game_strcpy(out, GAME_NAME_LEN, "???");
         return;
+    }
+    /* FRLG stores "TERRY" for the rival and the Champion; the game prints the rival name. */
+    if (r->sb1_rival_name && s->rf.valid && game_mem_read8(m, t + TRAINER_CLASS, &cls) &&
+        cls != 0 &&
+        (cls == r->rival_classes[0] || cls == r->rival_classes[1] || cls == r->rival_classes[2]) &&
+        game_mem_copy(m, s->rf.sb1 + r->sb1_rival_name, rival, sizeof(rival))) {
+        memset(raw, 0xFF, sizeof(raw));
+        memcpy(raw, rival, sizeof(rival));
     }
     gen3_decode(raw, sizeof(raw), txt, sizeof(txt));
     nice(txt, out, GAME_NAME_LEN);
@@ -207,12 +208,12 @@ static const char* plural(uint32_t n) { return n == 1 ? "" : "s"; }
 /* ---- View ---- */
 
 /* R3: an untimed badge or story beat survives a reload, so it is shown only while RAM has it. */
-static bool feedable(const RunEvent* e, const RunFacts* rf) {
+static bool feedable(const GameRules* r, const RunEvent* e, const RunFacts* rf) {
     switch (e->type) {
     case RUN_EV_JOIN:   return e->how != RUN_HOW_BACKFILL;
-    case RUN_EV_BATTLE: return e->has_ace && run_is_leader(e->trainer); /* also older files */
+    case RUN_EV_BATTLE: return e->has_ace && run_is_leader(r, e->trainer); /* also older files */
     case RUN_EV_BADGE:  return e->id >= 1 && e->id <= RUN_BADGES && (rf->badges & (1u << (e->id - 1)));
-    case RUN_EV_STORY:  return e->id < RUN_STORY_COUNT && (rf->story & (1u << e->id));
+    case RUN_EV_STORY:  return e->id < r->story_count && (rf->story & (1u << e->id));
     case RUN_EV_EVOLVE: case RUN_EV_FAINT: case RUN_EV_WHITEOUT:
         return true;
     default:            return false;
@@ -224,8 +225,9 @@ static bool newer(const RunEvent* a, const RunEvent* b) {
 }
 
 /* Keeps pick[] (newest first) the RUN_VIEW_FEED newest feed events. */
-static void feed_offer(const RunEvent** pick, uint8_t* count, const RunEvent* e, const RunFacts* rf) {
-    if (!feedable(e, rf)) return;
+static void feed_offer(const GameRules* r, const RunEvent** pick, uint8_t* count, const RunEvent* e,
+                       const RunFacts* rf) {
+    if (!feedable(r, e, rf)) return;
     uint8_t n = *count;
     if (n == RUN_VIEW_FEED) {
         if (!newer(e, pick[n - 1])) return;
@@ -241,36 +243,33 @@ static void feed_offer(const RunEvent** pick, uint8_t* count, const RunEvent* e,
 }
 
 static void story_text(const RunSession* s, const GameMem* m, uint8_t id, char* out, size_t size) {
+    const GameRules* r = s->profile->rules;
     char name[GAME_NAME_LEN];
-    switch (id) {
-    case RUN_STORY_STARTER:
+    if (id >= r->story_count) {
+        textf(out, size, "Story event");
+        return;
+    }
+    const RunStoryDef* d = &r->story[id];
+    switch (d->text_kind) {
+    case STORY_TEXT_STARTER:
         if (s->rf.starter < 3) {
-            species_name(s, m, k_starters[s->rf.starter], name);
-            textf(out, size, "Chose %s", name);
+            species_name(s, m, r->starters[s->rf.starter], name);
+            textf(out, size, d->text, name);
         } else {
             textf(out, size, "Chose a starter");
         }
         break;
-    case RUN_STORY_POKEDEX:    textf(out, size, "Got the Pok\xC3\xA9" "dex"); break;
-    case RUN_STORY_CHIMNEY:    textf(out, size, "Stopped Team Magma at Mt. Chimney"); break;
-    case RUN_STORY_WEATHER:    textf(out, size, "Saved the Weather Institute"); break;
-    case RUN_STORY_SURF:       textf(out, size, "Got Surf"); break;
-    case RUN_STORY_GROUDON:
-        species_name(s, m, SPECIES_GROUDON, name);
-        textf(out, size, "%s awakened", name);
+    case STORY_TEXT_SPECIES:
+        species_name(s, m, d->species, name);
+        textf(out, size, d->text, name);
         break;
-    case RUN_STORY_KYOGRE:
-        species_name(s, m, SPECIES_KYOGRE, name);
-        textf(out, size, "%s escaped", name);
+    case STORY_TEXT_CHAMPION:
+        trainer_name(s, m, r->champion_trainer, name);
+        textf(out, size, d->text, name);
         break;
-    case RUN_STORY_SOOTOPOLIS: textf(out, size, "Calmed Sootopolis"); break;
-    case RUN_STORY_E4:         textf(out, size, "Entered the Elite Four"); break;
-    case RUN_STORY_CHAMPION:
-        trainer_name(s, m, TRAINER_WALLACE, name);
-        textf(out, size, "Beat Champion %s", name);
+    default:
+        textf(out, size, "%s", d->text);
         break;
-    case RUN_STORY_HOF:        textf(out, size, "Entered the Hall of Fame"); break;
-    default:                   textf(out, size, "Got the National Dex"); break;
     }
 }
 
@@ -282,8 +281,9 @@ static void feed_row(const RunSession* s, const GameMem* m, const RunEvent* e, R
     case RUN_EV_BADGE:
         row->icon = RUN_ICON_BADGE;
         if (e->id >= 1 && e->id <= RUN_BADGES) {
-            trainer_name(s, m, (uint16_t)(TRAINER_GYM_FIRST + e->id - 1), a);
-            textf(row->text, sizeof(row->text), "%s Badge, beat %s", k_badge_names[e->id - 1], a);
+            const GameRules* r = s->profile->rules;
+            trainer_name(s, m, r->leaders[e->id - 1], a);
+            textf(row->text, sizeof(row->text), "%s Badge, beat %s", r->badge_names[e->id - 1], a);
         }
         break;
     case RUN_EV_STORY:
@@ -509,7 +509,8 @@ static void build_view(const RunSession* s, const GameMem* m, const NuzFacts* nf
 
     /* R3: a cell lights from RAM; the log only gives its time. */
     for (uint8_t b = 0; b < RUN_BADGES; b++) {
-        game_strcpy(v->badges[b].name, sizeof(v->badges[b].name), k_badge_names[b]);
+        game_strcpy(v->badges[b].name, sizeof(v->badges[b].name),
+                    s->profile->rules->badge_names[b]);
         if (!(rf->badges & (1u << b))) continue;
         v->badges[b].have = true;
         v->badge_count++;
@@ -540,8 +541,10 @@ static void build_view(const RunSession* s, const GameMem* m, const NuzFacts* nf
 
     static const RunEvent* pick[RUN_VIEW_FEED];
     uint8_t picked = 0;
-    for (int i = 0; i < log->ev_count; i++) feed_offer(pick, &picked, &log->ev[i], rf);
-    for (int i = 0; i < log->bt_count; i++) feed_offer(pick, &picked, &log->bt[i], rf);
+    for (int i = 0; i < log->ev_count; i++)
+        feed_offer(s->profile->rules, pick, &picked, &log->ev[i], rf);
+    for (int i = 0; i < log->bt_count; i++)
+        feed_offer(s->profile->rules, pick, &picked, &log->bt[i], rf);
     for (uint8_t i = 0; i < picked; i++) feed_row(s, m, pick[i], &v->feed[i]);
     v->feed_count = picked;
 
@@ -575,6 +578,8 @@ static void build_view(const RunSession* s, const GameMem* m, const NuzFacts* nf
     v->ledges = rf->stats[RUN_STAT_LEDGES];
     v->rained = rf->stats[RUN_STAT_RAINED_ON];
     v->clocks = rf->stats[RUN_STAT_CHECKED_CLOCK];
+    v->dex_checks = rf->stats[RUN_STAT_CHECKED_DEX];
+    v->no_clock = !s->profile->rules->clock_tv_stats;
     v->splash = rf->stats[RUN_STAT_SPLASH];
     build_footer(s, m, v);
     v->write_failed = s->write_failed || !s->path_ok;

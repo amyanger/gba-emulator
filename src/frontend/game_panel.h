@@ -18,7 +18,11 @@ typedef enum {
 /* Views inside the Nuzlocke page, switched with [ and ]. */
 typedef enum { NUZ_SUB_ROUTES, NUZ_SUB_TEAM, NUZ_SUB_GRAVEYARD, NUZ_SUB_COUNT } NuzSubView;
 
-GamePage game_panel_next_page(GamePage page);
+#define GAME_PAGE_MASK_ALL ((1u << GAME_PAGE_COUNT) - 1u)
+/* Bit per GamePage this game shows; Berries and Hunt need their feature bits. NULL = all. */
+uint32_t game_panel_page_mask(const GameProfile* p);
+/* F10: the next page in mask after page (Auto is always in it). */
+GamePage game_panel_next_page(GamePage page, uint32_t mask);
 /* GAME_PAGE_COUNT means "show the battle page". */
 GamePage game_panel_resolve_page(GamePage page, GameContext ctx);
 /* Switching to Auto when a battle starts. Zero-initialise; clear `restore` when the
@@ -57,7 +61,7 @@ uint16_t game_panel_search_detail_lines(const SpeciesDetail* d, uint16_t* visibl
 const char* game_panel_hint(GamePage shown, const NuzView* nuz, bool search_focused, const RunView* run,
                             bool run_details);
 /* Width in points of the tab labels, plus the Auto badge when auto_badge. */
-float game_panel_tabs_width(const UiCanvas* c, GamePage shown, bool auto_badge);
+float game_panel_tabs_width(const UiCanvas* c, GamePage shown, bool auto_badge, uint32_t mask);
 
 /* Pieces the Hunt page shares with the Party page. */
 const char* game_panel_type_name(uint8_t type); /* "GRASS", or NULL when out of range */

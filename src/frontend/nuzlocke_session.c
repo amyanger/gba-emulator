@@ -235,6 +235,15 @@ static void refresh_view(NuzSession* s, const GameMem* m) {
 
 /* ---- Per frame ---- */
 
+/* FRLG's title screen sets the storage pointer and party count before the mons are loaded: a
+ * party of N slots that all decode empty is a half-loaded save, not a team to back-fill. */
+static bool party_loaded(const NuzFacts* f) {
+    if (f->party_count == 0) return true;
+    for (uint8_t i = 0; i < f->party_count; i++)
+        if (f->party[i].species) return true;
+    return false;
+}
+
 void nuz_session_frame(NuzSession* s, const GameMem* m) {
     if (!s->profile) return;
     if (!s->families_ok) s->families_ok = nuz_families(s->profile, m, s->family);
@@ -260,7 +269,9 @@ void nuz_session_frame(NuzSession* s, const GameMem* m) {
         return;   /* a misread (save blocks mid-move), a blank ID, or a new ID still debouncing */
     }
 
-    if (starting && s->families_ok) {
+    /* R16: never back-fill the Pokedude's party; the tracker's base is empty until the start. */
+    if (starting && s->families_ok && s->facts.has_boxes && party_loaded(&s->facts) &&
+        !nuz_party_swapped(&s->tracker.party_base, &s->facts)) {
         static NuzEvent ev[NUZ_BOX_MAX + NUZ_PARTY_MAX + 1];
         uint16_t n = nuz_backfill(&s->facts, s->profile->region_map_count, ev,
                                   (uint16_t)(sizeof(ev) / sizeof(ev[0])));

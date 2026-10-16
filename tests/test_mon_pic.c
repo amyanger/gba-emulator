@@ -12,7 +12,7 @@ static uint8_t s_rom[0x8000];
 #define STREAMS 0x08002000u
 
 static const GameProfile k_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .mon_still_front_pics = PICS, .mon_palettes = PALS, .mon_shiny_palettes = SHINY,
 };
 

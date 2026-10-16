@@ -12,7 +12,7 @@ static uint8_t s_rom[0x10000];
 #define KEY 0x0000BEEFu
 
 static const GameProfile k_test_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .battle_type_flags = 0x02000E10, .battlers_count = 0x02000E00,
     .battler_party_indexes = 0x02000E08, .battler_positions = 0x02000E04,
     .battle_mons = 0x02000C00, .player_party_count = 0x02000000,
@@ -190,6 +190,26 @@ static void enter_wild_battle(void) {
     fixture_put16(at(SB1 + 0x652), (uint16_t)(5 ^ KEY));     /* qty 5, encrypted */
 }
 
+TEST(snapshot_skips_berries_and_mirage_without_features) {
+    build_world();
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(gs->snap.mirage.valid);
+    ASSERT_TRUE(gs->snap.berries.valid);
+    static GameRules r;
+    r = g_emerald_rules;
+    r.features = 0;
+    static GameProfile p;
+    p = k_test_profile;
+    p.rules = &r;
+    gs->profile = &p;
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(gs->snap.valid);
+    ASSERT_TRUE(!gs->snap.mirage.valid);
+    ASSERT_TRUE(!gs->snap.berries.valid);
+}
+
 TEST(snapshot_without_profile_explains) {
     GameState gs;
     game_init(&gs, NULL, 0);
@@ -205,6 +225,15 @@ TEST(snapshot_without_profile_explains) {
     ASSERT_TRUE(!gs.snap.valid);
     ASSERT_EQ(gs.snap.support, GAME_SUPPORT_MODIFIED);
     ASSERT_STR_EQ(gs.snap.reason, "ROM hack or modified ROM not supported");
+
+    memcpy(s_rom + 0xAC, "BPRE", 4);
+    s_rom[0xBC] = 1;                  /* FireRed 1.1 */
+    game_init(&gs, s_rom, sizeof(s_rom));
+    game_update_mem(&gs, &m);
+    ASSERT_TRUE(!gs.snap.valid);
+    ASSERT_EQ(gs.snap.support, GAME_SUPPORT_OTHER_REVISION);
+    ASSERT_STR_EQ(gs.snap.reason, "This ROM revision isn't supported");
+    s_rom[0xBC] = 0;
 }
 
 TEST(snapshot_waits_when_save_pointers_invalid) {
@@ -843,6 +872,47 @@ TEST(snapshot_damage_low_kick_weight_by_national_dex) {
     ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 11);           /* 20*40*6/10/50 + 2 */
 }
 
+/* FRLG: Boulder Badge is flag 0x820 in flags at 0xEE0; boosts stay on in LEGENDARY_FRLG (bit 18,
+ * a Frontier bit on Emerald), there is no secret-base rule, e-Reader turns them off, and Low Kick
+ * reads the weight at a 0x24 Pokedex stride. Mud Slap 20*20*6/10/50 + 2 = 6, Atk 22 gives 7.
+ * Low Kick with the badge still set: SpA 22*40*6/10/50 + 2 = 12. */
+TEST(snapshot_damage_frlg_gates) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    fixture_put16(at(0x02000C00 + 0x0C), 3);              /* player: Mud Slap in slot 0 */
+    static GameProfile p;
+    p = k_test_profile;
+    p.rules = &g_frlg_rules;
+    GameState* gs = test_state();
+    gs->profile = &p;
+    ASSERT_TRUE(enable_damage(gs));
+    GameMem m = test_mem();
+    at(SB1 + 0xEE0 + (0x820 >> 3))[0] = 0x01;
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 7);
+    fixture_put32(at(0x02000E10), 1u << 18);
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 7);
+    fixture_put32(at(0x02000E10), 1u << 3);
+    fixture_put16(at(0x02000E5A), 1024);
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 7);
+    fixture_put32(at(0x02000E10), 1u << 11);
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 6);
+
+    fixture_put32(at(0x02000E10), 0);
+    fixture_put16(at(0x02000C00 + 0x0C), 6);              /* Low Kick */
+    fixture_put16(at(0x08008000 + 263 * 0x20 + 0x0E), 100); /* Emerald stride: must be ignored */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_NONE);
+    fixture_put16(at(0x08008000 + 263 * 0x24 + 0x0E), 100);
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_RANGE);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_hi, 12);
+}
+
 TEST(snapshot_damage_dump_lines) {
     build_world();
     enter_wild_battle();
@@ -865,11 +935,122 @@ TEST(snapshot_damage_dump_lines) {
     ASSERT_TRUE(strstr(buf, "\nenemy_move 0 1 GROWL type 3 x0 status\n") != NULL);
 }
 
+/* Kanto-shaped names: a plain pointer table indexed from mapsec 0x58 (FRLG sMapNames). */
+TEST(snapshot_mapsec_names_follow_rules_shape) {
+    build_world();
+    static GameRules r;
+    r = g_emerald_rules;
+    r.mapsec_name_stride = 4;
+    r.mapsec_name_off = 0;
+    r.mapsec_first = 0x58;
+    static GameProfile p;
+    p = k_test_profile;
+    p.rules = &r;
+    p.region_map_entries = 0x0800C000;
+    p.region_map_count = 0xC5;
+    fixture_put32(at(0x0800C000), 0x0800C400);                      /* [0x58 - 0x58] */
+    put_str(0x0800C400, "PALLET TOWN");
+    fixture_put32(at(0x0800C000 + 4u * (0x65 - 0x58)), 0x0800C410);
+    put_str(0x0800C410, "ROUTE ONE");
+    GameMem m = test_mem();
+    char name[GAME_MAP_NAME_LEN];
+    game_mapsec_name(&m, &p, 0x58, name);
+    ASSERT_STR_EQ(name, "PALLET TOWN");
+    game_mapsec_name(&m, &p, 0x65, name);
+    ASSERT_STR_EQ(name, "ROUTE ONE");
+    game_mapsec_name(&m, &p, 0x57, name);   /* a Hoenn section: no name in this table */
+    ASSERT_STR_EQ(name, "");
+    game_mapsec_name(&m, &p, 0x00, name);
+    ASSERT_STR_EQ(name, "");
+    game_mapsec_name(&m, &p, 0xC5, name);   /* MAPSEC_NONE */
+    ASSERT_STR_EQ(name, "");
+}
+
+/* Ball pocket, key and seen arrays come from the rules (FRLG offsets here). */
+TEST(snapshot_reads_save_layout_from_rules) {
+    build_world();
+    enter_wild_battle();
+    static GameRules r;
+    r = g_emerald_rules;
+    r.sb1_ball_pocket = 0x430;
+    r.ball_pocket_slots = 13;
+    r.sb1_dex_seen1 = 0x5F8;
+    r.sb1_dex_seen2 = 0x3A18;
+    r.sb2_encryption_key = 0xF20;
+    static GameProfile p;
+    p = k_test_profile;
+    p.rules = &r;
+    GameState* gs = test_state();
+    gs->profile = &p;
+    fixture_put32(at(SB2 + 0xF20), KEY);
+    fixture_put16(at(SB1 + 0x430), 4);                         /* Poke Ball */
+    fixture_put16(at(SB1 + 0x432), (uint16_t)(7 ^ KEY));
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(gs->snap.valid);
+    ASSERT_EQ(gs->snap.catch_count, 1);
+    ASSERT_EQ(gs->snap.catch_rows[0].quantity, 7);
+}
+
+/* R21: FRLG Pokemon Tower ghosts hide the species and can't be caught. */
+TEST(snapshot_ghost_battles) {
+    build_world();
+    enter_wild_battle();
+    static GameProfile p;
+    p = k_test_profile;
+    p.rules = &g_frlg_rules;
+    GameState* gs = test_state();
+    gs->profile = &p;
+    GameMem m = test_mem();
+    /* A ball in the FRLG pocket, so catch_count == 0 proves the gate, not an empty bag. */
+    fixture_put32(at(SB2 + 0xF20), KEY);
+    fixture_put16(at(SB1 + 0x430), 4);
+    fixture_put16(at(SB1 + 0x432), (uint16_t)(5 ^ KEY));
+    fixture_put32(at(0x02000E10), 1u << 15);                 /* GHOST */
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(gs->snap.ghost);
+    ASSERT_TRUE(gs->snap.uncatchable);
+    ASSERT_EQ(gs->snap.catch_count, 0);
+    fixture_put32(at(0x02000E10), (1u << 15) | (1u << 13));  /* unveiled by the Silph Scope */
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(!gs->snap.ghost);
+    ASSERT_TRUE(gs->snap.uncatchable);
+    ASSERT_EQ(gs->snap.catch_count, 0);
+    ASSERT_STR_EQ(gs->snap.enemies[0].species, "ZIGZAGOON");
+    gs->profile = &k_test_profile;                           /* Emerald: bit 15 means nothing */
+    fixture_put32(at(0x02000E10), 1u << 15);
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(!gs->snap.ghost);
+    ASSERT_TRUE(!gs->snap.uncatchable);
+    ASSERT_EQ(gs->snap.catch_count, 1);
+}
+
+TEST(snapshot_waits_during_quest_log_playback) {
+    build_world();
+    static GameProfile p;
+    p = k_test_profile;
+    p.quest_log_state = 0x03000040;
+    GameState* gs = test_state();
+    gs->profile = &p;
+    GameMem m = test_mem();
+    at(0x03000040)[0] = 2;
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(!gs->snap.valid);
+    ASSERT_STR_EQ(gs->snap.reason, "Replaying your quest log");
+    GameDaycare d;
+    game_read_daycare_now_mem(gs, &m, &d);
+    ASSERT_TRUE(!d.valid);
+    at(0x03000040)[0] = 0;
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(gs->snap.valid);
+}
+
 void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_dex_caught_bits);
     RUN_TEST(snapshot_reads_berries_and_dumps_them);
     TEST_SUITE("game_snapshot");
     RUN_TEST(snapshot_without_profile_explains);
+    RUN_TEST(snapshot_skips_berries_and_mirage_without_features);
     RUN_TEST(snapshot_waits_when_save_pointers_invalid);
     RUN_TEST(snapshot_overworld_party_and_encounters);
     RUN_TEST(snapshot_party_species_id_and_shiny);
@@ -898,5 +1079,10 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_damage_badges_from_save_flags);
     RUN_TEST(snapshot_damage_reads_hold_items);
     RUN_TEST(snapshot_damage_low_kick_weight_by_national_dex);
+    RUN_TEST(snapshot_damage_frlg_gates);
     RUN_TEST(snapshot_damage_dump_lines);
+    RUN_TEST(snapshot_mapsec_names_follow_rules_shape);
+    RUN_TEST(snapshot_reads_save_layout_from_rules);
+    RUN_TEST(snapshot_ghost_battles);
+    RUN_TEST(snapshot_waits_during_quest_log_playback);
 }

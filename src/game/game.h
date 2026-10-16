@@ -3,7 +3,7 @@
 
 #include <stdio.h>
 #include "game/game_mem.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 #include "game/pokemon.h"
 #include "game/encounters.h"
 #include "game/mirage.h"
@@ -86,6 +86,7 @@ typedef struct {
 
 typedef struct {
     bool valid;
+    const GameProfile* profile; /* NULL when unsupported or hand-built (Emerald text) */
     GameSupport support; /* OK unless the ROM itself is unsupported */
     char reason[48];
     GameContext context;
@@ -95,6 +96,8 @@ typedef struct {
     uint8_t enemy_count;
     GameEnemy enemies[2];
     uint8_t catch_count;
+    bool ghost;              /* FRLG GHOST battle not yet unveiled: the game hides the species */
+    bool uncatchable;        /* rules->uncatchable_mask: balls always miss */
     GameCatchRow catch_rows[16];
     uint8_t map_group, map_num, map_type;
     char map_name[GAME_MAP_NAME_LEN]; /* region map section name, empty when unknown */
@@ -131,6 +134,7 @@ typedef struct {
     int8_t egg_nature_up, egg_nature_down;
     char egg_ability[GAME_NAME_LEN];
     bool egg_shiny;
+    bool pid_partial;           /* FRLG: nature and shininess roll at pickup */
     bool fire;                  /* Flame Body / Magma Armor in party now */
     uint32_t hatch_steps[6];    /* by party index, 0 for non-eggs */
 } GameDaycare;

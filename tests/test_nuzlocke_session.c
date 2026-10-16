@@ -14,7 +14,7 @@ static uint8_t s_rom[0x4000];
 #define FILE_B ROM ".0000CAFE.nuzlocke"
 
 static const GameProfile k_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .battle_type_flags = 0x02000E10, .battlers_count = 0x02000E00,
     .battler_party_indexes = 0x02000E08, .battler_positions = 0x02000E04,
     .player_party_count = 0x02000000, .player_party = 0x02000400, .enemy_party = 0x02000800,
@@ -50,6 +50,7 @@ static void build(void) {
     memset(s_rom, 0, sizeof(s_rom));
     fixture_put32(at(0x03000000), SB1);
     fixture_put32(at(0x03000004), SB2);
+    fixture_put32(at(0x03000008), 0x02020000);  /* empty PokemonStorage, boxes at +4 */
     set_tid(0x0000BEEF);
     fixture_put16(at(SB2 + 0x0E), 1);  /* 1:00:00 */
     at(0x02000E20 + 0x14)[0] = 3;
@@ -195,11 +196,80 @@ TEST(nuz_session_start_reads_boxes_fresh) {
     remove(FILE_A);
 }
 
+/* FRLG loads the save blocks on the copyright screen but sets the storage pointer only at
+ * the title screen: the start must wait, then back-fill the boxes as owned, never as gifts. */
+TEST(nuz_session_waits_for_storage_pointer) {
+    remove(FILE_A);
+    build();
+    fixture_put32(at(0x03000008), 0);
+    uint8_t plain[4][12], raw[100];
+    fixture_plain_mon(plain, 3);
+    plain[3][1] = 4;
+    fixture_encode_mon(raw, 0x55556666, 0x0000BEEF, plain, 0x02);
+    memcpy(at(0x02020000 + 4), raw, 80);
+    nuz_session_init(&s_a, &k_profile, ROM, NULL);
+    frames(&s_a, 40);
+    ASSERT_TRUE(nuz_session_request_start(&s_a));
+    frames(&s_a, 5);
+    ASSERT_EQ(s_a.run.member_count, 0);
+    fixture_put32(at(0x03000008), 0x02020000);
+    frames(&s_a, 70);
+    ASSERT_EQ(s_a.run.member_count, 2);
+    ASSERT_EQ(s_a.run.members[1].join, NUZ_JOIN_OWNED);
+    ASSERT_EQ(file_lines(FILE_A), 4);  /* header, start, owned, owned */
+    remove(FILE_A);
+}
+
+/* Title screen: pointers and party count are set before the mons are loaded. */
+TEST(nuz_session_waits_for_party_data) {
+    remove(FILE_A);
+    build();
+    uint8_t saved[100];
+    memcpy(saved, at(0x02000400), sizeof(saved));
+    memset(at(0x02000400), 0, sizeof(saved));
+    nuz_session_init(&s_a, &k_profile, ROM, NULL);
+    frames(&s_a, 40);
+    ASSERT_TRUE(nuz_session_request_start(&s_a));
+    frames(&s_a, 5);
+    ASSERT_EQ(s_a.run.member_count, 0);
+    memcpy(at(0x02000400), saved, sizeof(saved));
+    frames(&s_a, 5);
+    ASSERT_EQ(s_a.run.member_count, 1);
+    ASSERT_EQ(s_a.run.members[0].join, NUZ_JOIN_OWNED);
+    remove(FILE_A);
+}
+
 TEST(nuz_session_off_without_profile) {
     nuz_session_init(&s_a, NULL, ROM, NULL);
     frames(&s_a, 5);
     ASSERT_EQ(s_a.view.state, NUZ_VIEW_OFF);
     ASSERT_TRUE(!nuz_session_request_start(&s_a));
+}
+
+/* R16: a run started while Teachy TV shows the Pokedude's party back-fills the real party later. */
+TEST(nuz_session_start_waits_out_teachy_tv) {
+    remove(FILE_A);
+    build();
+    static GameProfile p;
+    p = k_profile;
+    p.main_saved_callback = 0x03000044;
+    p.main_callback2 = 0x03000048;
+    p.cb2_overworld = 0x080565B5;
+    p.teachy_tv_restore_cb = 0x0815BD59;
+    fixture_put32(at(0x03000044), 0x0815BD59);
+    fixture_put32(at(0x03000048), 0x0815AB95);   /* TeachyTvCallback */
+    nuz_session_init(&s_a, &p, ROM, NULL);
+    frames(&s_a, 40);
+    ASSERT_TRUE(nuz_session_request_start(&s_a));
+    frames(&s_a, 5);
+    ASSERT_EQ(s_a.run.member_count, 0);
+    ASSERT_EQ(file_lines(FILE_A), -1);
+    fixture_put32(at(0x03000048), 0x080565B5);   /* overworld, savedCallback stale */
+    frames(&s_a, 5);
+    ASSERT_EQ(s_a.run.member_count, 1);
+    ASSERT_EQ(s_a.run.members[0].join, NUZ_JOIN_OWNED);
+    ASSERT_EQ(file_lines(FILE_A), 3);
+    remove(FILE_A);
 }
 
 void run_nuzlocke_session_tests(void) {
@@ -209,5 +279,8 @@ void run_nuzlocke_session_tests(void) {
     RUN_TEST(nuz_session_leaves_foreign_file_alone);
     RUN_TEST(nuz_session_adopts_empty_file);
     RUN_TEST(nuz_session_start_reads_boxes_fresh);
+    RUN_TEST(nuz_session_waits_for_storage_pointer);
+    RUN_TEST(nuz_session_waits_for_party_data);
     RUN_TEST(nuz_session_off_without_profile);
+    RUN_TEST(nuz_session_start_waits_out_teachy_tv);
 }

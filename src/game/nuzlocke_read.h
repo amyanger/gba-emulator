@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "game/game_mem.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 
 /* Raw facts the Nuzlocke tracker needs, read straight from memory each frame.
  * Kept apart from GameSnapshot: play time changes every frame and the panel
@@ -18,8 +18,6 @@
 
 /* gBattleTypeFlags bits (include/constants/battle.h) */
 #define NUZ_BATTLE_TRAINER        (1u << 3)
-#define NUZ_BATTLE_FIRST_BATTLE   (1u << 4)
-#define NUZ_BATTLE_WALLY_TUTORIAL (1u << 9)
 
 /* gBattleOutcome */
 #define NUZ_OUTCOME_CAUGHT 7
@@ -49,6 +47,8 @@ typedef struct {
     uint8_t mapsec;
     bool in_battle;
     uint32_t battle_flags;
+    bool ignore_battle;       /* rules->nuz_ignore_mask: trainer, first battle, tutorials, ghosts */
+    bool teachy_tv;           /* R16: savedCallback is Teachy TV's restore callback, off the overworld */
     uint8_t battle_outcome;
     uint16_t enemy_species;   /* gEnemyParty[0]; 0 when none */
     uint8_t enemy_level;
@@ -60,6 +60,13 @@ typedef struct {
     uint16_t box_count;
     NuzMon boxes[NUZ_BOX_MAX];
 } NuzFacts;
+
+/* Personalities of the last party that was the player's own. */
+typedef struct { uint8_t count; uint32_t pid[NUZ_PARTY_MAX]; } NuzPartyBase;
+/* R16: true while the party is Teachy TV's Pokedude party: the restore callback is pending and no
+ * slot is one of base's, or there is no base yet. Otherwise base becomes this party; swapped frames
+ * never move it. */
+bool nuz_party_swapped(NuzPartyBase* base, const NuzFacts* f);
 
 bool nuz_key_eq(NuzKey a, NuzKey b);
 /* Fills f; f->valid is false while the save blocks aren't readable. Boxes are

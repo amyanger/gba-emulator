@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include "game/species_search.h"
 
-/* View model of the Search page in the Emerald Companion panel: query text,
+/* View model of the Search page in the Pokemon Companion panel: query text,
  * focus, list selection and scroll. Pure state, no SDL, no drawing. The owner
  * runs the query and reports the hit count with search_view_set_results. */
 

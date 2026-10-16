@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "game/game_mem.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 
 /* Front sprites straight from the ROM tables (still-frame sheet, one 64x64 frame).
  * Unown shows form A, Castform its normal form, Spinda without spots (the game draws

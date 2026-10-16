@@ -4,12 +4,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include "game/pokemon.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 
 #define DAYCARE_MON_SIZE     0x8C   /* struct DaycareMon (global.h:782-787) */
 #define DAYCARE_MON_STEPS    0x88
-#define DAYCARE_OFFSPRING    0x118  /* u32 offspringPersonality */
-#define DAYCARE_STEP_COUNTER 0x11C  /* u8 stepCounter */
 #define EGG_GROUP_DITTO        13
 #define EGG_GROUP_UNDISCOVERED 15
 #define ABILITY_MAGMA_ARMOR    40

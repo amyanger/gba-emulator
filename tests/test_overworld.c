@@ -33,7 +33,7 @@ static uint8_t s_rom[0x8000];
 #define ITEMS      0x08004800u   /* gItems, 44-byte stride */
 
 static const GameProfile k_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .save_block1_ptr = 0x03000000, .save_block2_ptr = 0x03000004,
     .map_header = MAP_HDR,
     .object_events = OBJS, .sprites = SPRITES, .sprite_coord_offset = SPR_OFF,
@@ -726,7 +726,7 @@ TEST(ow_feed_clear_empties_gift_cache) {
 
 /* k_profile plus the Feebas fields; the scene's map (0.1) plays Route 119. */
 static const GameProfile k_fb_profile = {
-    .name = "test",
+    .name = "test", .rules = &g_emerald_rules,
     .save_block1_ptr = 0x03000000, .save_block2_ptr = 0x03000004,
     .map_header = MAP_HDR,
     .object_events = OBJS, .sprites = SPRITES, .sprite_coord_offset = SPR_OFF,

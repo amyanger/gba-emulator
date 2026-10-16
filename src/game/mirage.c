@@ -5,8 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
-/* SaveBlock1.vars[] at 0x139C (include/global.h), indexed by var id - 0x4000. */
-#define SB1_VAR(id)        (SB1_VARS + 2u * ((uint32_t)(id) - 0x4000u))
+/* SaveBlock1.vars[] (include/global.h), indexed by var id - 0x4000. */
+#define SB1_VAR(p, id)     ((p)->rules->sb1_vars + 2u * ((uint32_t)(id) - 0x4000u))
 #define VAR_MIRAGE_RND_H   0x4024
 #define VAR_MIRAGE_RND_L   0x4025
 #define VAR_DAYS           0x4040
@@ -132,10 +132,10 @@ void mirage_read(MirageCache* mc, const GameProfile* p, const GameMem* m, const 
     uint16_t hi, lo, var_days;
     uint8_t flags;
     memset(out, 0, sizeof(*out));
-    if (!game_mem_read16(m, sb1 + SB1_VAR(VAR_MIRAGE_RND_H), &hi) ||
-        !game_mem_read16(m, sb1 + SB1_VAR(VAR_MIRAGE_RND_L), &lo) ||
-        !game_mem_read16(m, sb1 + SB1_VAR(VAR_DAYS), &var_days) ||
-        !game_mem_read8(m, sb1 + SB1_FLAGS + (FLAG_SYS_CLOCK_SET >> 3), &flags))
+    if (!game_mem_read16(m, sb1 + SB1_VAR(p, VAR_MIRAGE_RND_H), &hi) ||
+        !game_mem_read16(m, sb1 + SB1_VAR(p, VAR_MIRAGE_RND_L), &lo) ||
+        !game_mem_read16(m, sb1 + SB1_VAR(p, VAR_DAYS), &var_days) ||
+        !game_mem_read8(m, sb1 + p->rules->sb1_flags + (FLAG_SYS_CLOCK_SET >> 3), &flags))
         return;
     out->valid = true;
     out->clock_set = (flags >> (FLAG_SYS_CLOCK_SET & 7)) & 1;

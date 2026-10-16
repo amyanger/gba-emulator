@@ -2,7 +2,7 @@
 #define _DEFAULT_SOURCE  /* realpath, d_type-free dirent */
 #endif
 #include "frontend/library.h"
-#include "game/emerald_profile.h"
+#include "game/game_profile.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -196,10 +196,9 @@ static FILE* open_file(const char* path) {
     return fopen(path, "rb");  /* UTF-8 paths work on Windows through the manifest code page */
 }
 
-/* Reads the header and size; for files that look like Emerald, checks the whole ROM's CRC. */
+/* Reads the header and size; for files that look like a supported ROM, checks the whole CRC. */
 static bool read_game(const char* path, LibGame* g) {
     static uint8_t chunk[64 * 1024];
-    const GameProfile* p = &g_emerald_profile;
     FILE* f = open_file(path);
     if (!f) return false;
     memset(g, 0, sizeof(*g));
@@ -207,11 +206,13 @@ static bool read_game(const char* path, LibGame* g) {
     library_display_name(path, g->name, sizeof(g->name));
     size_t got = fread(chunk, 1, LIB_HEADER_LEN, f);
     library_parse_header(chunk, (uint32_t)got, g->title, g->code);
+    const GameProfile* p = game_profile_find(g->code);
+    bool version_ok = p && got > 0xBC && chunk[0xBC] == p->version;
     if (fseek(f, 0, SEEK_END) == 0) {
         long size = ftell(f);
         g->size = size > 0 ? (uint32_t)size : 0;
     }
-    if (g->size == p->rom_size && memcmp(g->code, p->game_code, 4) == 0 && fseek(f, 0, SEEK_SET) == 0) {
+    if (version_ok && g->size == p->rom_size && fseek(f, 0, SEEK_SET) == 0) {
         uint32_t crc = 0;
         size_t n;
         while ((n = fread(chunk, 1, sizeof(chunk), f)) > 0) crc = game_crc32_update(crc, chunk, (uint32_t)n);
