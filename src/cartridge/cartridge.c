@@ -74,7 +74,8 @@ bool cartridge_load(Cartridge* cart, const char* path) {
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
 
-    if (size > MAX_ROM_SIZE || size <= 0) {
+    // Anything smaller can't hold the 0xC0-byte header parsed below.
+    if (size > MAX_ROM_SIZE || size < 0xC0) {
         LOG_ERROR("Invalid ROM size: %ld bytes", size);
         fclose(f);
         return false;

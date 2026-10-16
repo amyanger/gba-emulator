@@ -289,6 +289,31 @@ TEST(cart_save_to_file_none_without_chip) {
     ASSERT_EQ(cartridge_save_to_file(&cart), CART_FLUSH_NONE);
 }
 
+/* The loader reads title and game code from 0xA0-0xAF, so a file too short
+ * for the 0xC0-byte header must be rejected rather than read past. */
+TEST(cart_load_rejects_file_shorter_than_header) {
+    const char* path = "test_cart_short.gba";
+    uint8_t rom[0xC0];
+    memset(rom, 0, sizeof(rom));
+    Cartridge cart;
+
+    FILE* fp = fopen(path, "wb");
+    ASSERT_TRUE(fp != NULL);
+    fwrite(rom, 1, 0xBF, fp);
+    fclose(fp);
+    memset(&cart, 0, sizeof(cart));
+    ASSERT_TRUE(!cartridge_load(&cart, path));
+
+    fp = fopen(path, "wb");
+    ASSERT_TRUE(fp != NULL);
+    fwrite(rom, 1, 0xC0, fp);
+    fclose(fp);
+    memset(&cart, 0, sizeof(cart));
+    ASSERT_TRUE(cartridge_load(&cart, path));
+    cartridge_destroy(&cart);
+    remove(path);
+}
+
 void run_cartridge_autosave_tests(void) {
     TEST_SUITE("cartridge_autosave");
     RUN_TEST(autosave_tick_no_op_when_clean);
@@ -308,4 +333,5 @@ void run_cartridge_autosave_tests(void) {
     RUN_TEST(cart_tick_reports_ok_on_flush);
     RUN_TEST(cart_tick_reports_failed_on_unwritable_path);
     RUN_TEST(cart_save_to_file_none_without_chip);
+    RUN_TEST(cart_load_rejects_file_shorter_than_header);
 }

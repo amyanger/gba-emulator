@@ -1093,6 +1093,83 @@ SaveStateResult savestate_snapshot(GBA* gba, uint8_t** out, size_t* out_size) {
     return save_to_buffer(gba, out, out_size, false);
 }
 
+/* Load each chunk into 'gba'. A dry run targets a scratch machine and only
+ * the result matters. */
+static SaveStateResult parse_chunks(GBA* gba, const uint8_t* cur, const uint8_t* end,
+                                    bool dry_run) {
+    while (end - cur >= 8) {
+        uint32_t chunk_id = (uint32_t)cur[0]
+                          | ((uint32_t)cur[1] << 8)
+                          | ((uint32_t)cur[2] << 16)
+                          | ((uint32_t)cur[3] << 24);
+        uint32_t chunk_size = (uint32_t)cur[4]
+                            | ((uint32_t)cur[5] << 8)
+                            | ((uint32_t)cur[6] << 16)
+                            | ((uint32_t)cur[7] << 24);
+        cur += 8;
+
+        if (chunk_size > (size_t)(end - cur)) {
+            LOG_ERROR("Save state: chunk 0x%08X truncated (need %u, have %td)",
+                      chunk_id, chunk_size, end - cur);
+            return SS_ERR_TRUNCATED;
+        }
+
+        /* Known chunks have a fixed layout; a declared size that doesn't
+         * match would let the loader read past the chunk (and possibly
+         * the buffer).  Reject before dispatch. */
+        uint32_t expected = expected_chunk_payload(chunk_id);
+        if (expected != 0 && chunk_size != expected) {
+            LOG_ERROR("Save state: chunk 0x%08X size %u != expected %u",
+                      chunk_id, chunk_size, expected);
+            return SS_ERR_CORRUPT;
+        }
+
+        const uint8_t* chunk_data = cur;
+        bool valid = true;
+
+        switch (chunk_id) {
+        case CHUNK_GBA:  load_gba_chunk(&chunk_data, gba);                      break;
+        case CHUNK_CPU:  valid = load_cpu_chunk(&chunk_data, &gba->cpu);        break;
+        case CHUNK_BRAM:
+            /* Has no checks to run, and bus_post_load wants a wired-up bus. */
+            if (dry_run) chunk_data += chunk_size;
+            else load_bram_chunk(&chunk_data, &gba->bus);
+            break;
+        case CHUNK_DMA:  valid = load_dma_chunk(&chunk_data, &gba->dma);        break;
+        case CHUNK_PPU:  valid = load_ppu_chunk(&chunk_data, &gba->ppu);        break;
+        case CHUNK_APU:  valid = load_apu_chunk(&chunk_data, &gba->apu);        break;
+        case CHUNK_TMR:  valid = load_tmr_chunk(&chunk_data, gba->timers);      break;
+        case CHUNK_IRQ:  load_irq_chunk(&chunk_data, &gba->interrupts);         break;
+        case CHUNK_CART: valid = load_cart_chunk(&chunk_data, &gba->cart);      break;
+        case CHUNK_INPT: load_inpt_chunk(&chunk_data, &gba->input);             break;
+        case CHUNK_SIO:  valid = load_sio_chunk(&chunk_data, &gba->sio);        break;
+        default:
+            if (!dry_run) {
+                LOG_WARN("Save state: skipping unknown chunk 0x%08X (%u bytes)",
+                         chunk_id, chunk_size);
+            }
+            break;
+        }
+
+        if (!valid) {
+            LOG_ERROR("Save state: chunk 0x%08X has an out-of-range field", chunk_id);
+            return SS_ERR_CORRUPT;
+        }
+
+        /* A known chunk's loader must consume exactly the declared size —
+         * anything else means the save/load field layouts have drifted
+         * apart and the state would load silently corrupt. */
+        if (expected != 0 && (size_t)(chunk_data - cur) != chunk_size) {
+            LOG_ERROR("Save state: chunk 0x%08X loader consumed %td of %u bytes",
+                      chunk_id, chunk_data - cur, chunk_size);
+            return SS_ERR_CORRUPT;
+        }
+
+        cur += chunk_size;
+    }
+    return SS_OK;
+}
+
 static SaveStateResult load_from_buffer(GBA* gba, const uint8_t* buf, size_t size, bool check_crc) {
     if (!gba || !buf) return SS_ERR_FILE_READ;
 
@@ -1166,74 +1243,21 @@ static SaveStateResult load_from_buffer(GBA* gba, const uint8_t* buf, size_t siz
         return SS_ERR_CORRUPT;
     }
 
-    /* Parse chunks */
-    const uint8_t* cur = buf + header_size;
+    const uint8_t* body = buf + header_size;
     const uint8_t* end = buf + size;
 
-    while (end - cur >= 8) {
-        uint32_t chunk_id = (uint32_t)cur[0]
-                          | ((uint32_t)cur[1] << 8)
-                          | ((uint32_t)cur[2] << 16)
-                          | ((uint32_t)cur[3] << 24);
-        uint32_t chunk_size = (uint32_t)cur[4]
-                            | ((uint32_t)cur[5] << 8)
-                            | ((uint32_t)cur[6] << 16)
-                            | ((uint32_t)cur[7] << 24);
-        cur += 8;
-
-        if (chunk_size > (size_t)(end - cur)) {
-            LOG_ERROR("Save state: chunk 0x%08X truncated (need %u, have %td)",
-                      chunk_id, chunk_size, end - cur);
-            return SS_ERR_TRUNCATED;
-        }
-
-        /* Known chunks have a fixed layout; a declared size that doesn't
-         * match would let the loader read past the chunk (and possibly
-         * the buffer).  Reject before dispatch. */
-        uint32_t expected = expected_chunk_payload(chunk_id);
-        if (expected != 0 && chunk_size != expected) {
-            LOG_ERROR("Save state: chunk 0x%08X size %u != expected %u",
-                      chunk_id, chunk_size, expected);
-            return SS_ERR_CORRUPT;
-        }
-
-        const uint8_t* chunk_data = cur;
-        bool valid = true;
-
-        switch (chunk_id) {
-        case CHUNK_GBA:  load_gba_chunk(&chunk_data, gba);                      break;
-        case CHUNK_CPU:  valid = load_cpu_chunk(&chunk_data, &gba->cpu);        break;
-        case CHUNK_BRAM: load_bram_chunk(&chunk_data, &gba->bus);               break;
-        case CHUNK_DMA:  valid = load_dma_chunk(&chunk_data, &gba->dma);        break;
-        case CHUNK_PPU:  valid = load_ppu_chunk(&chunk_data, &gba->ppu);        break;
-        case CHUNK_APU:  valid = load_apu_chunk(&chunk_data, &gba->apu);        break;
-        case CHUNK_TMR:  valid = load_tmr_chunk(&chunk_data, gba->timers);      break;
-        case CHUNK_IRQ:  load_irq_chunk(&chunk_data, &gba->interrupts);         break;
-        case CHUNK_CART: valid = load_cart_chunk(&chunk_data, &gba->cart);      break;
-        case CHUNK_INPT: load_inpt_chunk(&chunk_data, &gba->input);             break;
-        case CHUNK_SIO:  valid = load_sio_chunk(&chunk_data, &gba->sio);        break;
-        default:
-            LOG_WARN("Save state: skipping unknown chunk 0x%08X (%u bytes)",
-                     chunk_id, chunk_size);
-            break;
-        }
-
-        if (!valid) {
-            LOG_ERROR("Save state: chunk 0x%08X has an out-of-range field", chunk_id);
-            return SS_ERR_CORRUPT;
-        }
-
-        /* A known chunk's loader must consume exactly the declared size —
-         * anything else means the save/load field layouts have drifted
-         * apart and the state would load silently corrupt. */
-        if (expected != 0 && (size_t)(chunk_data - cur) != chunk_size) {
-            LOG_ERROR("Save state: chunk 0x%08X loader consumed %td of %u bytes",
-                      chunk_id, chunk_data - cur, chunk_size);
-            return SS_ERR_CORRUPT;
-        }
-
-        cur += chunk_size;
+    /* Validate every chunk on a scratch machine first, so a file that fails
+     * part-way never leaves the live one half restored. Rewind snapshots
+     * skip this: this process wrote them, so they always parse. */
+    if (check_crc) {
+        GBA* scratch = (GBA*)calloc(1, sizeof(GBA));
+        if (!scratch) return SS_ERR_FILE_READ;
+        SaveStateResult r = parse_chunks(scratch, body, end, true);
+        free(scratch);
+        if (r != SS_OK) return r;
     }
+    SaveStateResult r = parse_chunks(gba, body, end, false);
+    if (r != SS_OK) return r;
 
     /* Reset APU ring buffer positions to avoid stale audio data */
     gba->apu.write_pos = 0;

@@ -535,6 +535,26 @@ TEST(savestate_rejected_flash_bank_is_not_applied) {
     ASSERT_TRUE(bank <= 1);
 }
 
+TEST(savestate_failed_load_leaves_machine_untouched) {
+    /* BRAM is saved before CART, so a bad CART field used to leave the
+     * file's RAM applied on top of the running machine. */
+    GBA gba;
+    gba_init(&gba);
+    gba.bus.ewram[0] = 0x5A;
+    uint8_t* buf = NULL;
+    size_t size = 0;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &buf, &size));
+
+    SsPatch p[1] = { { CHUNK_CART, CART_OFF_FLASH_BANK, 0x40 } };
+    SaveStateResult r = load_patched(buf, size, p, 1);
+    uint8_t ewram0 = ss_patch_target.bus.ewram[0];
+    gba_destroy(&ss_patch_target);
+    free(buf);
+    gba_destroy(&gba);
+    ASSERT_EQ(r, SS_ERR_CORRUPT);
+    ASSERT_EQ(ewram0, 0);
+}
+
 TEST(savestate_accepts_in_range_edge_values) {
     /* Legitimate edge values must keep loading. */
     GBA gba;
@@ -686,6 +706,7 @@ void run_savestate_tests(void) {
     RUN_TEST(savestate_load_rejects_lying_chunk_size);
     RUN_TEST(savestate_load_rejects_out_of_range_fields);
     RUN_TEST(savestate_rejected_flash_bank_is_not_applied);
+    RUN_TEST(savestate_failed_load_leaves_machine_untouched);
     RUN_TEST(savestate_accepts_in_range_edge_values);
 #ifndef _WIN32
     RUN_TEST(savestate_save_is_atomic_replace);
