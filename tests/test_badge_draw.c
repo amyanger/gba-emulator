@@ -51,7 +51,7 @@ TEST(badge_draw_tint_and_missing) {
     make_px(px);
     UiCanvas c;
     canvas(&c, 1.0f);   /* k = 2, 32 px square at (0,0) when the box is at 0,0 */
-    badge_draw(&c, 0, 0, px, GAME_REGION_HOENN, 1, true);
+    badge_draw(&c, 0, 0, 32.0f, px, GAME_REGION_HOENN, 1, true);
     /* badge 1 base 0xD9A85B; ROM pixel (x,0) covers device (2x..2x+1, 0..1) */
     ASSERT_EQ_HEX(s_px[0 * W + 0], BG);   /* index 0 untouched */
     ASSERT_EQ_HEX(s_px[0 * W + 6], 0xFFD9A85Bu);   /* index 3 is the base colour */
@@ -63,7 +63,7 @@ TEST(badge_draw_tint_and_missing) {
     ASSERT_EQ_HEX(s_px[3 * W + 30], 0xFF302514u);
 
     canvas(&c, 1.0f);
-    badge_draw(&c, 0, 0, px, GAME_REGION_HOENN, 1, false);
+    badge_draw(&c, 0, 0, 32.0f, px, GAME_REGION_HOENN, 1, false);
     ASSERT_EQ_HEX(s_px[0 * W + 6], MISSING);
     ASSERT_EQ_HEX(s_px[0 * W + 0], BG);
 }
@@ -76,7 +76,7 @@ TEST(badge_draw_square_size_follows_scale) {
     for (int s = 0; s < 5; s++) {
         UiCanvas c;
         canvas(&c, scales[s]);
-        badge_draw(&c, 20, 20, px, GAME_REGION_HOENN, 0, true);
+        badge_draw(&c, 20, 20, 32.0f, px, GAME_REGION_HOENN, 0, true);
         int x0, y0, x1, y1;
         bounds(&x0, &y0, &x1, &y1);
         ASSERT_EQ(x1 - x0 + 1, 16 * ks[s]);
@@ -93,10 +93,10 @@ TEST(badge_draw_clips) {
     memset(px, 3, 256);
     UiCanvas c;
     canvas(&c, 1.0f);
-    badge_draw(&c, -30, -30, px, GAME_REGION_HOENN, 0, true);
-    badge_draw(&c, 150, 150, px, GAME_REGION_HOENN, 0, true);
+    badge_draw(&c, -30, -30, 32.0f, px, GAME_REGION_HOENN, 0, true);
+    badge_draw(&c, 150, 150, 32.0f, px, GAME_REGION_HOENN, 0, true);
     ui_canvas_clip(&c, (UiRect){50, 50, 10, 10});
-    badge_draw(&c, 40, 40, px, GAME_REGION_HOENN, 0, true);
+    badge_draw(&c, 40, 40, 32.0f, px, GAME_REGION_HOENN, 0, true);
     ASSERT_EQ_HEX(s_px[49 * W + 55], BG);
     ASSERT_EQ_HEX(s_px[55 * W + 55], 0xFFA8B0C4u);
 }
@@ -106,7 +106,7 @@ TEST(badge_draw_rainbow_is_coloured) {
     memset(px, 3, 256);
     UiCanvas c;
     canvas(&c, 1.0f);
-    badge_draw(&c, 0, 0, px, GAME_REGION_KANTO, 3, true);
+    badge_draw(&c, 0, 0, 32.0f, px, GAME_REGION_KANTO, 3, true);
     int hues = 0;
     for (int sy = 0; sy < 16; sy++)
         for (int sx = 0; sx < 16; sx++) {
@@ -119,7 +119,7 @@ TEST(badge_draw_rainbow_is_coloured) {
     ASSERT_TRUE(hues > 250);
     /* the same badge missing stays flat */
     canvas(&c, 1.0f);
-    badge_draw(&c, 0, 0, px, GAME_REGION_KANTO, 3, false);
+    badge_draw(&c, 0, 0, 32.0f, px, GAME_REGION_KANTO, 3, false);
     ASSERT_EQ_HEX(s_px[0], MISSING);
     ASSERT_EQ_HEX(s_px[31 * W + 31], MISSING);
 }

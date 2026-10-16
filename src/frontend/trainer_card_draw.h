@@ -5,6 +5,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <time.h>
+#include "game/badge_pic.h"
 #include "game/game.h"
 #include "game/mon_pic.h"
 #include "game/trainer_card.h"
@@ -21,8 +22,9 @@ void trainer_card_path(const char* rom_path, time_t now, char* out, size_t out_s
 /* Nickname, or the species name when the nickname is empty or only '?' and spaces. Eggs give "Egg". */
 const char* trainer_card_display_name(const GamePartyMon* mon);
 /* ace < 0 (or an unusable slot) draws the Team grid whatever the style. */
+/* art NULL (or not ok) draws plain badge dots. */
 void trainer_card_draw(UiCanvas* c, const TrainerCardData* d, const uint32_t pics[6][MON_PIC_PIXELS],
-                       const bool pic_ok[6], CardStyle style, int ace);
+                       const bool pic_ok[6], CardStyle style, int ace, const BadgeArt* art);
 /* C with no Ctrl/Cmd/Alt and not a repeat; Shift picks the Ace style. Returns 0 for no card,
  * else 1 + CardStyle. */
 uint8_t trainer_card_key_request(int32_t scancode, uint16_t mod, bool repeat);

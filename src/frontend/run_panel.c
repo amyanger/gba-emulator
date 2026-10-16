@@ -129,7 +129,7 @@ static void badge_cell(UiCanvas* c, float x, float w, const RunView* v, int b, c
     ui_fill_round_rect(c, (UiRect){x, BADGE_Y, w, BADGE_H}, UI_RADIUS, UI_SURFACE);
     float cx = x + w / 2;
     if (art && art->ok) {
-        badge_draw(c, cx - 16.0f, BADGE_Y + 6.0f, art->px[b], region, b, have);
+        badge_draw(c, cx - 16.0f, BADGE_Y + 6.0f, 32.0f, art->px[b], region, b, have);
     } else {
         float cy = BADGE_Y + 22.0f;
         if (have) ui_fill_round_rect(c, (UiRect){cx - 6.0f, cy - 6.0f, 12.0f, 12.0f}, 6.0f, UI_MID);

@@ -73,7 +73,7 @@ TEST(card_draw_smoke_both_styles) {
     for (int style = 0; style < 2; style++) {
         memset(s_px, 0, sizeof s_px);
         ui_canvas_init(&c, s_px, CARD_W, CARD_H, 1.0f);
-        trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, (CardStyle)style, 0);
+        trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, (CardStyle)style, 0, NULL);
         ASSERT_EQ_HEX(s_px[5 * CARD_W + CARD_W - 5], UI_BG);
         ASSERT_TRUE(has_color(0xFFFF0000u));
     }
@@ -83,8 +83,8 @@ TEST(card_draw_smoke_both_styles) {
     for (int style = 0; style < 2; style++) {
         memset(s_px, 0, sizeof s_px);
         ui_canvas_init(&c, s_px, CARD_W, CARD_H, 1.0f);
-        trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, (CardStyle)style, 0);
-        trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, (CardStyle)style, -1);
+        trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, (CardStyle)style, 0, NULL);
+        trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, (CardStyle)style, -1, NULL);
     }
 }
 
@@ -98,13 +98,44 @@ TEST(card_badge_colors_follow_the_region) {
     UiCanvas c;
     memset(s_px, 0, sizeof s_px);
     ui_canvas_init(&c, s_px, CARD_W, CARD_H, 1.0f);
-    trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, CARD_STYLE_GRID, -1);
+    trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, CARD_STYLE_GRID, -1, NULL);
     ASSERT_TRUE(!has_color(0xFF4C9BFFu));
     d.region = GAME_REGION_KANTO;
     memset(s_px, 0, sizeof s_px);
     ui_canvas_init(&c, s_px, CARD_W, CARD_H, 1.0f);
-    trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, CARD_STYLE_GRID, -1);
+    trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, CARD_STYLE_GRID, -1, NULL);
     ASSERT_TRUE(has_color(0xFF4C9BFFu));
+}
+
+static int count_color(uint32_t argb) {
+    int n = 0;
+    for (int i = 0; i < CARD_W * CARD_H; i++) n += s_px[i] == argb;
+    return n;
+}
+
+/* With ROM art each badge is a whole 32x32 square (a dot is 18 px across), missing ones a silhouette. */
+TEST(card_badges_use_rom_art) {
+    static TrainerCardData d;
+    static BadgeArt art;
+    memset(&d, 0, sizeof d);
+    strcpy(d.name, "RED");
+    d.region = GAME_REGION_KANTO;
+    d.badges = 0x02;
+    d.count = 1;
+    d.party[0].present = true;
+    strcpy(d.party[0].species, "CHARIZARD");
+    memset(&art, 0, sizeof art);
+    art.ok = true;
+    memset(art.px, 3, sizeof art.px);
+    bool ok[6] = {true, false, false, false, false, false};
+    UiCanvas c;
+    for (int style = 0; style < 2; style++) {
+        memset(s_px, 0, sizeof s_px);
+        ui_canvas_init(&c, s_px, CARD_W, CARD_H, 1.0f);
+        trainer_card_draw(&c, &d, (const uint32_t(*)[MON_PIC_PIXELS])s_pics, ok, (CardStyle)style, 0, &art);
+        ASSERT_EQ(count_color(0xFF4C9BFFu), 32 * 32);
+        ASSERT_EQ(count_color(0xFF2E3442u), 7 * 32 * 32);
+    }
 }
 
 /* R9: Cmd+C (copy), Ctrl/Alt chords and key repeat never export. */
@@ -127,5 +158,6 @@ void run_trainer_card_draw_tests(void) {
     RUN_TEST(card_display_name);
     RUN_TEST(card_draw_smoke_both_styles);
     RUN_TEST(card_badge_colors_follow_the_region);
+    RUN_TEST(card_badges_use_rom_art);
     RUN_TEST(card_key_request);
 }

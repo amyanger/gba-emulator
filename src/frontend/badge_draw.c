@@ -1,7 +1,6 @@
 #include "frontend/badge_draw.h"
 #include <math.h>
 
-#define BADGE_BOX     32.0f
 #define MISSING_COLOR 0xFF2E3442u
 #define KANTO_RAINBOW 3
 
@@ -49,12 +48,13 @@ static uint32_t rainbow_base(int x, int y) {
     return 0xFF000000u | r << 16 | g << 8 | b;
 }
 
-void badge_draw(UiCanvas* c, float x, float y, const uint8_t px[256], GameRegion r, int i, bool have) {
-    int k = (int)(2.0f * c->scale + 0.25f);
+void badge_draw(UiCanvas* c, float x, float y, float box, const uint8_t px[256], GameRegion r, int i,
+                bool have) {
+    int k = (int)(box / 16.0f * c->scale + 0.25f);
     if (k < 1) k = 1;
     int side = 16 * k;
-    int ox = ui_px(c, x + BADGE_BOX / 2) - side / 2;
-    int oy = ui_px(c, y + BADGE_BOX / 2) - side / 2;
+    int ox = ui_px(c, x + box / 2) - side / 2;
+    int oy = ui_px(c, y + box / 2) - side / 2;
     bool rainbow = have && r == GAME_REGION_KANTO && i == KANTO_RAINBOW;
     uint32_t base = badge_color(r, i);
     for (int sy = 0; sy < 16; sy++)

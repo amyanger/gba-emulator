@@ -78,10 +78,16 @@ static void draw_pic(UiCanvas* c, float x, float y, float size, const uint32_t p
     else placeholder(c, x, y, size);
 }
 
-static void badge_row(UiCanvas* c, float x, float y, const TrainerCardData* d, float size) {
+/* Badges centred on a row at cy: the ROM art when there is some (size 16 or 32 keeps the 1x card's
+ * pixels whole), else coloured dots. */
+static void badge_row(UiCanvas* c, float x, float cy, const TrainerCardData* d, float size,
+                      const BadgeArt* art) {
+    float y = cy - size / 2;
     for (int i = 0; i < 8; i++) {
         float bx = x + (float)i * (size + 6.0f);
-        if (d->badges & (1u << i))
+        if (art && art->ok)
+            badge_draw(c, bx, y, size, art->px[i], (GameRegion)d->region, i, (d->badges & (1u << i)) != 0);
+        else if (d->badges & (1u << i))
             ui_fill_round_rect(c, (UiRect){bx, y, size, size}, size / 2, badge_color(d->region, i));
         else
             ui_ring(c, bx + size / 2, y + size / 2, size / 2 - 1.0f, 2.0f, UI_DIVIDER);
@@ -134,7 +140,7 @@ static void stat_block(UiCanvas* c, float right, float* x_out, const char* label
 /* ---- Team grid ---- */
 
 static void draw_grid(UiCanvas* c, const TrainerCardData* d, const uint32_t pics[6][MON_PIC_PIXELS],
-                      const bool pic_ok[6]) {
+                      const bool pic_ok[6], const BadgeArt* art) {
     ui_canvas_clear(c, UI_BG);
     char buf[96];
 
@@ -146,8 +152,9 @@ static void draw_grid(UiCanvas* c, const TrainerCardData* d, const uint32_t pics
 
     float right = (float)CARD_W - 40.0f, x;
     ui_text(c, UI_FONT_REGULAR, 11.0f, right, 56.0f, 0, UI_ALIGN_RIGHT, UI_DIM, "BADGES");
-    badge_row(c, right - badge_row_width(18.0f), 82.0f, d, 18.0f);
-    right -= badge_row_width(18.0f) + 34.0f;
+    float bs = art && art->ok ? 32.0f : 18.0f;
+    badge_row(c, right - badge_row_width(bs), 91.0f, d, bs, art);
+    right -= badge_row_width(bs) + 34.0f;
     snprintf(buf, sizeof buf, "%u", (unsigned)d->dex_owned);
     stat_block(c, right, &x, "POKEDEX", buf);
     right = x - 34.0f;
@@ -213,7 +220,7 @@ static void glow(UiCanvas* c, float cx, float cy, float radius) {
 }
 
 static void draw_ace(UiCanvas* c, const TrainerCardData* d, const uint32_t pics[6][MON_PIC_PIXELS],
-                     const bool pic_ok[6], int ace) {
+                     const bool pic_ok[6], int ace, const BadgeArt* art) {
     ui_canvas_clear(c, UI_BG);
     const GamePartyMon* a = &d->party[ace];
     char buf[96];
@@ -253,7 +260,12 @@ static void draw_ace(UiCanvas* c, const TrainerCardData* d, const uint32_t pics[
     float pw = ui_text(c, UI_FONT_SEMIBOLD, 18.0f, x, by + 16.0f, 0, UI_ALIGN_LEFT, UI_TEXT, buf);
     x += (pw > 70.0f ? pw : 70.0f) + 30.0f;
     ui_text(c, UI_FONT_REGULAR, 11.0f, x, by, 0, UI_ALIGN_LEFT, UI_DIM, "BADGES");
-    badge_row(c, x, by + 19.0f, d, 15.0f);
+    if (art && art->ok) {
+        float bs = x + badge_row_width(32.0f) <= LEFT_W - 34.0f ? 32.0f : 16.0f;
+        badge_row(c, x, by + 32.0f, d, bs, art);
+    } else {
+        badge_row(c, x, by + 26.5f, d, 15.0f, art);
+    }
 
     /* Right column */
     ui_fill_rect(c, (UiRect){LEFT_W, 0.0f, 1.0f, (float)CARD_H}, UI_DIVIDER);
@@ -283,9 +295,9 @@ static void draw_ace(UiCanvas* c, const TrainerCardData* d, const uint32_t pics[
 }
 
 void trainer_card_draw(UiCanvas* c, const TrainerCardData* d, const uint32_t pics[6][MON_PIC_PIXELS],
-                       const bool pic_ok[6], CardStyle style, int ace) {
-    if (style == CARD_STYLE_ACE && slot_ok(d, ace) && !d->party[ace].egg) draw_ace(c, d, pics, pic_ok, ace);
-    else draw_grid(c, d, pics, pic_ok);
+                       const bool pic_ok[6], CardStyle style, int ace, const BadgeArt* art) {
+    if (style == CARD_STYLE_ACE && slot_ok(d, ace) && !d->party[ace].egg) draw_ace(c, d, pics, pic_ok, ace, art);
+    else draw_grid(c, d, pics, pic_ok, art);
 }
 
 bool trainer_card_save(const GameState* gs, const GameMem* m, const TrainerCardData* d,
@@ -301,7 +313,7 @@ bool trainer_card_save(const GameState* gs, const GameMem* m, const TrainerCardD
     }
     UiCanvas c;
     ui_canvas_init(&c, px, CARD_W, CARD_H, 1.0f);
-    trainer_card_draw(&c, d, (const uint32_t(*)[MON_PIC_PIXELS])pics, ok, style, ace);
+    trainer_card_draw(&c, d, (const uint32_t(*)[MON_PIC_PIXELS])pics, ok, style, ace, &gs->badge_art);
     bool r = screenshot_save_argb(px, CARD_W, CARD_H, path);
     free(px);
     free(pics);
