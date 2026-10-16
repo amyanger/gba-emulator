@@ -160,7 +160,6 @@ set(CORE_SOURCES
     src/game/badge_pic.c
     src/game/trainer_card.c
     src/hgss/nds_fs.c
-    src/hgss/hgss_gfx.c
     src/hgss/hgss_talk.c
     src/hgss/hgss_assets.c
     src/ui/ui_stb.c
@@ -273,8 +272,8 @@ endif()
 file(GLOB HGSS_RS_SOURCES CONFIGURE_DEPENDS "${HGSS_RS_DIR}/src/*.rs")
 add_custom_command(
     OUTPUT "${HGSS_RS_LIB}"
-    # --unset=MAKEFLAGS: make's jobserver fds do not reach cargo, which warns about it.
-    COMMAND ${CMAKE_COMMAND} -E env --unset=MAKEFLAGS ${HGSS_RS_ENV}
+    # make's jobserver fds do not reach cargo, which then warns, so hide the flags.
+    COMMAND ${CMAKE_COMMAND} -E env --unset=MAKEFLAGS --unset=MFLAGS --unset=CARGO_MAKEFLAGS ${HGSS_RS_ENV}
             "${CARGO}" build --release --locked
             --manifest-path "${HGSS_RS_DIR}/Cargo.toml" --target-dir "${HGSS_RS_TARGET_DIR}"
     DEPENDS ${HGSS_RS_SOURCES} "${HGSS_RS_DIR}/Cargo.toml" "${HGSS_RS_DIR}/Cargo.lock"

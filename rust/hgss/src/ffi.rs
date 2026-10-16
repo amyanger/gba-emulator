@@ -3,7 +3,7 @@
 use core::mem::size_of;
 use core::slice;
 
-use crate::msg;
+use crate::{gfx, msg};
 
 /// # Safety
 /// `p` points to `len` readable bytes, or is null.
@@ -40,6 +40,12 @@ unsafe fn units_mut<'a>(p: *mut u16, n: u32) -> &'a mut [u16] {
 pub extern "C" fn hgss_rs_layout(what: u32) -> u32 {
     let v = match what {
         0 => size_of::<msg::StrVars>(),
+        1 => size_of::<gfx::FollowerGfx>(),
+        2 => size_of::<gfx::EmoteGfx>(),
+        3 => size_of::<gfx::BallGfx>(),
+        4 => size_of::<gfx::BurstGfx>(),
+        5 => size_of::<gfx::FrameGfx>(),
+        6 => size_of::<gfx::Font>(),
         _ => 0,
     };
     v as u32
@@ -116,4 +122,69 @@ pub unsafe extern "C" fn hgss_str_from_gen3(src: *const u8, len: u32, dst: *mut 
         n += 1;
     }
     msg::str_from_gen3(bytes(src, n as u32), units_mut(dst, cap));
+}
+
+/// # Safety
+/// `btx` points to `len` bytes, `out` to one HgssFollowerGfx.
+#[no_mangle]
+pub unsafe extern "C" fn hgss_gfx_follower(btx: *const u8, len: u32, out: *mut gfx::FollowerGfx) -> bool {
+    !out.is_null() && gfx::follower(bytes(btx, len), &mut *out).is_some()
+}
+
+/// # Safety
+/// `btx` points to `len` bytes, `out` to one HgssEmoteGfx.
+#[no_mangle]
+pub unsafe extern "C" fn hgss_gfx_emote(btx: *const u8, len: u32, out: *mut gfx::EmoteGfx) -> bool {
+    !out.is_null() && gfx::emote(bytes(btx, len), &mut *out).is_some()
+}
+
+/// # Safety
+/// `bmd` points to `len` bytes, `out` to one HgssBallGfx.
+#[no_mangle]
+pub unsafe extern "C" fn hgss_gfx_ball(bmd: *const u8, len: u32, out: *mut gfx::BallGfx) -> bool {
+    !out.is_null() && gfx::ball(bytes(bmd, len), &mut *out).is_some()
+}
+
+/// # Safety
+/// `bmd` points to `len` bytes, `out` to one HgssBurstGfx.
+#[no_mangle]
+pub unsafe extern "C" fn hgss_gfx_burst(bmd: *const u8, len: u32, out: *mut gfx::BurstGfx) -> bool {
+    !out.is_null() && gfx::burst(bytes(bmd, len), &mut *out).is_some()
+}
+
+/// # Safety
+/// `ncgr`/`nclr` point to their lengths in bytes, `out` to one HgssFrameGfx.
+#[no_mangle]
+pub unsafe extern "C" fn hgss_gfx_frame(
+    ncgr: *const u8,
+    ncgr_len: u32,
+    nclr: *const u8,
+    nclr_len: u32,
+    out: *mut gfx::FrameGfx,
+) -> bool {
+    !out.is_null() && gfx::frame(bytes(ncgr, ncgr_len), bytes(nclr, nclr_len), &mut *out).is_some()
+}
+
+/// # Safety
+/// `font`/`nclr` point to their lengths in bytes, `out` to one HgssFont.
+#[no_mangle]
+pub unsafe extern "C" fn hgss_gfx_font(
+    font: *const u8,
+    len: u32,
+    nclr: *const u8,
+    nclr_len: u32,
+    out: *mut gfx::Font,
+) -> bool {
+    !out.is_null() && gfx::font(bytes(font, len), bytes(nclr, nclr_len), &mut *out).is_some()
+}
+
+/// # Safety
+/// `f` points to one HgssFont.
+#[no_mangle]
+pub unsafe extern "C" fn hgss_font_pixel(f: *const gfx::Font, glyph: u16, x: u32, y: u32) -> u8 {
+    if f.is_null() {
+        0
+    } else {
+        gfx::font_pixel(&*f, glyph, x, y)
+    }
 }
