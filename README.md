@@ -43,46 +43,46 @@ The apps aren't signed with a paid certificate, so macOS and Windows ask you to 
 | **[Screen filters](docs/usage.md#screen-filters)** | | Smooth out jagged pixel edges and match the colors of a real GBA screen. |
 | **[HQ music](docs/hq-music.md)** | H | Game music re-mixed in high quality for games that use the standard MP2K sound driver. |
 
-### Pokemon Emerald extras
+### Pokémon Companion
 
-These need the original, unmodified Pokemon Emerald (US/English) ROM. Every other game still runs normally.
+These need the original, unmodified US/English ROM of Pokémon Emerald, FireRed (1.0) or LeafGreen (1.1). Every other game still runs normally.
 
 | Feature | Key | What it does |
 |---------|-----|--------------|
-| **[Emerald Companion](docs/emerald-companion.md)** | F9 | A side panel with live info from your game. F10 switches pages. |
-| &nbsp;&nbsp;[Battle](docs/emerald-companion.md#battle) | | The opponent's IVs, nature, ability and held item, move matchups both ways, and in wild battles the catch odds for each ball. |
-| &nbsp;&nbsp;[Damage](docs/emerald-companion.md#damage) | | Predicted damage as a percent of HP on every move in a battle, with KO coloring, for your moves and the enemy's. |
-| &nbsp;&nbsp;[Party](docs/emerald-companion.md#party) | | Your Pokemon's hidden stats: IVs, EVs, Hidden Power, friendship. |
-| &nbsp;&nbsp;[Daycare](docs/emerald-companion.md#daycare) | | Your Daycare Pokemon, egg odds and the next roll, what the egg will be (even if it's shiny) and steps until each egg hatches. |
-| &nbsp;&nbsp;[Trainer card](docs/emerald-companion.md#trainer-card) | C | Save a shareable picture of your team, as a grid or with your ace up front. |
-| &nbsp;&nbsp;[Route](docs/emerald-companion.md#route) | | The wild encounter table for where you are, with caught Pokemon checked off. |
-| &nbsp;&nbsp;[Mirage Island](docs/emerald-companion.md#mirage-island) | J, twice | Which of your Pokemon raises Mirage Island today and when it next will, then jump the clock to that day. |
-| &nbsp;&nbsp;[Nuzlocke](docs/emerald-companion.md#nuzlocke) | N | Logs each area's first encounter, every death and any reload after a death. |
-| &nbsp;&nbsp;[Berries](docs/emerald-companion.md#berries) | B | Every berry tree you've planted, with growth, watering and countdowns, plus a toast when berries are ripe, need water or are about to drop. |
-| &nbsp;&nbsp;[Search](docs/emerald-companion.md#search) | / | Type a Pokemon's name to see every wild spot with levels and odds, or how to get it by evolution or breeding. |
-| &nbsp;&nbsp;[Hunt](docs/emerald-companion.md#hunt) | [ ] | Shiny hunting in tall grass: counts every encounter, shows the next Pokemon and when a match comes up. |
-| &nbsp;&nbsp;[Run stats](docs/emerald-companion.md#run) | F10 | Your playthrough's story: badge times, catches, faints, evolutions, an MVP and the game's own counters. |
-| **[Overworld X-Ray](docs/emerald-companion.md#overworld-x-ray)** | F4 | Trainer sight lines, item names, NPC gifts and the hidden Feebas tiles drawn right on the map. |
-| **[Following Pokemon](docs/usage.md#following-pokemon)** | F1 | Your lead Pokemon walks behind you and talks like it does in HeartGold and SoulSilver, using your own HeartGold or SoulSilver ROM. |
+| **[Pokémon Companion](docs/pokemon-companion.md)** | F9 | A side panel with live info from your game. F10 switches pages. Works with Emerald, [FireRed and LeafGreen](docs/pokemon-companion.md#firered-and-leafgreen). |
+| &nbsp;&nbsp;[Battle](docs/pokemon-companion.md#battle) | | The opponent's IVs, nature, ability and held item, move matchups both ways, and in wild battles the catch odds for each ball. |
+| &nbsp;&nbsp;[Damage](docs/pokemon-companion.md#damage) | | Predicted damage as a percent of HP on every move in a battle, with KO coloring, for your moves and the enemy's. |
+| &nbsp;&nbsp;[Party](docs/pokemon-companion.md#party) | | Your Pokemon's hidden stats: IVs, EVs, Hidden Power, friendship. |
+| &nbsp;&nbsp;[Daycare](docs/pokemon-companion.md#daycare) | | Your Daycare Pokemon, egg odds and the next roll, what the egg will be (even if it's shiny) and steps until each egg hatches. |
+| &nbsp;&nbsp;[Trainer card](docs/pokemon-companion.md#trainer-card) | C | Save a shareable picture of your team, as a grid or with your ace up front. |
+| &nbsp;&nbsp;[Route](docs/pokemon-companion.md#route) | | The wild encounter table for where you are, with caught Pokemon checked off. |
+| &nbsp;&nbsp;[Mirage Island](docs/pokemon-companion.md#mirage-island) | J, twice | Which of your Pokemon raises Mirage Island today and when it next will, then jump the clock to that day. (Emerald only) |
+| &nbsp;&nbsp;[Nuzlocke](docs/pokemon-companion.md#nuzlocke) | N | Logs each area's first encounter, every death and any reload after a death. |
+| &nbsp;&nbsp;[Berries](docs/pokemon-companion.md#berries) | B | Every berry tree you've planted, with growth, watering and countdowns, plus a toast when berries are ripe, need water or are about to drop. (Emerald only) |
+| &nbsp;&nbsp;[Search](docs/pokemon-companion.md#search) | / | Type a Pokemon's name to see every wild spot with levels and odds, or how to get it by evolution or breeding. |
+| &nbsp;&nbsp;[Hunt](docs/pokemon-companion.md#hunt) | [ ] | Shiny hunting in tall grass: counts every encounter, shows the next Pokemon and when a match comes up. (Emerald only) |
+| &nbsp;&nbsp;[Run stats](docs/pokemon-companion.md#run) | F10 | Your playthrough's story: badge times, catches, faints, evolutions, an MVP and the game's own counters. |
+| **[Overworld X-Ray](docs/pokemon-companion.md#overworld-x-ray)** | F4 | Trainer sight lines, item names, NPC gifts and the hidden Feebas tiles drawn right on the map. (Emerald only) |
+| **[Following Pokemon](docs/usage.md#following-pokemon)** | F1 | Your lead Pokemon walks behind you and talks like it does in HeartGold and SoulSilver, using your own HeartGold or SoulSilver ROM (Emerald only). |
 
 ## Screenshots
 
 <table>
 <tr>
-<td width="50%"><a href="docs/emerald-companion.md#battle"><img src="docs/screenshots/panel-battle.png" alt="Emerald Companion beside a wild battle against a Poochyena, showing your Swampert's moves and the Poochyena's moves"></a><br><b>Battle:</b> IVs, nature and matchups for a wild Poochyena</td>
-<td width="50%"><a href="docs/emerald-companion.md#berries"><img src="docs/screenshots/panel-berries-ripe.png" alt="Route 102 with a ripe Pecha tree, and the Berries page listing it under Needs you"></a><br><b>Berries:</b> a ripe Pecha, 10 hours before it drops</td>
+<td width="50%"><a href="docs/pokemon-companion.md#battle"><img src="docs/screenshots/panel-battle.png" alt="Pokémon Companion beside a wild battle against a Poochyena, showing your Swampert's moves and the Poochyena's moves"></a><br><b>Battle:</b> IVs, nature and matchups for a wild Poochyena</td>
+<td width="50%"><a href="docs/pokemon-companion.md#berries"><img src="docs/screenshots/panel-berries-ripe.png" alt="Route 102 with a ripe Pecha tree, and the Berries page listing it under Needs you"></a><br><b>Berries:</b> a ripe Pecha, 10 hours before it drops</td>
 </tr>
 <tr>
-<td><a href="docs/emerald-companion.md#nuzlocke"><img src="docs/screenshots/panel-nuzlocke-routes.png" alt="Nuzlocke page listing every area used so far with what was met there"></a><br><b>Nuzlocke:</b> every area used and what you met there</td>
-<td><a href="docs/emerald-companion.md#mirage-island"><img src="docs/screenshots/panel-mirage-forecast.png" alt="Route page in Lilycove City with the Mirage Island forecast"></a><br><b>Mirage Island:</b> which Pokemon raises it, and when</td>
+<td><a href="docs/pokemon-companion.md#nuzlocke"><img src="docs/screenshots/panel-nuzlocke-routes.png" alt="Nuzlocke page listing every area used so far with what was met there"></a><br><b>Nuzlocke:</b> every area used and what you met there</td>
+<td><a href="docs/pokemon-companion.md#mirage-island"><img src="docs/screenshots/panel-mirage-forecast.png" alt="Route page in Lilycove City with the Mirage Island forecast"></a><br><b>Mirage Island:</b> which Pokemon raises it, and when</td>
 </tr>
 <tr>
 <td><a href="docs/usage.md#following-pokemon"><img src="docs/screenshots/following-talk.png" width="100%" alt="Latios following the player in Lilycove City, saying LATIOS looks very happy! in the HeartGold text box"></a><br><b>Following Pokemon:</b> Latios in Lilycove City</td>
-<td><a href="docs/emerald-companion.md#party"><img src="docs/screenshots/panel-party.png" alt="Party page showing a Torchic's stats, IVs and EVs"></a><br><b>Party:</b> hidden stats for each Pokemon</td>
+<td><a href="docs/pokemon-companion.md#party"><img src="docs/screenshots/panel-party.png" alt="Party page showing a Torchic's stats, IVs and EVs"></a><br><b>Party:</b> hidden stats for each Pokemon</td>
 </tr>
 <tr>
-<td><a href="docs/emerald-companion.md#search"><img src="docs/screenshots/panel-search-typing.png" alt="Search page with ra typed in, the list narrowed to matching names and Ralts picked, showing its Route 102 grass spot"></a><br><b>Search:</b> the list narrows as you type</td>
-<td><a href="docs/emerald-companion.md#search"><img src="docs/screenshots/panel-search.png" alt="Search page for Gardevoir, showing it evolves from Kirlia at Lv 30 and Ralts at Lv 20, with Ralts caught on Route 102"></a><br><b>Search:</b> not wild? It shows the evolution path</td>
+<td><a href="docs/pokemon-companion.md#search"><img src="docs/screenshots/panel-search-typing.png" alt="Search page with ra typed in, the list narrowed to matching names and Ralts picked, showing its Route 102 grass spot"></a><br><b>Search:</b> the list narrows as you type</td>
+<td><a href="docs/pokemon-companion.md#search"><img src="docs/screenshots/panel-search.png" alt="Search page for Gardevoir, showing it evolves from Kirlia at Lv 30 and Ralts at Lv 20, with Ralts caught on Route 102"></a><br><b>Search:</b> not wild? It shows the evolution path</td>
 </tr>
 </table>
 
@@ -105,7 +105,7 @@ Open the app and pick a game from the library, or run it from a terminal:
 |-----|------|
 | F2 | Hardware X-Ray Mode |
 | F4 | Overworld X-Ray (Pokemon Emerald) |
-| F9 | Emerald Companion (Pokemon Emerald) |
+| F9 | Pokémon Companion (Emerald, FireRed, LeafGreen) |
 | F5 / F8 | Save / load state |
 | Tab (hold) | Fast-forward |
 | Backspace (hold) | Rewind |
@@ -129,7 +129,7 @@ Build options, the architecture, the test suite and the golden-frame checks are 
 ## Documentation
 
 - [Using the emulator](docs/usage.md): installing, the game library, command-line options, all controls, settings, screen filters, Following Pokemon, headless mode, link cable, cheats
-- [Emerald Companion and Overworld X-Ray](docs/emerald-companion.md)
+- [Pokémon Companion and Overworld X-Ray](docs/pokemon-companion.md)
 - [Hardware X-Ray Mode](docs/hardware-xray.md)
 - [HQ music](docs/hq-music.md)
 - [Development](docs/development.md): building, what's emulated, architecture, project structure, testing, roadmap, references

@@ -68,7 +68,7 @@ Starting the emulator without a ROM opens the game library. It lists every `.gba
 | Drop a `.gba` on the window | Start that file |
 | Esc | Quit |
 
-The folder and the recently played list are kept in `library.txt` in the app's settings folder. Games the Emerald Companion supports get a **Companion** badge.
+The folder and the recently played list are kept in `library.txt` in the app's settings folder. Games Pokémon Companion supports get a **Companion** badge.
 
 ## Running from the command line
 
@@ -121,8 +121,8 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 | F2 | Toggle Hardware X-Ray Mode |
 | F3 | Toggle input display HUD (mini-GBA overlay showing held buttons) |
 | F4 | Show or hide Overworld X-Ray: trainer sight lines and hidden items on the map (original Pokemon Emerald US/English ROM only, remembered between launches) |
-| F9 | Show or hide Emerald Companion (original Pokemon Emerald US/English ROM only) |
-| F10 | Cycle the Emerald Companion page: Auto, Party, Route, Nuzlocke, Berries, Search, Hunt, Run (Auto shows the battle page during battles; a battle switches to Auto and the old page returns afterwards, except on the Hunt page, which stays up) |
+| F9 | Show or hide Pokémon Companion (original US/English Pokemon Emerald, FireRed 1.0 or LeafGreen 1.1) |
+| F10 | Cycle the Pokémon Companion page: Auto, Party, Route, Nuzlocke, Berries, Search, Hunt, Run (Berries and Hunt are Emerald only and hidden on FireRed and LeafGreen; Auto shows the battle page during battles; a battle switches to Auto and the old page returns afterwards, except on the Hunt page, which stays up) |
 | [ and ] | Select the previous or next Pokemon on the Party page, switch Nuzlocke views, open another place on the Berries page, move the Search selection, pick the target species on the Hunt page, or scroll the Run page (unless bound to a GBA button) |
 | / | Start typing a Pokemon name, on the Search page (unless bound to a GBA button) |
 | N | Start a Nuzlocke run, on the Nuzlocke page (unless bound to a GBA button) |
@@ -131,7 +131,7 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 | D | Switch between the dashboard and the Details sheet, on the Run page (unless bound to a GBA button) |
 | , and . | Pick the nature the Hunt page's Next match looks for (unless bound to a GBA button; Ctrl+, still opens Settings) |
 | R, twice | Reset the Hunt page's encounter counts: the first press arms it for 3 seconds, the second resets (unless bound to a GBA button) |
-| C, Shift+C | Save a trainer card of your team (original Pokemon Emerald US/English ROM only): C makes the team grid, Shift+C the ace showcase (use the left Shift key, because right Shift is the GBA Select button by default and would press Select too). Saved next to the ROM as `<rom>.YYYYMMDD-HHMMSS.card.png`; works with the panel open or closed and while paused (ignored if bound to a GBA button, and reserved in Settings > Controls) |
+| C, Shift+C | Save a trainer card of your team (original Pokemon Emerald, FireRed or LeafGreen US/English ROM): C makes the team grid, Shift+C the ace showcase (use the left Shift key, because right Shift is the GBA Select button by default and would press Select too). Saved next to the ROM as `<rom>.YYYYMMDD-HHMMSS.card.png`; works with the panel open or closed and while paused (ignored if bound to a GBA button, and reserved in Settings > Controls) |
 | F5 | Save state to current slot |
 | F6 | Edit label of current save-state slot |
 | F7 | Open save-state slot picker |
@@ -267,11 +267,11 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--hash-out <file>` | Write per-frame `<N> <FNV1a-hex>` lines. Defaults to stdout. |
 | `--screenshot-out <file>` | After the run, save the final framebuffer as PNG. |
 | `--input-script <file>` | Replay scripted keypad input. Headless only. Format below. |
-| `--panel-out <file>` | After the run, render the Emerald Companion panel to a PNG. Requires `--headless`. |
+| `--panel-out <file>` | After the run, render the Pokémon Companion panel to a PNG. Requires `--headless`. |
 | `--card-out <file>` | After the run, render the trainer card (1200x630 PNG). `--panel-select N` picks the ace. Requires `--headless`. |
 | `--card-style <s>` | Trainer card style, `grid` or `ace` (default `grid`). Requires `--headless`. |
 | `--panel-density <f>` | Panel pixels per point, 0.5 to 4.0 (default 1.0). Requires `--headless`. |
-| `--panel-page <p>` | Panel page: `auto`, `party`, `route`, `nuzlocke`, `berries`, `search`, `hunt` or `run` (default `auto`). Requires `--headless`. |
+| `--panel-page <p>` | Panel page: `auto`, `party`, `route`, `nuzlocke`, `berries`, `search`, `hunt` or `run` (default `auto`). `berries` and `hunt` exit with an error on FireRed and LeafGreen. Requires `--headless`. |
 | `--panel-search <text>` | Open the Search page with this text typed in. Implies `--panel-page search`, and is an error with any other page. Requires `--headless`. |
 | `--panel-select <n>` | Selected row on the party page, 0 to 5 for the party, then the Daycare rows (the two parents, then the breeding row) right after the last party Pokemon, which is 6 to 8 with a full party, the Nuzlocke view: 0 routes, 1 team, 2 graveyard, the open place on the Berries page, the Nth result on the Search page, 0 being the first, or 1 for the Details sheet on the Run page (default 0). Requires `--headless`. |
 | `--library-folder <dir>` | Game folder for the library, used only when none has been chosen yet. |
@@ -284,7 +284,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--overworld-out <file>` | After the run, write the final frame at 3x (720x480 PNG) with the Overworld X-Ray drawn on it. Requires `--headless`; original Pokemon Emerald (US) only. |
 | `--gift-audit <file>` | Walk every NPC in the ROM and list the Overworld X-Ray gift tags it would show, one line per NPC (`<group>.<map> lid=<id> <item>:<flag>`, hex). For checking the gift detection; original Pokemon Emerald (US) only. Requires `--headless`. |
 | `--follower-hgss <rom>` | Turn on Following Pokemon for the run, using this HeartGold or SoulSilver ROM. `--screenshot-out` then includes the text box during a talk. Never writes the mood file. Requires `--headless`; original Pokemon Emerald (US) only. |
-| `--game-dump <file>` | After the run, write the decoded Emerald game state (party, battle, encounters, an `[overworld]` section matching the final frame, and a `[feebas]` section listing the Route 119 Feebas tiles) to `file`. Requires `--headless`. |
+| `--game-dump <file>` | After the run, write the decoded game state (party, battle, encounters; on Emerald also an `[overworld]` section matching the final frame and a `[feebas]` section listing the Route 119 Feebas tiles) to `file`. Requires `--headless`. |
 
 An input script has one event per line, `<frame> <press|release> <KEY>`,
 where `<frame>` is the 0-based frame index (same as in `--hash-out`) and

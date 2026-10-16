@@ -1,23 +1,40 @@
-# Emerald Companion
+# Pokémon Companion
 
-Emerald Companion is a side panel that shows live info from your Pokemon Emerald game. It has pages for the battle you're in, your party's hidden stats, the wild Pokemon where you are, a Nuzlocke run, your berry trees, a Pokemon search, a shiny hunting page and the story of your playthrough. Press **F9** to open it next to the game.
+Pokémon Companion is a side panel that shows live info from your Pokémon Emerald, FireRed or LeafGreen game. It has pages for the battle you're in, your party's hidden stats, the wild Pokemon where you are, a Nuzlocke run, your berry trees (Emerald only), a Pokemon search, a shiny hunting page (Emerald only) and the story of your playthrough. Press **F9** to open it next to the game.
 
-**On this page:** [Battle](#battle) · [Party](#party) · [Route](#route) · [Mirage Island](#mirage-island) · [Nuzlocke](#nuzlocke) · [Berries](#berries) · [Search](#search) · [Hunt](#hunt) · [Run](#run) · [Details](#details) · [Overworld X-Ray](#overworld-x-ray)
+**On this page:** [FireRed and LeafGreen](#firered-and-leafgreen) · [Battle](#battle) · [Party](#party) · [Route](#route) · [Mirage Island](#mirage-island) · [Nuzlocke](#nuzlocke) · [Berries](#berries) · [Search](#search) · [Hunt](#hunt) · [Run](#run) · [Details](#details) · [Keys](#keys) · [Overworld X-Ray](#overworld-x-ray)
 
 > [!IMPORTANT]
-> **Emerald Companion only works with the original, unmodified Pokemon Emerald (US/English) ROM.** This is the version it was built and tested with. It's the retail cartridge release, game code `BPEE`, sold in North America and Europe.
+> **Pokémon Companion only works with original, unmodified US/English ROMs of Pokémon Emerald, FireRed (version 1.0) or LeafGreen (version 1.1).** These are the versions it was built and tested with.
 >
-> - **ROM hacks are not supported**, even ones based on Emerald. The panel shows "ROM hack not supported" instead of guessing.
-> - **Other languages** (Japanese, French, German, Spanish, Italian) and **other Pokemon games** (Ruby, Sapphire, FireRed, LeafGreen) are not supported. The panel shows "Game not supported".
+> - **ROM hacks are not supported**, even ones based on these games. The panel shows "ROM hack not supported" instead of guessing.
+> - **Other revisions** (such as FireRed 1.1 or LeafGreen 1.0), **other languages** (Japanese, French, German, Spanish, Italian) and **other Pokemon games** (Ruby, Sapphire) are not supported. The panel shows "not supported" and names the three ROMs it works with.
 >
 > In every case the game itself still runs normally. Only the panel is unavailable.
 >
-> The check compares your whole ROM file against the original's CRC32 checksum, `1F1C08FB`. If you're not sure which version you have, load your game and press F9. If the panel doesn't say "not supported", your ROM works.
+> The check compares your whole ROM file against the original's CRC32 checksum. If you're not sure which version you have, load your game and press F9. If the panel doesn't say "not supported", your ROM works.
+
+## FireRed and LeafGreen
+
+The panel also works with the original US/English Pokémon FireRed (version 1.0) and LeafGreen (version 1.1) ROMs. Other revisions and ROM hacks show a "not supported" page and play normally.
+
+What works there: Battle with damage and catch odds, Party, the Daycare block on the Party page, Route, Search, Nuzlocke, Run and the trainer card.
+
+Differences from Emerald:
+
+- Berries, Hunt, Mirage Island, Feebas tiles, Overworld X-Ray (F4) and Following Pokemon (F1) are Emerald only. The Berries and Hunt tabs are hidden.
+- The Daycare is the one on Four Island. An egg's species, gender and ability show as soon as it's waiting. Its nature, IVs and shininess are only rolled when you pick it up, so the panel can't show them. The one-Pokémon day care on Route 5 isn't shown yet.
+- In the Pokémon Tower the Battle page shows "Ghost" until the Silph Scope reveals it, and ghosts can't be caught.
+- Search says "Not in this game, trade it" for evolutions FireRed and LeafGreen can't do: high friendship by day or night, and Beauty.
+- The Run page's story beats are Kanto's: S.S. Ticket, Rocket Hideout, Mr. Fuji, Surf, Silph Co., Indigo Plateau, the Champion and the Hall of Fame (shown together, since the game only keeps that flag), the National Dex and the Sapphire. Your rival's name is used for rival and Champion battles.
+- While the game replays "Previously on your quest..." after Continue, the panel waits and nothing is logged. Teachy TV's demo battles are never logged either.
+
+## Keys
 
 | Key | Panel action |
 |-----|--------------|
 | F9 | Show or hide the panel |
-| F10 | Cycle the page: Auto, Party, Route, Nuzlocke, Berries, Search, Hunt, Run. Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
+| F10 | Cycle the page: Auto, Party, Route, Nuzlocke, Berries, Search, Hunt, Run (Berries and Hunt are Emerald only and hidden on FireRed and LeafGreen). Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
 | [ and ] | Select the previous or next Pokemon on the Party page, switch views on the Nuzlocke page, open the previous or next place on the Berries page, move the Search selection, pick the target species on the Hunt page, or scroll the list on the Run page |
 | N | Start a Nuzlocke run, on the Nuzlocke page |
 | J, twice | Move the clock to the next Mirage Island day, on the Route page |
@@ -176,13 +193,13 @@ Times are real time, because Emerald's clock is. The countdowns keep moving betw
 
 ## Search
 
-Type part of a Pokemon's name and see where to get it in Emerald. Open the Search page with F10, then press `/` or click the box to start typing. The list narrows on every keystroke: an exact name comes first, then names that start with what you typed, then names that contain it. Spaces and punctuation are ignored, so "mr mime" and "hooh" work, and "nidoran" finds both Nidorans.
+Type part of a Pokemon's name and see where to get it in your game. Open the Search page with F10, then press `/` or click the box to start typing. The list narrows on every keystroke: an exact name comes first, then names that start with what you typed, then names that contain it. Spaces and punctuation are ignored, so "mr mime" and "hooh" work, and "nidoran" finds both Nidorans.
 
 - **Keys.** Up and Down pick a result, or `[` and `]` when you're not typing. Home and End jump to the first and last result. Clicking a result picks it too. PageUp, PageDown or the mouse wheel scroll the details, and the wheel over the list scrolls the list. Enter or Esc stops typing, and Esc clears the text first if there is any. Ctrl+Backspace (Cmd+Backspace on macOS) clears the box, and Ctrl+V (Cmd+V) pastes into it.
 - **While you type.** Letters and other keys don't reach the game or the emulator's letter hotkeys (M, H and so on), so typing a name won't press buttons. The F-keys still work, except F5 and F8, so a typed name can't save or load a state by accident. F6, F7, F9 and F10 also stop typing. A controller still plays. Esc never quits the emulator on this page, and a battle starting while you type doesn't switch the page away.
 - **Details.** The national dex number and a check if you've caught it, then every wild spot: Grass, Surf, Dive, Rock Smash and the Old, Good and Super Rod, each with levels and encounter chance. When floors of the same place differ, the chance is shown as a range.
 - **Special cases.** Feebas appears on Route 119 with any rod, on one of 6 hidden tiles. The Overworld X-Ray (F4) shows which ones. Wynaut on Mirage Island shows up only on days the island appears. Places that open after the Hall of Fame are listed under "After the Hall of Fame", and Shoal Cave's low tide spots are marked "Low tide".
-- **Not wild.** The page works back to the nearest Pokemon you can catch and lists the steps. For Gardevoir that is: evolve Kirlia at Lv 30, evolve Ralts at Lv 20, and Ralts is on Route 102. Pokemon that only hatch from eggs say so and tell you which evolved form to breed, and Azurill needs a parent holding Sea Incense. Anything else says "Not found in the wild in Emerald".
+- **Not wild.** The page works back to the nearest Pokemon you can catch and lists the steps. For Gardevoir that is: evolve Kirlia at Lv 30, evolve Ralts at Lv 20, and Ralts is on Route 102. Pokemon that only hatch from eggs say so and tell you which evolved form to breed, and Azurill needs a parent holding Sea Incense. Anything else says "Not found in the wild in <game>".
 
 ![Route 102 with "ra" typed in the Search page: Rattata, Raticate, Raichu and more narrowed down by name, with Ralts picked and its Route 102 grass spot on the right](screenshots/panel-search-typing.png)
 
@@ -230,7 +247,7 @@ Tracking starts the first time you open a save in this emulator. Anything that h
 
 The panel sizes itself to the screen's pixel density, so it stays crisp on standard monitors, Windows display scaling, Retina and 4K. `--scale` only sets the size of the game. The panel is 600 by 480 points, the window is at least 480 points tall while the panel is open, and the game is centered vertically. In fullscreen (F11) the game grows to fill the screen with the panel beside it. On Linux X11 the panel uses the display DPI only when it indicates a high-DPI screen; otherwise it uses 1.0.
 
-Every name and number is read from your own ROM at runtime, and nothing from the game ships with the emulator. The panel only reads memory. It never writes to the game, makes no bus accesses, does not change timing, and leaves savestates untouched. Addresses come from the pret/pokeemerald decomp.
+Every name and number is read from your own ROM at runtime, and nothing from the game ships with the emulator. The panel only reads memory. It never writes to the game, makes no bus accesses, does not change timing, and leaves savestates untouched. Addresses come from the pret/pokeemerald and pret/pokefirered decomps.
 
 Not shown yet: Safari Ball odds, mass outbreaks, roamers, lead ability effects (Static, Magnet Pull and similar), and Battle Pyramid and Battle Pike tables. Weather Ball matchups use its base type.
 

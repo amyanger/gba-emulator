@@ -76,7 +76,7 @@ cmake .. -DMACOS_APP_BUNDLE=ON
 - **Flash 64K / 128K Save**: Macronix and SST/Atmel/Panasonic chip IDs (Pokemon Emerald, Ruby, Sapphire, FireRed, LeafGreen)
 - **Real-Time Clock**: S-3511A serial RTC over GPIO (0x080000C4/C6/C8) with persistent offset stored in the `.sav` trailer
 - **Cartridge**: ROM loading (up to 32MB), auto save detection, file persistence next to the ROM
-- **Emerald Companion**: for the original Pokemon Emerald (US/English) ROM only. Press F9 for a side panel with Battle (including damage predictions), Party, Route (with the Mirage Island forecast), Nuzlocke, Berries, Search and Run pages. F4 adds the Overworld X-Ray, and F1 turns on Following Pokemon using the player's own HeartGold or SoulSilver ROM. See [Emerald Companion](emerald-companion.md).
+- **Pokémon Companion**: for the original Pokemon Emerald, FireRed (1.0) or LeafGreen (1.1) US/English ROMs only. Press F9 for a side panel with Battle (including damage predictions), Party, Route, Nuzlocke, Search and Run pages, plus Berries, Hunt and the Mirage Island forecast on Emerald. On Emerald, F4 adds the Overworld X-Ray, and F1 turns on Following Pokemon using the player's own HeartGold or SoulSilver ROM. See [Pokémon Companion](pokemon-companion.md).
 - **Save States**: 10 numbered slots (0–9), versioned and ROM-hash guarded, written next to the ROM as `<rom>.ss<N>`
 - **Cheats**: CodeBreaker, GameShark v1/v2 and Action Replay v3 (GameShark v3/SP) codes pasted as found online, encrypted or raw; the device is detected automatically and the save is backed up before cheats run
 - **Fast-Forward**: Hold Tab or toggle with `` ` `` at 2x, 3x, 4x or Max (skips audio, renders every Nth frame)
@@ -194,7 +194,9 @@ src/
   game/
     game.c/h               Builds a snapshot of party, battle and encounter state
     game_mem.c/h           Read-only view of EWRAM, IWRAM and ROM
-    emerald_profile.c/h    Every ROM and RAM address for US Emerald rev 0
+    game_profile.c/h       ROM detection and the profile table
+    emerald_profile.c      Every ROM and RAM address for US Emerald rev 0, plus its GameRules
+    frlg_profile.c         Addresses for US FireRed 1.0 and LeafGreen 1.1, plus the shared GameRules
     pokemon.c/h            Party Pokemon decryption, stats, IVs, nature, Hidden Power
     battle_info.c/h        Catch odds and move matchups for the current battle
     damage.c/h             Damage prediction (pokeemerald's damage formula)
@@ -254,7 +256,7 @@ src/
     library_run.c/h        Runs the library until a game is picked
     rom_picker.c/h         Native file and folder dialogs (_mac.m, _win.c, _linux.c)
     macos_menu.h/.m        Settings entry in the macOS menu bar
-    game_panel.c/h         Emerald Companion pages, drawn with src/ui
+    game_panel.c/h         Pokémon Companion pages, drawn with src/ui
     run_panel.c/h          Run page dashboard and Details sheet
     search_view.c/h        Search page state and input
     panel_layout.c/h       Window, game and panel rectangles from display density
@@ -466,7 +468,7 @@ reads it back with `--game-dump`, and checks that the save was backed up first.
 - [awesome-gbadev](https://github.com/gbadev-org/awesome-gbadev): Curated GBA development resources
 - [mGBA](https://github.com/mgba-emu/mgba): Reference emulator source
 - [Tonc](https://www.coranac.com/tonc/text/hardware.htm): GBA hardware programming tutorial
-- [Inter](https://rsms.me/inter/) 4.1: Font for Emerald Companion, under the SIL Open Font License 1.1 (`fonts/Inter-LICENSE.txt`). `tools/embed_font.sh` regenerates `src/ui/font_inter.h` from it.
+- [Inter](https://rsms.me/inter/) 4.1: Font for Pokémon Companion, under the SIL Open Font License 1.1 (`fonts/Inter-LICENSE.txt`). `tools/embed_font.sh` regenerates `src/ui/font_inter.h` from it.
 - [stb_truetype](https://github.com/nothings/stb): Glyph rasterizer for the panel font, public domain
 - [xBRjs](https://github.com/joseprio/xBRjs) by Josep del Rio: the xBR scaler (algorithm by Hyllian) ported to `src/frontend/xbr.c`, MIT License (notice in the file)
 - Super xBR by Hyllian, via [pixelscalers](https://github.com/janert/pixelscalers): ported to `src/frontend/super_xbr.c`, MIT License (notice in the file)
