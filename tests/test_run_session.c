@@ -29,6 +29,7 @@ static const GameProfile k_profile = {
     .map_header = 0x02000E20, .battle_outcome = 0x02000E30, .pokemon_storage_ptr = 0x03000008,
     .species_names = 0x08000100, .species_count = 8, .species_info = 0x08000C00,
     .experience_tables = 0x08000D00, .evolution_table = 0x08002000,
+    .map_groups = 0x08003000, .map_group_count = 1,
     .region_map_entries = 0x08001C00, .region_map_count = 20,
     .trainers = TRAINERS, .trainer_count = 400,
     .items = ITEMS, .item_count = 20,
@@ -95,7 +96,10 @@ static void build(void) {
     fixture_put32(at(SB2 + 0x0A), 0x0000BEEF);
     set_pt(216000);  /* 1:00:00 */
     put_str(SB2, "MAY");
-    at(0x02000E20 + 0x14)[0] = 3;
+    /* map 0:0 (the save's location) is in section 3 */
+    fixture_put32(at(0x08003000), 0x08003100);
+    fixture_put32(at(0x08003100), 0x08003200);
+    at(0x08003200 + 0x14)[0] = 3;
     put_str(0x08000100 + 11 * 2, "ZIGZAGOON");
     put_str(0x08000100 + 11 * 3, "POOCHYENA");
     fixture_put32(at(0x08001C00 + 8 * 3 + 4), 0x08001D00);

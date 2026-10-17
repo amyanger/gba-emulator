@@ -102,13 +102,17 @@ static uint32_t rom_map_header(const GameMem* m, const GameProfile* p, uint8_t g
     return header;
 }
 
-/* Name of a map's region map section. Read from the ROM header, not gMapHeader: the save's
- * location is valid on the title and Continue screens, before gMapHeader is loaded. */
-static void map_name(const GameMem* m, const GameProfile* p, uint8_t group, uint8_t num, char* out) {
+/* Read from the ROM header, not gMapHeader: the save's location is valid on the title and
+ * Continue screens, before gMapHeader is loaded. */
+bool game_map_section(const GameMem* m, const GameProfile* p, uint8_t group, uint8_t num, uint8_t* sec) {
     uint32_t header = rom_map_header(m, p, group, num);
+    return header && game_mem_read8(m, header + MAP_HEADER_REGION_MAP_SEC, sec);
+}
+
+static void map_name(const GameMem* m, const GameProfile* p, uint8_t group, uint8_t num, char* out) {
     uint8_t sec;
     out[0] = '\0';
-    if (header && game_mem_read8(m, header + MAP_HEADER_REGION_MAP_SEC, &sec)) game_mapsec_name(m, p, sec, out);
+    if (game_map_section(m, p, group, num, &sec)) game_mapsec_name(m, p, sec, out);
 }
 
 static bool species_info(const GameMem* m, const GameProfile* p, uint16_t species,

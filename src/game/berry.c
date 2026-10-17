@@ -222,7 +222,7 @@ static bool fill_tree(const GameProfile* p, const GameMem* m, uint8_t id, uint8_
 void berry_read(const BerryPlaces* bp, const GameProfile* p, const GameMem* m, const MirageClock* clk,
                 BerryView* out) {
     uint32_t sb1 = 0, sb2 = 0;
-    uint8_t flag = 0, sec = 0, in_battle = 0;
+    uint8_t flag = 0, sec = 0, in_battle = 0, loc[2];
     memset(out, 0, sizeof(*out));
     out->here = BERRY_PLACE_NONE;
     if (!p || !game_mem_read32(m, p->save_block1_ptr, &sb1) || !game_mem_read32(m, p->save_block2_ptr, &sb2) ||
@@ -234,7 +234,7 @@ void berry_read(const BerryPlaces* bp, const GameProfile* p, const GameMem* m, c
     out->clock_set = game_mem_read8(m, sb1 + p->rules->sb1_flags + (FLAG_SYS_CLOCK_SET >> 3), &flag) &&
                      (flag & (1u << (FLAG_SYS_CLOCK_SET & 7)));
     out->in_battle = game_mem_read8(m, p->main_in_battle, &in_battle) && (in_battle & 0x02);
-    if (game_mem_read8(m, p->map_header + MAP_HEADER_REGION_MAP_SEC, &sec))
+    if (game_mem_copy(m, sb1 + SB1_LOC_GROUP, loc, sizeof(loc)) && game_map_section(m, p, loc[0], loc[1], &sec))
         for (uint8_t i = 0; i < bp->count; i++)
             if (bp->place[i].sec == sec) out->here = i;
 

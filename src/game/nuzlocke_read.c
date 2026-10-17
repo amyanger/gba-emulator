@@ -1,5 +1,6 @@
 #include "game/nuzlocke_read.h"
 #include "game/emerald_layout.h"
+#include "game/game.h"
 #include "game/pokemon.h"
 #include <stddef.h>
 #include <stdio.h>
@@ -148,7 +149,10 @@ bool nuz_read(const GameProfile* p, const GameMem* m, bool with_boxes, NuzFacts*
         f->teachy_tv = saved == p->teachy_tv_restore_cb &&
                        !(game_mem_read32(m, p->main_callback2, &cb2) && cb2 == p->cb2_overworld);
     f->play_time = ((((uint32_t)(pt[0] | (pt[1] << 8)) * 60u + pt[2]) * 60u + pt[3]) * 60u) + pt[4];
-    if (!game_mem_read8(m, p->map_header + MAP_HEADER_REGION_MAP_SEC, &f->mapsec)) f->mapsec = NUZ_SEC_NONE;
+    uint8_t loc[2];
+    if (!game_mem_copy(m, sb1 + SB1_LOC_GROUP, loc, sizeof(loc)) ||
+        !game_map_section(m, p, loc[0], loc[1], &f->mapsec))
+        f->mapsec = NUZ_SEC_NONE;
     read_party(p, m, f);
     read_battle(p, m, f);
     if (with_boxes) read_boxes(p, m, f);

@@ -193,6 +193,8 @@ void game_read_berries(GameState* gs, const GBA* gba, BerryView* out);
 void game_species_name(const GameMem* m, const GameProfile* p, uint16_t species, char* out);
 void game_nature_name(const GameMem* m, const GameProfile* p, uint8_t nature, char* out);
 void game_mapsec_name(const GameMem* m, const GameProfile* p, uint8_t sec, char* out);
+/* Region map section of map group:num from the ROM's map headers. */
+bool game_map_section(const GameMem* m, const GameProfile* p, uint8_t group, uint8_t num, uint8_t* sec);
 /* National dex number of a species, 0 when out of range or unreadable. */
 uint16_t game_species_national(const GameMem* m, const GameProfile* p, uint16_t species);
 /* Party-style view of a decoded mon (party rows and Daycare parents). */

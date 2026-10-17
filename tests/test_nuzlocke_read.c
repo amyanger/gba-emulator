@@ -19,6 +19,7 @@ static const GameProfile k_profile = {
     .map_header = 0x02000E20, .battle_outcome = 0x02000E30, .pokemon_storage_ptr = 0x03000008,
     .species_count = 8, .species_info = 0x08000C00, .experience_tables = 0x08000D00,
     .evolution_table = 0x08002000,
+    .map_groups = 0x08003000, .map_group_count = 1,
 };
 
 static uint8_t* at(uint32_t addr) {
@@ -58,7 +59,10 @@ static void build(void) {
     fixture_put32(at(SB2 + 0x0A), 0x12345678);           /* trainer id (unaligned) */
     fixture_put16(at(SB2 + 0x0E), 2);                    /* 2:03:04 and 5 frames */
     at(SB2 + 0x10)[0] = 3; at(SB2 + 0x11)[0] = 4; at(SB2 + 0x12)[0] = 5;
-    at(0x02000E20 + 0x14)[0] = 17;                       /* mapsec */
+    /* map 0:0 (the save's location) is in section 17 */
+    fixture_put32(at(0x08003000), 0x08003100);
+    fixture_put32(at(0x08003100), 0x08003200);
+    at(0x08003200 + 0x14)[0] = 17;
     at(0x02000000)[0] = 2;
     put_mon(at(0x02000400), 0xAAAA0001, 0x12345678, 3, 16, 0);
     at(0x02000400 + 0x54)[0] = 9;
@@ -113,6 +117,18 @@ TEST(nuz_read_trainer_time_party_and_holes) {
     ASSERT_TRUE(!f.has_boxes);
     ASSERT_TRUE(!f.in_battle);
     ASSERT_EQ(f.active_party, -1);
+}
+
+/* Title and Continue screens: gMapHeader is still zero, the save's location is not. */
+TEST(nuz_read_mapsec_follows_save_location) {
+    build();
+    fixture_put32(at(0x08003100 + 4 * 2), 0x08003300);
+    at(0x08003300 + 0x14)[0] = 21;
+    at(SB1 + 4)[0] = 0; at(SB1 + 5)[0] = 2;
+    GameMem m = mem();
+    static NuzFacts f;
+    ASSERT_TRUE(nuz_read(&k_profile, &m, false, &f));
+    ASSERT_EQ(f.mapsec, 21);
 }
 
 TEST(nuz_read_party_extras) {
@@ -271,6 +287,7 @@ void run_nuzlocke_read_tests(void) {
     RUN_TEST(nuz_read_unset_storage_is_not_read);
     RUN_TEST(nuz_read_waits_for_save_blocks);
     RUN_TEST(nuz_read_trainer_time_party_and_holes);
+    RUN_TEST(nuz_read_mapsec_follows_save_location);
     RUN_TEST(nuz_read_party_extras);
     RUN_TEST(nuz_read_boxes_with_level_from_exp);
     RUN_TEST(nuz_read_battle_enemy_and_active_slot);

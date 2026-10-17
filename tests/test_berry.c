@@ -184,6 +184,20 @@ TEST(berry_places_from_fixture_map) {
     ASSERT_STR_EQ(bp.place[1].name, "TOWN");
 }
 
+/* Title and Continue screens: gMapHeader is still zero, the save's location is not. */
+TEST(berry_here_follows_save_location) {
+    static BerryPlaces bp;
+    static BerryView v;
+    reset();
+    GameMem m = mem();
+    berry_places_build(&bp, &k_profile, &m);
+    put_tree(3, 7, 5, 30, 4, 0xF0);
+    at(SB1 + 4)[0] = 0; at(SB1 + 5)[0] = 1;   /* map 0:1, section 11 */
+    MirageClock none = {0};
+    berry_read(&bp, &k_profile, &m, &none, &v);
+    ASSERT_EQ(v.here, 1);
+}
+
 TEST(berry_read_statuses) {
     static BerryPlaces bp;
     static BerryView v;
@@ -196,7 +210,7 @@ TEST(berry_read_statuses) {
     put_tree(5, 7, 2, 100, 0, 0x10);          /* sprouted, stage 2 not watered */
     put_tree(6, 7, 2, 100, 0, 0x30);          /* sprouted and watered */
     put_tree(7, 7, 3 | 0x80, 100, 0, 0);      /* not seen yet */
-    at(MAP_HEADER + 0x14)[0] = 11;
+    at(SB1 + 4)[0] = 0; at(SB1 + 5)[0] = 1;   /* map 0:1, section 11 */
     MirageClock none = {0};
     berry_read(&bp, &k_profile, &m, &none, &v);
     ASSERT_TRUE(v.valid);
@@ -291,6 +305,7 @@ void run_berry_tests(void) {
     RUN_TEST(berry_projection_71x_wipes);
     RUN_TEST(berry_local_minutes_borrows);
     RUN_TEST(berry_places_from_fixture_map);
+    RUN_TEST(berry_here_follows_save_location);
     RUN_TEST(berry_read_statuses);
     RUN_TEST(berry_read_projects_with_clock);
     RUN_TEST(berry_projection_without_clock_uses_raw);
