@@ -8,6 +8,15 @@
 #define SB1_LOC_GROUP 0x04   /* location.mapGroup */
 #define SB1_LOC_NUM   0x05   /* location.mapNum */
 
+/* struct Roamer (include/global.h), same layout in FireRed/LeafGreen */
+#define ROAMER_IVS     0x00
+#define ROAMER_SPECIES 0x08
+#define ROAMER_HP      0x0A
+#define ROAMER_LEVEL   0x0C
+#define ROAMER_STATUS  0x0D
+#define ROAMER_ACTIVE  0x13
+#define ROAMER_SIZE    0x14
+
 /* struct SaveBlock2 (include/global.h) */
 #define SB2_TRAINER_ID        0x0A
 #define SB2_DEX_OWNED         0x28 /* pokedex (+0x18) owned[52] (+0x10) */

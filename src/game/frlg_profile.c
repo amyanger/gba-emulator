@@ -95,7 +95,7 @@ const GameRules g_frlg_rules = {
     .story_count = (uint8_t)(sizeof(k_frlg_story) / sizeof(k_frlg_story[0])),
     .story_hof = 9,
     .daycare_toast = "Talk to the old man on Four Island",
-    .route_footer = "\xE2\x9C\x93 caught. Not shown: roamers, lead abilities.",
+    .route_footer = "\xE2\x9C\x93 caught. Not shown: lead abilities.",
     .evo_day_night_beauty = false,           /* S: pfr pokemon.c:5062-5075; no Pokeblocks */
     .clock_tv_stats = false,                                  /* S: never incremented in pfr */
 };
@@ -113,6 +113,7 @@ const GameRules g_frlg_rules = {
     .battle_turn_counter = 0x03004FA3,                                              \
     .save_block1_ptr = 0x03005008, .save_block2_ptr = 0x0300500C, /* LIVE */        \
     .map_header = 0x02036DFC,                                     /* LIVE */        \
+    .roamer_location = 0x0203F3AE, .roamer_sb1_offset = 0x30D0,   /* LIVE FireRed */ \
     .battle_outcome = 0x02023E8A,                                 /* LIVE */        \
     .pokemon_storage_ptr = 0x03005010,                            /* LIVE */        \
     .trainer_battle_opponent_a = 0x020386AE,                      /* LIVE */        \

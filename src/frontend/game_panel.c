@@ -991,8 +991,20 @@ static void route_heights(const GameSnapshot* s, RouteLayout* l) {
     }
 }
 
-/* The encounter list ends higher when the Mirage card sits under it. */
+/* The roamer block is one row unless the roamer is on this map. */
+static float roamer_h(const GameSnapshot* s) {
+    if (s->roamer.state == ROAMER_HIDDEN) return 0.0f;
+    return SECTION_ADV + (s->roamer.here ? 3 : 1) * MIRAGE_ROW_H;
+}
+
+/* The roamer block sits directly above the Mirage card, or at the bottom without one. */
+static float roamer_y(const GameSnapshot* s) {
+    return (s->mirage.valid ? MIRAGE_Y : ROUTE_LIST_END) - MIRAGE_GAP - roamer_h(s);
+}
+
+/* The encounter list ends above whichever cards sit under it. */
 static float route_list_end(const GameSnapshot* s) {
+    if (s->roamer.state != ROAMER_HIDDEN) return roamer_y(s) - MIRAGE_GAP;
     return s->mirage.valid ? MIRAGE_Y - MIRAGE_GAP : ROUTE_LIST_END;
 }
 
@@ -1096,6 +1108,42 @@ static void draw_mirage(UiCanvas* c, const MirageInfo* mi, float top) {
                 UI_ALIGN_LEFT, UI_FAINT, hint);
 }
 
+static void draw_roamer(UiCanvas* c, const GameRoamer* r, float top) {
+    static const char* const ended[] = {"", "", "Fainted, gone for good", "Caught", "No longer roaming"};
+    char buf[16];
+    float y = top + SECTION_ADV, w = RIGHT - LEFT;
+    section(c, LEFT, top, w, "ROAMING");
+    Name n = title(r->species);
+    ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_BODY, LEFT, y, 120.0f, UI_ALIGN_LEFT, UI_TEXT, n.s);
+    if (r->state != ROAMER_ROAMING) {
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT + 120.0f, y, w - 120.0f, UI_ALIGN_LEFT,
+                UI_MUTED, ended[r->state < 5 ? r->state : 0]);
+        return;
+    }
+    snprintf(buf, sizeof(buf), "Lv %u", r->level);
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT + 120.0f, y, 44.0f, UI_ALIGN_LEFT, UI_TEXT, buf);
+    ui_bar(c, (UiRect){LEFT + 168.0f, bar_y(c, y, UI_SIZE_BODY, 6.0f), 100.0f, 6.0f},
+           hp_frac(r->hp, r->max_hp), hp_color(r->hp, r->max_hp));
+    snprintf(buf, sizeof(buf), "%u%%", r->percent);
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT + 276.0f, y, 40.0f, UI_ALIGN_LEFT, UI_TEXT, buf);
+    const char* st = status_text(r->status);
+    if (st) ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, LEFT + 318.0f, y, 100.0f, UI_ALIGN_LEFT, UI_MUTED, st);
+    char place[GAME_MAP_NAME_LEN];
+    game_panel_title_case(r->place, place, sizeof(place));
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, RIGHT, y, w - 420.0f, UI_ALIGN_RIGHT,
+            r->here ? UI_ACCENT : UI_TEXT, place);
+    if (!r->here) return;
+    y += MIRAGE_ROW_H;
+    ui_text(c, UI_FONT_SEMIBOLD, UI_SIZE_SMALL, LEFT, y, 120.0f, UI_ALIGN_LEFT, UI_ACCENT,
+            "On this route now");
+    if (r->has_odds)
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, LEFT + 120.0f, y, w - 120.0f, UI_ALIGN_LEFT,
+                UI_MUTED, "1 in 4 grass or surf battles");
+    y += MIRAGE_ROW_H;
+    ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, y, w, UI_ALIGN_LEFT, UI_FAINT,
+            "It moves every time you change maps.");
+}
+
 MirageKey game_panel_mirage_key(const GameSnapshot* s, uint32_t now_ms, MirageArm* arm) {
     const MirageInfo* mi = &s->mirage;
     if (!s->valid || s->context != GAME_CTX_OVERWORLD || !mi->valid) return MIRAGE_KEY_IGNORE;
@@ -1152,6 +1200,7 @@ static void draw_route(UiCanvas* c, const GameSnapshot* s, float top) {
                 "No wild Pok\xC3\xA9mon here");
 
     ui_canvas_clip(c, (UiRect){UI_PAD, top, PANEL_W - 2 * UI_PAD, PANEL_H - top - 4.0f});
+    if (s->roamer.state != ROAMER_HIDDEN) draw_roamer(c, &s->roamer, roamer_y(s));
     if (s->mirage.valid) draw_mirage(c, &s->mirage, MIRAGE_Y);
     ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, LEFT, 456.0f, RIGHT - LEFT, UI_ALIGN_LEFT, UI_FAINT,
             (s->profile ? s->profile : &g_emerald_profile)->rules->route_footer);

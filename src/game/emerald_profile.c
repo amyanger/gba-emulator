@@ -91,7 +91,7 @@ const GameRules g_emerald_rules = {
     .story_count = (uint8_t)(sizeof(k_emerald_story) / sizeof(k_emerald_story[0])),
     .story_hof = 10,
     .daycare_toast = "Talk to the old man on Route 117",
-    .route_footer = "\xE2\x9C\x93 caught. Not shown: outbreaks, roamers, lead abilities, Pyramid/Pike.",
+    .route_footer = "\xE2\x9C\x93 caught. Not shown: outbreaks, lead abilities, Pyramid/Pike.",
     .evo_day_night_beauty = true,
     .clock_tv_stats = true,
 };

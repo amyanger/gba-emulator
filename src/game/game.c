@@ -385,6 +385,48 @@ static void read_catch_rows(const GameMem* m, const GameProfile* p, uint32_t sb1
     }
 }
 
+/* struct Roamer plus sRoamerLocation (roamer.c). Writes fields one by one into the zeroed
+ * snapshot so its bytes stay memcmp-stable. */
+static void read_roamer(const GameMem* m, const GameProfile* p, uint32_t sb1, uint32_t sb2,
+                        GameSnapshot* s) {
+    uint8_t r[ROAMER_SIZE], loc[2], info[SPECIES_INFO_SIZE];
+    GameRoamer* out = &s->roamer;
+    if (!p->roamer_location || !p->roamer_sb1_offset ||
+        !game_mem_copy(m, sb1 + p->roamer_sb1_offset, r, sizeof(r)) ||
+        !game_mem_copy(m, p->roamer_location, loc, sizeof(loc)))
+        return;
+    uint16_t species = (uint16_t)(r[ROAMER_SPECIES] | r[ROAMER_SPECIES + 1] << 8);
+    uint16_t hp = (uint16_t)(r[ROAMER_HP] | r[ROAMER_HP + 1] << 8);
+    uint8_t level = r[ROAMER_LEVEL];
+    /* Level 0 = not released yet (ClearRoamerData leaves the species set). */
+    if (level == 0 || level > 100 || !species_info(m, p, species, info)) return;
+    uint32_t max_hp = (2u * info[0] + (r[ROAMER_IVS] & 0x1F)) * level / 100u + level + 10u;
+    if (hp > max_hp) return; /* mid-MoveSaveBlocks garbage */
+    out->hp = hp;
+    out->max_hp = (uint16_t)max_hp;
+    out->level = level;
+    out->status = r[ROAMER_STATUS];
+    out->percent = (uint8_t)(hp * 100u / max_hp);
+    game_species_name(m, p, species, out->species);
+    if (!r[ROAMER_ACTIVE]) {
+        /* UpdateRoamerHPStatus writes HP before clearing active, so 0 HP means it fainted. */
+        out->state = hp == 0 ? ROAMER_FAINTED
+                     : dex_caught(m, p, sb1, sb2, species) ? ROAMER_CAUGHT
+                                                           : ROAMER_GONE;
+        return;
+    }
+    out->state = ROAMER_ROAMING;
+    uint32_t list, header;
+    uint8_t sec;
+    if (loc[0] < p->map_group_count && game_mem_read32(m, p->map_groups + 4u * loc[0], &list) &&
+        game_mem_read32(m, list + 4u * loc[1], &header) && header >= 0x08000000u &&
+        game_mem_read8(m, header + MAP_HEADER_REGION_MAP_SEC, &sec))
+        game_mapsec_name(m, p, sec, out->place);
+    out->here = loc[0] == s->map_group && loc[1] == s->map_num;
+    uint16_t wild;
+    out->has_odds = out->here && hunt_wild_header(p, m, sb1, loc[0], loc[1], &wild);
+}
+
 static void read_encounters(const GameMem* m, const GameProfile* p, uint32_t sb1,
                             uint32_t sb2, GameSnapshot* s) {
     EncounterList lists[ENC_METHOD_COUNT];
@@ -452,6 +494,7 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     game_mem_read8(m, p->map_header + MAP_HEADER_MAP_TYPE, &s->map_type);
     map_name(m, p, s->map_name);
     read_party(m, p, s);
+    read_roamer(m, p, sb1, sb2, s);
     if (game_has(p, FEAT_MIRAGE)) mirage_read(&gs->mirage, p, m, &gs->clock, sb1, sb2, &s->mirage);
     if (game_has(p, FEAT_BERRIES)) berry_read(&gs->places, p, m, &gs->clock, &s->berries);
 
@@ -821,6 +864,11 @@ bool game_dump(const GameSnapshot* s, FILE* out) {
                       p->ivs[2], p->ivs[3], p->ivs[4], p->ivs[5], p->evs[0], p->evs[1], p->evs[2],
                       p->evs[3], p->evs[4], p->evs[5], p->hp_type, p->hp_power, p->ability,
                       p->item, p->friendship, (unsigned)p->exp_to_next, p->egg ? " egg" : "") >= 0;
+    }
+    if (s->roamer.state != ROAMER_HIDDEN) {
+        const GameRoamer* r = &s->roamer;
+        ok &= fprintf(out, "roamer %u %s lv %u hp %u/%u status %02X here %d place %s\n", r->state,
+                      r->species, r->level, r->hp, r->max_hp, r->status, r->here, r->place) >= 0;
     }
     if (s->mirage.valid) {
         const MirageInfo* mi = &s->mirage;

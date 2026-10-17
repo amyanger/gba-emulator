@@ -56,6 +56,7 @@ These need the original, unmodified US/English ROM of Pokémon Emerald, FireRed 
 | &nbsp;&nbsp;[Daycare](docs/pokemon-companion.md#daycare) | | Your Daycare Pokemon, egg odds and the next roll, what the egg will be (on Emerald even whether it's shiny) and steps until each egg hatches. |
 | &nbsp;&nbsp;[Trainer card](docs/pokemon-companion.md#trainer-card) | C | Save a shareable picture of your team, as a grid or with your ace up front. |
 | &nbsp;&nbsp;[Route](docs/pokemon-companion.md#route) | | The wild encounter table for where you are, with caught Pokemon checked off. |
+| &nbsp;&nbsp;[Roaming](docs/pokemon-companion.md#roaming) | | Where Latias, Latios or the legendary dogs are roaming right now, with their HP and status, and a heads-up when they're on your route. |
 | &nbsp;&nbsp;[Mirage Island](docs/pokemon-companion.md#mirage-island) | J, twice | Which of your Pokemon raises Mirage Island today and when it next will, then jump the clock to that day. (Emerald only) |
 | &nbsp;&nbsp;[Nuzlocke](docs/pokemon-companion.md#nuzlocke) | N | Logs each area's first encounter, every death and any reload after a death. |
 | &nbsp;&nbsp;[Berries](docs/pokemon-companion.md#berries) | B | Every berry tree you've planted, with growth, watering and countdowns, plus a toast when berries are ripe, need water or are about to drop. (Emerald only) |

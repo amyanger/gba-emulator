@@ -85,6 +85,22 @@ typedef struct {
     bool caught;
 } GameEncRow;
 
+typedef enum { ROAMER_HIDDEN, ROAMER_ROAMING, ROAMER_FAINTED, ROAMER_CAUGHT, ROAMER_GONE } RoamerState;
+
+/* The save's struct Roamer. No padding: the snapshot is compared with memcmp. */
+typedef struct {
+    uint16_t hp, max_hp;
+    uint8_t state;   /* RoamerState */
+    uint8_t level;
+    uint8_t status;  /* raw Gen 3 status byte */
+    uint8_t percent; /* hp of max_hp, 0-100 */
+    bool here;       /* roaming on the player's map */
+    bool has_odds;   /* here, on a map with wild encounters */
+    char species[GAME_NAME_LEN];
+    char place[GAME_MAP_NAME_LEN]; /* region map section name, empty when unknown */
+} GameRoamer;
+_Static_assert(sizeof(GameRoamer) == 10 + GAME_NAME_LEN + GAME_MAP_NAME_LEN, "GameRoamer padding");
+
 typedef struct {
     bool valid;
     const GameProfile* profile; /* NULL when unsupported or hand-built (Emerald text) */
@@ -107,6 +123,7 @@ typedef struct {
     uint8_t enc_count[ENC_METHOD_COUNT];
     GameEncRow enc[ENC_METHOD_COUNT][12];
     MirageInfo mirage;
+    GameRoamer roamer;
     BerryView berries;
     uint8_t dex_caught[52]; /* bit (national-1): owned per FLAG_GET_CAUGHT, zero when !valid */
 } GameSnapshot;

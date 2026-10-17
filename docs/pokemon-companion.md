@@ -137,6 +137,12 @@ The name of the route, town or city you're in, read from the game's region map, 
 
 ![Route page listing Route 101's wild Pokemon](screenshots/panel-route.png)
 
+### Roaming
+
+Once the roaming Pokemon is loose (Latias or Latios in Emerald, Raikou, Entei or Suicune in FireRed and LeafGreen), a Roaming row shows its level, HP, status and the route it is on right now. It jumps to another route every time you change maps, so the row changes as you travel. When it is on your route the row turns blue and adds the odds: 1 in 4 of the battles you get in grass or while surfing. Fishing and Rock Smash never find it, and a Repel stops it if its level is below your lead Pokemon's.
+
+After it leaves the wild the row says whether you caught it, it fainted (it is gone for good), or it ran off for another reason. During a battle with it, the HP shown is from before the battle, because the game only saves it when the battle ends.
+
 ### Mirage Island
 
 Mirage Island is the rare island on Route 130 where Wynaut lives and the Liechi Berry grows. Emerald rolls a random number once a day, and the island is there only on days when that number matches part of a party Pokemon's personality value. With a full PC that can still be years apart, so most players never see it.
@@ -258,7 +264,7 @@ The panel sizes itself to the screen's pixel density, so it stays crisp on stand
 
 Every name and number is read from your own ROM at runtime, and nothing from the game ships with the emulator. The panel only reads memory. It never writes to the game, makes no bus accesses, does not change timing, and leaves savestates untouched. Addresses come from the pret/pokeemerald and pret/pokefirered decomps.
 
-Not shown yet: Safari Ball odds, mass outbreaks, roamers, lead ability effects (Static, Magnet Pull and similar), and Battle Pyramid and Battle Pike tables. Weather Ball matchups use its base type.
+Not shown yet: Safari Ball odds, mass outbreaks, lead ability effects (Static, Magnet Pull and similar), and Battle Pyramid and Battle Pike tables. Weather Ball matchups use its base type.
 
 To check decoded state without a window, run headless with `--game-dump <file>` (see [Headless mode](usage.md#headless-mode)).
 

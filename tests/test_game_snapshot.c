@@ -549,6 +549,148 @@ TEST(snapshot_includes_mirage_and_dump_line) {
     ASSERT_TRUE(strstr(buf, "mirage value 12345678") != NULL);
 }
 
+/* Roamer fixture: profile copy with the roamer fields and a map group table; species 3
+ * (WURMPLE, national 265) stands in for the roamer, base HP 80. Maps 0:16 and 0:20 both
+ * resolve to "ROUTE ONE"; the player stands on 0:16. */
+#define ROAMER_LOC 0x02030000u
+static GameProfile s_roamer_profile;
+
+static GameState* roamer_state(void) {
+    s_roamer_profile = k_test_profile;
+    s_roamer_profile.roamer_location = ROAMER_LOC;
+    s_roamer_profile.roamer_sb1_offset = 0x31DC;
+    s_roamer_profile.map_groups = 0x08003000;
+    s_roamer_profile.map_group_count = 1;
+    fixture_put32(at(0x08003000), 0x08003100);
+    fixture_put32(at(0x08003100 + 4 * 16), 0x08003200);
+    fixture_put32(at(0x08003100 + 4 * 20), 0x08003300);
+    at(0x08003200 + 0x14)[0] = 1;
+    at(0x08003300 + 0x14)[0] = 1;
+    at(0x08000C00 + 28 * 3)[0] = 80;
+    GameState* gs = test_state();
+    gs->profile = &s_roamer_profile;
+    return gs;
+}
+
+static void put_roamer(uint16_t species, uint16_t hp, uint8_t level, uint8_t status, bool active,
+                       uint32_t ivs, uint8_t group, uint8_t num) {
+    uint8_t* r = at(SB1 + 0x31DC);
+    fixture_put32(r + 0x00, ivs);
+    fixture_put16(r + 0x08, species);
+    fixture_put16(r + 0x0A, hp);
+    r[0x0C] = level;
+    r[0x0D] = status;
+    r[0x13] = active;
+    at(ROAMER_LOC)[0] = group;
+    at(ROAMER_LOC)[1] = num;
+}
+
+static GameSnapshot* roamer_snap(GameState* gs) {
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    return &gs->snap;
+}
+
+TEST(snapshot_roamer_roaming_elsewhere) {
+    build_world();
+    GameState* gs = roamer_state();
+    put_roamer(3, 100, 40, 0x01, true, 9, 0, 20);
+    const GameSnapshot* s = roamer_snap(gs);
+    ASSERT_EQ(s->roamer.state, ROAMER_ROAMING);
+    ASSERT_EQ(s->roamer.max_hp, 117);
+    ASSERT_EQ(s->roamer.hp, 100);
+    ASSERT_EQ(s->roamer.percent, 85);
+    ASSERT_EQ(s->roamer.status, 1);
+    ASSERT_TRUE(!s->roamer.here);
+    ASSERT_TRUE(strcmp(s->roamer.species, "WURMPLE") == 0);
+    ASSERT_TRUE(strcmp(s->roamer.place, "ROUTE ONE") == 0);
+    char buf[4096] = {0};
+    FILE* f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    ASSERT_TRUE(game_dump(s, f));
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    ASSERT_TRUE(strstr(buf, "roamer 1 WURMPLE lv 40 hp 100/117 status 01 here 0 place ROUTE ONE") != NULL);
+}
+
+TEST(snapshot_roamer_here_with_odds) {
+    build_world();
+    GameState* gs = roamer_state();
+    put_roamer(3, 117, 40, 0, true, 9, 0, 16);
+    const GameSnapshot* s = roamer_snap(gs);
+    ASSERT_EQ(s->roamer.state, ROAMER_ROAMING);
+    ASSERT_TRUE(s->roamer.here);
+    ASSERT_TRUE(s->roamer.has_odds);
+    ASSERT_EQ(s->roamer.percent, 100);
+}
+
+TEST(snapshot_roamer_inactive_is_never_here) {
+    build_world();
+    GameState* gs = roamer_state();
+    put_roamer(3, 50, 40, 0, false, 9, 0, 16);
+    const GameSnapshot* s = roamer_snap(gs);
+    ASSERT_TRUE(!s->roamer.here);
+    ASSERT_TRUE(!s->roamer.has_odds);
+    ASSERT_EQ(s->roamer.place[0], '\0');
+}
+
+TEST(snapshot_roamer_end_states) {
+    build_world();
+    GameState* gs = roamer_state();
+    put_roamer(3, 0, 40, 0, false, 9, 0, 0);
+    ASSERT_EQ(roamer_snap(gs)->roamer.state, ROAMER_FAINTED);
+    put_roamer(3, 50, 40, 0, false, 9, 0, 0);
+    ASSERT_EQ(roamer_snap(gs)->roamer.state, ROAMER_GONE);
+    set_dex_caught(265);
+    ASSERT_EQ(roamer_snap(gs)->roamer.state, ROAMER_CAUGHT);
+}
+
+TEST(snapshot_roamer_not_released_hidden) {
+    build_world();
+    GameState* gs = roamer_state();
+    put_roamer(3, 0, 0, 0, false, 0, 0, 0);
+    ASSERT_EQ(roamer_snap(gs)->roamer.state, ROAMER_HIDDEN);
+}
+
+TEST(snapshot_roamer_garbage_hidden) {
+    build_world();
+    GameState* gs = roamer_state();
+    put_roamer(0xFFFF, 100, 40, 0, true, 9, 0, 20);
+    ASSERT_EQ(roamer_snap(gs)->roamer.state, ROAMER_HIDDEN);
+    put_roamer(3, 100, 0xFF, 0, true, 9, 0, 20);
+    ASSERT_EQ(roamer_snap(gs)->roamer.state, ROAMER_HIDDEN);
+    put_roamer(3, 500, 40, 0, true, 9, 0, 20);  /* hp above max */
+    ASSERT_EQ(roamer_snap(gs)->roamer.state, ROAMER_HIDDEN);
+}
+
+TEST(snapshot_roamer_bad_map_empty_place) {
+    build_world();
+    GameState* gs = roamer_state();
+    put_roamer(3, 100, 40, 0, true, 9, 99, 3);
+    const GameSnapshot* s = roamer_snap(gs);
+    ASSERT_EQ(s->roamer.state, ROAMER_ROAMING);
+    ASSERT_EQ(s->roamer.place[0], '\0');
+}
+
+TEST(snapshot_roamer_stable_bytes) {
+    build_world();
+    GameState* gs = roamer_state();
+    put_roamer(3, 100, 40, 0x40, true, 9, 0, 20);
+    static GameRoamer first;
+    memcpy(&first, &roamer_snap(gs)->roamer, sizeof(first));
+    ASSERT_TRUE(memcmp(&first, &roamer_snap(gs)->roamer, sizeof(first)) == 0);
+}
+
+TEST(snapshot_roamer_hidden_without_profile_fields) {
+    build_world();
+    GameState* gs = roamer_state();
+    s_roamer_profile.roamer_location = 0;
+    put_roamer(3, 100, 40, 0, true, 9, 0, 20);
+    ASSERT_EQ(roamer_snap(gs)->roamer.state, ROAMER_HIDDEN);
+}
+
 TEST(snapshot_reads_berries_and_dumps_them) {
     build_world();
     GameState* gs = test_state();
@@ -1067,6 +1209,15 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_clamps_party_count);
     RUN_TEST(snapshot_dump_writes_text);
     RUN_TEST(snapshot_includes_mirage_and_dump_line);
+    RUN_TEST(snapshot_roamer_roaming_elsewhere);
+    RUN_TEST(snapshot_roamer_here_with_odds);
+    RUN_TEST(snapshot_roamer_inactive_is_never_here);
+    RUN_TEST(snapshot_roamer_end_states);
+    RUN_TEST(snapshot_roamer_not_released_hidden);
+    RUN_TEST(snapshot_roamer_garbage_hidden);
+    RUN_TEST(snapshot_roamer_bad_map_empty_place);
+    RUN_TEST(snapshot_roamer_stable_bytes);
+    RUN_TEST(snapshot_roamer_hidden_without_profile_fields);
     RUN_TEST(snapshot_damage_wild_battle_both_directions);
     RUN_TEST(snapshot_damage_none_without_tables);
     RUN_TEST(snapshot_damage_stale_personality_is_none);

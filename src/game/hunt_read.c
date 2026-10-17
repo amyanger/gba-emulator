@@ -8,12 +8,6 @@
 /* SaveBlock1 (include/global.h) */
 #define VARS_START 0x4000
 
-/* struct Roamer (include/global.h) */
-#define ROAMER_SPECIES 0x08
-#define ROAMER_LEVEL 0x0C
-#define ROAMER_ACTIVE 0x13
-#define ROAMER_SIZE 0x14
-
 /* Outbreak fields from outbreakPokemonSpecies (include/global.h 0x2B90..) */
 #define OUTBREAK_MAP_NUM 0x02
 #define OUTBREAK_MAP_GROUP 0x03

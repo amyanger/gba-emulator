@@ -836,6 +836,73 @@ TEST(panel_route_mirage_card_stays_in_bounds) {
         }
 }
 
+static void fill_roamer(GameSnapshot* s, RoamerState state, bool here) {
+    GameRoamer* r = &s->roamer;
+    memset(r, 0, sizeof(*r));
+    r->state = (uint8_t)state;
+    r->hp = 85; r->max_hp = 117; r->percent = 72; r->level = 40;
+    r->status = 0x47; /* every flag set: longest label path */
+    r->here = here && state == ROAMER_ROAMING;
+    r->has_odds = r->here;
+    game_strcpy(r->species, GAME_NAME_LEN, "FLETCHINDERX");
+    game_strcpy(r->place, GAME_MAP_NAME_LEN, "ROUTE 134 WITH LONG NAME");
+}
+
+TEST(panel_route_roamer_collapsed_costs_one_row) {
+    static GameSnapshot snap;
+    static const uint8_t counts[ENC_METHOD_COUNT] = {12, 12, 12, 12, 12, 12};
+    RouteLayout plain, with;
+    fill_route(&snap, counts);
+    fill_mirage(&snap, MIRAGE_NONE);
+    game_panel_route_layout(&snap, &plain);
+    fill_roamer(&snap, ROAMER_ROAMING, false);
+    game_panel_route_layout(&snap, &with);
+    ASSERT_TRUE(with.avail < plain.avail);
+    ASSERT_TRUE(plain.avail - with.avail <= 50.0f);
+    ASSERT_TRUE(with.height[0] <= with.avail && with.height[1] <= with.avail);
+    ASSERT_EQ(layout_total(&with), 72);
+}
+
+TEST(panel_route_roamer_here_shrinks_more) {
+    static GameSnapshot snap;
+    static const uint8_t counts[ENC_METHOD_COUNT] = {12, 3, 0, 2, 3, 5};
+    RouteLayout one, here;
+    fill_route(&snap, counts);
+    fill_mirage(&snap, MIRAGE_NONE);
+    fill_roamer(&snap, ROAMER_ROAMING, false);
+    game_panel_route_layout(&snap, &one);
+    fill_roamer(&snap, ROAMER_ROAMING, true);
+    game_panel_route_layout(&snap, &here);
+    ASSERT_TRUE(here.avail < one.avail);
+    ASSERT_TRUE(here.height[0] <= here.avail && here.height[1] <= here.avail);
+}
+
+TEST(panel_route_roamer_hidden_matches_today) {
+    static GameSnapshot snap;
+    static const uint8_t counts[ENC_METHOD_COUNT] = {12, 3, 0, 2, 3, 5};
+    RouteLayout before, after;
+    fill_route(&snap, counts);
+    game_panel_route_layout(&snap, &before);
+    fill_roamer(&snap, ROAMER_HIDDEN, false);
+    game_panel_route_layout(&snap, &after);
+    ASSERT_TRUE(memcmp(&before, &after, sizeof(before)) == 0);
+}
+
+TEST(panel_route_roamer_stays_in_bounds) {
+    static const float densities[] = {0.75f, 1.0f, 1.5f, 2.0f, 3.0f};
+    static const RoamerState states[] = {ROAMER_ROAMING, ROAMER_FAINTED, ROAMER_CAUGHT, ROAMER_GONE};
+    static GameSnapshot snap;
+    static const uint8_t counts[ENC_METHOD_COUNT] = {12, 3, 0, 2, 3, 5};
+    for (size_t d = 0; d < sizeof(densities) / sizeof(densities[0]); d++)
+        for (size_t k = 0; k < 4; k++)
+            for (int flags = 0; flags < 4; flags++) {
+                fill_route(&snap, counts);
+                if (flags & 1) fill_mirage(&snap, MIRAGE_BOX);
+                fill_roamer(&snap, states[k], (flags & 2) != 0);
+                ASSERT_TRUE(draw_checked(densities[d], &snap, GAME_PAGE_ENCOUNTERS, 0));
+            }
+}
+
 TEST(panel_mirage_key_arms_then_jumps) {
     static GameSnapshot snap;
     memset(&snap, 0, sizeof(snap));
@@ -1757,6 +1824,10 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_nuzlocke_route_window_keeps_current_place);
     RUN_TEST(panel_route_mirage_card_shrinks_list);
     RUN_TEST(panel_route_mirage_card_stays_in_bounds);
+    RUN_TEST(panel_route_roamer_collapsed_costs_one_row);
+    RUN_TEST(panel_route_roamer_here_shrinks_more);
+    RUN_TEST(panel_route_roamer_hidden_matches_today);
+    RUN_TEST(panel_route_roamer_stays_in_bounds);
     RUN_TEST(panel_mirage_key_arms_then_jumps);
     RUN_TEST(panel_mirage_key_rearms_after_timeout);
     RUN_TEST(panel_mirage_key_rearms_when_target_changes);
