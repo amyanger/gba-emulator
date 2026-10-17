@@ -43,6 +43,7 @@ static const GameProfile k_test_profile = {
     .flail_table = 0x08006140, .weight_table = 0x08006150,
     .pokedex_entries = 0x08008000, .pokedex_count = 387,
     .map_groups = 0x08003000, .map_group_count = 1,
+    .level_up_learnsets = 0x08004000,
 };
 
 static GameMem test_mem(void) {
@@ -333,6 +334,78 @@ TEST(snapshot_map_name_follows_save_location_before_map_loads) {
     memset(at(0x02000E20), 0, 0x1C);
     game_update_mem(gs, &m);
     ASSERT_STR_EQ(gs->snap.map_name, "ROUTE ONE");
+}
+
+/* Party slot 0 is species 1, Lv 5, knows Water Gun (1) and Growl (2). */
+static void put_learnset(uint32_t ptr) {
+    fixture_put32(at(0x08004000 + 4 * 1), ptr);
+    static const uint16_t e[] = {1 << 9 | 1, 1 << 9 | 3, 4 << 9 | 4, 5 << 9 | 2,
+                                 7 << 9 | 5, 7 << 9 | 6, 0xFFFF};
+    for (int i = 0; i < 7; i++) fixture_put16(at(0x08004100 + 2u * i), e[i]);
+}
+
+TEST(snapshot_relearn_party_slot) {
+    build_world();
+    put_learnset(0x08004100);
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    const GameRelearn* r = &gs->snap.relearn[0];
+    ASSERT_TRUE(r->valid);
+    ASSERT_EQ(r->relearn_count, 2);
+    ASSERT_STR_EQ(r->relearn[0], "MUD SLAP");
+    ASSERT_STR_EQ(r->relearn[1], "WEATHER BALL");
+    ASSERT_EQ(r->next_level, 7);
+    ASSERT_EQ(r->next_count, 2);
+    ASSERT_STR_EQ(r->next[0], "THUNDERSHOCK");
+    ASSERT_STR_EQ(r->next[1], "LOW KICK");
+    char buf[4096] = {0};
+    FILE* f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    ASSERT_TRUE(game_dump(&gs->snap, f));
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    ASSERT_TRUE(strstr(buf, "relearn 0 next 7 THUNDERSHOCK,LOW KICK | MUD SLAP,WEATHER BALL\n") != NULL);
+}
+
+TEST(snapshot_relearn_needs_a_rom_learnset) {
+    build_world();
+    put_learnset(0x02001000);  /* EWRAM, not ROM */
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(!gs->snap.relearn[0].valid);
+    put_learnset(0);
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(!gs->snap.relearn[0].valid);
+}
+
+TEST(snapshot_relearn_skips_eggs_and_bad_mons) {
+    build_world();
+    put_learnset(0x08004100);
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    at(0x02000400 + 0x13)[0] |= 0x04;  /* is-egg flag */
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(!gs->snap.relearn[0].valid);
+    at(0x02000400 + 0x13)[0] &= (uint8_t)~0x04;
+    at(0x02000400 + 0x1C)[0] ^= 0xFF;  /* checksum */
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(!gs->snap.relearn[0].valid);
+}
+
+TEST(snapshot_relearn_stable_bytes) {
+    build_world();
+    put_learnset(0x08004100);
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    static GameRelearn first;
+    game_update_mem(gs, &m);
+    memcpy(&first, &gs->snap.relearn[0], sizeof(first));
+    game_update_mem(gs, &m);
+    ASSERT_TRUE(memcmp(&first, &gs->snap.relearn[0], sizeof(first)) == 0);
 }
 
 TEST(snapshot_wild_battle_matchups_and_catch) {
@@ -1221,6 +1294,10 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_party_species_id_and_shiny);
     RUN_TEST(snapshot_map_name_empty_when_section_unknown);
     RUN_TEST(snapshot_map_name_follows_save_location_before_map_loads);
+    RUN_TEST(snapshot_relearn_party_slot);
+    RUN_TEST(snapshot_relearn_needs_a_rom_learnset);
+    RUN_TEST(snapshot_relearn_skips_eggs_and_bad_mons);
+    RUN_TEST(snapshot_relearn_stable_bytes);
     RUN_TEST(snapshot_wild_battle_matchups_and_catch);
     RUN_TEST(snapshot_hidden_power_uses_the_players_ivs);
     RUN_TEST(snapshot_enemy_moves_against_the_player);

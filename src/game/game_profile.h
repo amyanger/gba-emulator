@@ -101,6 +101,7 @@ typedef struct {
     /* Text and rules the panel shows */
     const char* daycare_toast;         /* egg toast detail when the egg can't be guessed */
     const char* route_footer;
+    const char* relearn_hint;      /* Party page: who relearns moves, and for what */
     bool evo_day_night_beauty;         /* EVO_FRIENDSHIP_DAY/NIGHT and EVO_BEAUTY can happen */
     bool clock_tv_stats;               /* GAME_STAT_CHECKED_CLOCK / WATCHED_TV are counted */
 } GameRules;
@@ -167,6 +168,7 @@ typedef struct {
     uint32_t wild_mon_headers;   uint16_t wild_header_cap; /* 20-byte stride */
     uint32_t region_map_entries; uint8_t region_map_count; /* section names (rules shape); count = MAPSEC_NONE */
     uint32_t evolution_table;                             /* 5 x 8-byte entries per species */
+    uint32_t level_up_learnsets;                          /* gLevelUpLearnsets: u16* per species */
     uint32_t berries;                                     /* gBerries, 28-byte stride, index berry-1 */
 
     /* Overworld X-Ray (docs/superpowers/specs/emerald-game-layer/overworld-*.md) */

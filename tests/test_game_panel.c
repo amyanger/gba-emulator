@@ -903,6 +903,47 @@ TEST(panel_route_roamer_stays_in_bounds) {
             }
 }
 
+static void fill_relearn(GameRelearn* r, uint8_t count, uint8_t next_level) {
+    memset(r, 0, sizeof(*r));
+    r->valid = true;
+    r->relearn_count = count;
+    for (uint8_t i = 0; i < count; i++) game_strcpy(r->relearn[i], GAME_NAME_LEN, "WWWWWWWWWWWW");
+    r->next_level = next_level;
+    r->next_count = next_level ? 4 : 0;
+    for (uint8_t i = 0; i < r->next_count; i++) game_strcpy(r->next[i], GAME_NAME_LEN, "WWWWWWWWWWWW");
+}
+
+TEST(panel_party_relearn_stays_in_bounds) {
+    static const float densities[] = {0.75f, 1.0f, 1.5f, 2.0f, 3.0f};
+    static GameSnapshot snap;
+    static const uint8_t counts[] = {0, 1, 8, LEARNSET_MAX};
+    for (size_t d = 0; d < sizeof(densities) / sizeof(densities[0]); d++)
+        for (size_t k = 0; k < sizeof(counts); k++) {
+            fill_party_and_route(&snap);
+            for (int i = 0; i < 6; i++) fill_relearn(&snap.relearn[i], counts[k], k ? 77 : 0);
+            for (uint8_t sel = 0; sel < 6; sel++)
+                ASSERT_TRUE(draw_checked(densities[d], &snap, GAME_PAGE_PARTY, sel));
+        }
+}
+
+TEST(panel_party_relearn_more_count_is_exact) {
+    static const float densities[] = {0.75f, 1.0f, 3.0f};
+    static GameRelearn r;
+    for (size_t d = 0; d < 3; d++) {
+        UiCanvas c;
+        ui_canvas_init(&c, s_buf, (int)(600 * densities[d] + 0.5f), (int)(480 * densities[d] + 0.5f),
+                       densities[d]);
+        fill_relearn(&r, LEARNSET_MAX, 0);
+        uint8_t line1 = 0;
+        uint8_t placed = game_panel_relearn_fit(&c, &r, 268.0f, &line1);
+        ASSERT_TRUE(line1 > 0 && line1 < placed);
+        ASSERT_TRUE(placed < LEARNSET_MAX); /* the rest go into "+N more" */
+        fill_relearn(&r, 2, 0);
+        ASSERT_EQ(game_panel_relearn_fit(&c, &r, 268.0f, &line1), 2);
+        ASSERT_EQ(line1, 2);
+    }
+}
+
 TEST(panel_mirage_key_arms_then_jumps) {
     static GameSnapshot snap;
     memset(&snap, 0, sizeof(snap));
@@ -1828,6 +1869,8 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_route_roamer_here_shrinks_more);
     RUN_TEST(panel_route_roamer_hidden_matches_today);
     RUN_TEST(panel_route_roamer_stays_in_bounds);
+    RUN_TEST(panel_party_relearn_stays_in_bounds);
+    RUN_TEST(panel_party_relearn_more_count_is_exact);
     RUN_TEST(panel_mirage_key_arms_then_jumps);
     RUN_TEST(panel_mirage_key_rearms_after_timeout);
     RUN_TEST(panel_mirage_key_rearms_when_target_changes);

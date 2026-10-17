@@ -53,6 +53,7 @@ These need the original, unmodified US/English ROM of Pokémon Emerald, FireRed 
 | &nbsp;&nbsp;[Battle](docs/pokemon-companion.md#battle) | | The opponent's IVs, nature, ability and held item, move matchups both ways, and in wild battles the catch odds for each ball. |
 | &nbsp;&nbsp;[Damage](docs/pokemon-companion.md#damage) | | Predicted damage as a percent of HP on every move in a battle, with KO coloring, for your moves and the enemy's. |
 | &nbsp;&nbsp;[Party](docs/pokemon-companion.md#party) | | Your Pokemon's hidden stats: IVs, EVs, Hidden Power, friendship. |
+| &nbsp;&nbsp;[Move relearner](docs/pokemon-companion.md#move-relearner) | | The next move each Pokemon learns by level, and what the move relearner can teach it before you spend a Heart Scale. |
 | &nbsp;&nbsp;[Daycare](docs/pokemon-companion.md#daycare) | | Your Daycare Pokemon, egg odds and the next roll, what the egg will be (on Emerald even whether it's shiny) and steps until each egg hatches. |
 | &nbsp;&nbsp;[Trainer card](docs/pokemon-companion.md#trainer-card) | C | Save a shareable picture of your team, as a grid or with your ace up front. |
 | &nbsp;&nbsp;[Route](docs/pokemon-companion.md#route) | | The wild encounter table for where you are, with caught Pokemon checked off. |

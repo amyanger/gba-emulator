@@ -754,8 +754,12 @@ static void breeding_row(UiCanvas* c, float y, const GameDaycare* dc, bool selec
 /* Party member or Daycare parent. A parent passes daycare_line (and cost_line, NULL when its
  * level is unknown), which replace the Next level row. A party egg passes its hatch_steps
  * (0 = unknown) and whether a Flame Body mon is in the party. */
+static void relearn_block(UiCanvas* c, const GameRelearn* r, const char* hint, float x, float y, float w);
+
+/* rl is NULL for daycare parents: they can't visit the relearner. */
 static void party_detail(UiCanvas* c, const GamePartyMon* m, float top, const char* daycare_line,
-                         const char* cost_line, uint32_t hatch_steps, bool fire) {
+                         const char* cost_line, uint32_t hatch_steps, bool fire, const GameRelearn* rl,
+                         const char* relearn_hint) {
     const float x = 220.0f, w = RIGHT - x;
     char buf[48];
     float y = top + 4.0f;
@@ -851,6 +855,88 @@ static void party_detail(UiCanvas* c, const GamePartyMon* m, float top, const ch
         stat_bar(c, x + 207.0f, y, 157.0f, ev, 255.0f, UI_ACCENT);
         y += 19.0f;
     }
+    if (rl && rl->valid) relearn_block(c, rl, relearn_hint, x, y + 8.0f, w);
+}
+
+#define RELEARN_LABEL_W 70.0f
+
+static float more_width(const UiCanvas* c, uint8_t n) {
+    char more[16];
+    snprintf(more, sizeof(more), "+%u more", n);
+    return ui_text_width(c, UI_FONT_REGULAR, KV_SIZE, more);
+}
+
+uint8_t game_panel_relearn_fit(const UiCanvas* c, const GameRelearn* r, float width, uint8_t* line1) {
+    const float sep = ui_text_width(c, UI_FONT_REGULAR, KV_SIZE, ", ");
+    uint8_t placed = 0;
+    *line1 = 0;
+    for (int line = 0; line < 2; line++) {
+        float used = 0;
+        for (uint8_t first = placed; placed < r->relearn_count; placed++) {
+            Name n = title(r->relearn[placed]);
+            float add = (placed > first ? sep : 0) + ui_text_width(c, UI_FONT_REGULAR, KV_SIZE, n.s);
+            uint8_t left = (uint8_t)(r->relearn_count - placed - 1);
+            /* Line 1 ends with a comma when names follow; line 2 keeps room for "+N more". */
+            float reserve = left == 0 ? 0
+                            : line == 0 ? ui_text_width(c, UI_FONT_REGULAR, KV_SIZE, ",")
+                                        : sep + more_width(c, left);
+            if (used + add + reserve > width) break;
+            used += add;
+        }
+        if (line == 0) *line1 = placed;
+    }
+    return placed;
+}
+
+/* Names [from, to), then "+N more" when more > 0, or a trailing comma when names follow. */
+static void relearn_line(UiCanvas* c, float x, float y, float w, const GameRelearn* r, uint8_t from,
+                         uint8_t to, uint8_t more) {
+    char buf[LEARNSET_MAX * (GAME_NAME_LEN + 2) + 16];
+    size_t len = 0;
+    buf[0] = '\0';
+    for (uint8_t i = from; i < to; i++) {
+        Name n = title(r->relearn[i]);
+        len += (size_t)snprintf(buf + len, sizeof(buf) - len, "%s%s", i > from ? ", " : "", n.s);
+    }
+    if (more) snprintf(buf + len, sizeof(buf) - len, "%s+%u more", to > from ? ", " : "", more);
+    else if (to < r->relearn_count) snprintf(buf + len, sizeof(buf) - len, ",");
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, w, UI_ALIGN_LEFT, UI_TEXT, buf);
+}
+
+/* What the game's move relearner offers, below the IV/EV grid (party Pokemon only). */
+static void relearn_block(UiCanvas* c, const GameRelearn* r, const char* hint, float x, float y, float w) {
+    char buf[96];
+    const float vx = x + RELEARN_LABEL_W, vw = w - RELEARN_LABEL_W;
+    section(c, x, y, w, "MOVE RELEARNER");
+    y += SECTION_ADV;
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, 0, UI_ALIGN_LEFT, UI_MUTED, "Next");
+    if (r->next_level == 0) {
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, vx, y, vw, UI_ALIGN_LEFT, UI_MUTED, "None left");
+    } else {
+        size_t len = (size_t)snprintf(buf, sizeof(buf), "Lv %u ", r->next_level);
+        for (uint8_t i = 0; i < r->next_count && len < sizeof(buf); i++) {
+            Name n = title(r->next[i]);
+            len += (size_t)snprintf(buf + len, sizeof(buf) - len, "%s%s", i ? ", " : "", n.s);
+        }
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, vx, y, vw, UI_ALIGN_LEFT, UI_TEXT, buf);
+    }
+    y += KV_LINE;
+    ui_text(c, UI_FONT_REGULAR, KV_SIZE, x, y, 0, UI_ALIGN_LEFT, UI_MUTED, "Relearn");
+    if (r->relearn_count == 0) {
+        ui_text(c, UI_FONT_REGULAR, KV_SIZE, vx, y, vw, UI_ALIGN_LEFT, UI_MUTED, "Nothing to relearn");
+        y += KV_LINE;
+    } else {
+        uint8_t line1;
+        uint8_t placed = game_panel_relearn_fit(c, r, vw, &line1);
+        uint8_t more = (uint8_t)(r->relearn_count - placed);
+        relearn_line(c, vx, y, vw, r, 0, line1, 0);
+        y += KV_LINE;
+        if (placed > line1 || more) {
+            relearn_line(c, vx, y, vw, r, line1, placed, more);
+            y += KV_LINE;
+        }
+    }
+    if (hint) ui_text(c, UI_FONT_REGULAR, UI_SIZE_LABEL, x, y + 2.0f, w, UI_ALIGN_LEFT, UI_FAINT, hint);
 }
 
 static const char* compat_reason_text(const GameDaycare* dc) {
@@ -957,7 +1043,7 @@ static void draw_party(UiCanvas* c, const GameSnapshot* s, float top, uint8_t se
     }
     if (sel < count) {
         party_detail(c, &s->party[sel], top, NULL, NULL, eggs ? dc->hatch_steps[sel] : 0,
-                     eggs && dc->fire);
+                     eggs && dc->fire, &s->relearn[sel], s->profile ? s->profile->rules->relearn_hint : NULL);
     } else if (sel - count < dc->parent_count) {
         uint8_t i = sel - count;
         char num[16], steps[48], cost[16];
@@ -965,7 +1051,7 @@ static void draw_party(UiCanvas* c, const GameSnapshot* s, float top, uint8_t se
         if (dc->cost[i]) snprintf(steps, sizeof(steps), "%s steps" MDOT "+%u Lv", num, dc->gained[i]);
         else snprintf(steps, sizeof(steps), "%s steps", num);
         fmt_num(cost, sizeof(cost), dc->cost[i]);
-        party_detail(c, &dc->mon[i], top, steps, dc->cost[i] ? cost : NULL, 0, false);
+        party_detail(c, &dc->mon[i], top, steps, dc->cost[i] ? cost : NULL, 0, false, NULL, NULL);
     } else {
         breeding_detail(c, dc, top);
     }

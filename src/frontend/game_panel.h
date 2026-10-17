@@ -103,6 +103,9 @@ uint32_t game_panel_damage_color(const GameMoveEff* e, uint16_t hp, bool against
                                  bool* semibold);
 /* Moves the party selection by delta; wraps, and returns 0 when the party is empty. */
 uint8_t game_panel_select(uint8_t sel, int delta, uint8_t party_count);
+/* Relearn names that fit on two lines of `width` points, the second keeping room for an exact
+ * "+N more"; *line1 gets the count on the first line. */
+uint8_t game_panel_relearn_fit(const UiCanvas* c, const GameRelearn* r, float width, uint8_t* line1);
 /* Rows on the Party page: party, then (when the daycare has a parent or an egg waits) one per
  * parent and one breeding row. dc may be NULL. */
 uint8_t game_panel_party_rows(const GameSnapshot* snap, const GameDaycare* dc);

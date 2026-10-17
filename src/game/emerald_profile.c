@@ -92,6 +92,7 @@ const GameRules g_emerald_rules = {
     .story_hof = 10,
     .daycare_toast = "Talk to the old man on Route 117",
     .route_footer = "\xE2\x9C\x93 caught. Not shown: outbreaks, lead abilities, Pyramid/Pike.",
+    .relearn_hint = "For a Heart Scale from the Move Tutor in Fallarbor Town",
     .evo_day_night_beauty = true,
     .clock_tv_stats = true,
 };
@@ -161,6 +162,7 @@ const GameProfile g_emerald_profile = {
     .wild_mon_headers = 0x08552D48, .wild_header_cap = 200,
     .region_map_entries = 0x085A147C, .region_map_count = 213,
     .evolution_table = 0x0832531C,
+    .level_up_learnsets = 0x0832937C,
     .berries = 0x0858A670,
 
     .object_events = 0x02037350,

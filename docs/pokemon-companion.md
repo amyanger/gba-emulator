@@ -99,6 +99,10 @@ Each Pokemon's nature, ability, held item, Hidden Power type and power, friendsh
 
 ![Party page showing a Torchic's stats, IVs and EVs](screenshots/panel-party.png)
 
+### Move relearner
+
+Under the stats, the Move Relearner block shows the next level a Pokemon learns a new move at, and every move the game's move relearner would teach it right now: the moves it could have learned by levelling up so far that it doesn't know. The list is the same one the game shows, in the same order. In Emerald that's the Move Tutor in Fallarbor Town, for a Heart Scale. In FireRed and LeafGreen it's the Move Maniac on Two Island, for a Big Mushroom or two Tiny Mushrooms. Eggs and Pokemon in the Daycare don't get the block.
+
 ### Daycare
 
 When you have Pokemon at the Daycare, or an egg is waiting there, a Daycare block appears under the party rows. Otherwise the Party page looks as it always has. Select a row with `[` and `]`, or step past the last party Pokemon.

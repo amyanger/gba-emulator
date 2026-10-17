@@ -96,6 +96,7 @@ const GameRules g_frlg_rules = {
     .story_hof = 9,
     .daycare_toast = "Talk to the old man on Four Island",
     .route_footer = "\xE2\x9C\x93 caught. Not shown: lead abilities.",
+    .relearn_hint = "For a Big Mushroom or 2 Tiny Mushrooms, Move Maniac on Two Island",
     .evo_day_night_beauty = false,           /* S: pfr pokemon.c:5062-5075; no Pokeblocks */
     .clock_tv_stats = false,                                  /* S: never incremented in pfr */
 };
@@ -163,6 +164,7 @@ const GameProfile g_firered_profile = {
     .wild_mon_headers = 0x083C9CB8, .wild_header_cap = 133,
     .region_map_entries = 0x083F1CAC, .region_map_count = 0xC5, /* sMapNames, MAPSEC_NONE */
     .evolution_table = 0x08259754,
+    .level_up_learnsets = 0x0825D7B4,
     .trainers = 0x0823EAC8, .trainer_count = 743,
     .trainer_class_names = 0x0823E558, .trainer_class_count = 107,
     .map_groups = 0x083526A8, .map_group_count = 43,
@@ -200,6 +202,7 @@ const GameProfile g_leafgreen_profile = {
     .wild_mon_headers = 0x083C9B64, .wild_header_cap = 133,
     .region_map_entries = 0x083F1B58, .region_map_count = 0xC5,
     .evolution_table = 0x082597A4,
+    .level_up_learnsets = 0x0825D804,
     .trainers = 0x0823EB14, .trainer_count = 743,
     .trainer_class_names = 0x0823E5A4, .trainer_class_count = 107,
     .map_groups = 0x083526F8, .map_group_count = 43,

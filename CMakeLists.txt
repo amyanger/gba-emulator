@@ -134,6 +134,7 @@ set(CORE_SOURCES
     src/game/pokemon.c
     src/game/battle_info.c
     src/game/damage.c
+    src/game/learnset.c
     src/game/rng3.c
     src/game/wildgen.c
     src/game/hunt_read.c
@@ -368,6 +369,7 @@ set(TEST_SOURCES
     tests/test_game_pokemon.c
     tests/test_game_battle.c
     tests/test_game_damage.c
+    tests/test_learnset.c
     tests/test_rng3.c
     tests/test_wildgen.c
     tests/test_hunt_read.c

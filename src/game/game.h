@@ -11,6 +11,7 @@
 #include "game/species_search.h"
 #include "game/damage.h"
 #include "game/badge_pic.h"
+#include "game/learnset.h"
 
 typedef struct GBA GBA;
 
@@ -85,6 +86,15 @@ typedef struct {
     bool caught;
 } GameEncRow;
 
+/* What the game's move relearner would offer a party Pokemon, and its next level-up moves. */
+typedef struct {
+    bool valid;
+    uint8_t next_level; /* 0 when no new move is left to learn */
+    uint8_t next_count, relearn_count;
+    char next[4][GAME_NAME_LEN];
+    char relearn[LEARNSET_MAX][GAME_NAME_LEN];
+} GameRelearn;
+
 typedef enum { ROAMER_HIDDEN, ROAMER_ROAMING, ROAMER_FAINTED, ROAMER_CAUGHT, ROAMER_GONE } RoamerState;
 
 /* The save's struct Roamer. No padding: the snapshot is compared with memcmp. */
@@ -111,6 +121,7 @@ typedef struct {
     char active_name[GAME_NAME_LEN]; /* player's active battler, empty when unknown */
     uint8_t party_count;
     GamePartyMon party[6];
+    GameRelearn relearn[6]; /* parallel to party */
     uint8_t enemy_count;
     GameEnemy enemies[2];
     uint8_t catch_count;

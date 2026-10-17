@@ -195,6 +195,30 @@ void game_fill_mon(const GameMem* m, const GameProfile* p, const MonData* d, Gam
     }
 }
 
+/* GetMoveRelearnerMoves on the species' learnset. Party mons only: daycare parents can't use
+ * the relearner. Any unreadable entry leaves the block out rather than half filled. */
+static void read_relearn(const GameMem* m, const GameProfile* p, const MonData* d, GameRelearn* out) {
+    uint32_t ptr;
+    uint16_t e[LEARNSET_MAX];
+    uint8_t n = 0;
+    if (d->bad || d->is_egg || d->level == 0 || d->species == 0 || d->species >= p->species_count ||
+        !p->level_up_learnsets ||
+        !game_mem_read32(m, p->level_up_learnsets + 4u * d->species, &ptr) || ptr < 0x08000000u)
+        return;
+    while (n < LEARNSET_MAX) {
+        if (!game_mem_read16(m, ptr + 2u * n, &e[n])) return;
+        if (e[n++] == 0xFFFF) break;
+    }
+    LearnsetView v;
+    learnset_scan(e, n, d->level, d->moves, p->move_count, &v);
+    out->valid = true;
+    out->next_level = v.next_level;
+    out->next_count = v.next_count;
+    out->relearn_count = v.relearn_count;
+    for (uint8_t i = 0; i < v.next_count; i++) move_name(m, p, v.next[i], out->next[i]);
+    for (uint8_t i = 0; i < v.relearn_count; i++) move_name(m, p, v.relearn[i], out->relearn[i]);
+}
+
 static void read_party(const GameMem* m, const GameProfile* p, GameSnapshot* s) {
     uint8_t count;
     if (!game_mem_read8(m, p->player_party_count, &count)) return;
@@ -205,6 +229,7 @@ static void read_party(const GameMem* m, const GameProfile* p, GameSnapshot* s) 
         if (!game_mem_copy(m, p->player_party + (uint32_t)i * MON_PARTY_SIZE, raw, sizeof(raw)))
             break;
         if (!pokemon_decode(raw, true, &d)) continue;
+        read_relearn(m, p, &d, &s->relearn[s->party_count]);
         game_fill_mon(m, p, &d, &s->party[s->party_count++]);
     }
 }
@@ -877,6 +902,15 @@ bool game_dump(const GameSnapshot* s, FILE* out) {
                       p->ivs[2], p->ivs[3], p->ivs[4], p->ivs[5], p->evs[0], p->evs[1], p->evs[2],
                       p->evs[3], p->evs[4], p->evs[5], p->hp_type, p->hp_power, p->ability,
                       p->item, p->friendship, (unsigned)p->exp_to_next, p->egg ? " egg" : "") >= 0;
+    }
+    for (uint8_t i = 0; i < s->party_count && i < 6; i++) {
+        const GameRelearn* r = &s->relearn[i];
+        if (!r->valid) continue;
+        ok &= fprintf(out, "relearn %u next %u ", i, r->next_level) >= 0;
+        for (uint8_t k = 0; k < r->next_count; k++) ok &= fprintf(out, k ? ",%s" : "%s", r->next[k]) >= 0;
+        ok &= fputs(" | ", out) >= 0;
+        for (uint8_t k = 0; k < r->relearn_count; k++) ok &= fprintf(out, k ? ",%s" : "%s", r->relearn[k]) >= 0;
+        ok &= fputc('\n', out) != EOF;
     }
     if (s->roamer.state != ROAMER_HIDDEN) {
         const GameRoamer* r = &s->roamer;
