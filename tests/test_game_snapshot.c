@@ -42,6 +42,7 @@ static const GameProfile k_test_profile = {
     .hold_effect_to_type = 0x08006120, .hold_effect_to_type_count = 2,
     .flail_table = 0x08006140, .weight_table = 0x08006150,
     .pokedex_entries = 0x08008000, .pokedex_count = 387,
+    .map_groups = 0x08003000, .map_group_count = 1,
 };
 
 static GameMem test_mem(void) {
@@ -155,6 +156,12 @@ static void build_world(void) {
     fixture_put32(at(0x08001C00 + 8 * 1 + 4), 0x08001D00);
     put_str(0x08001D00, "ROUTE ONE");
     at(0x02000E20 + 0x14)[0] = 1;
+    /* map group 0: maps 0:16 and 0:20 both in section 1 */
+    fixture_put32(at(0x08003000), 0x08003100);
+    fixture_put32(at(0x08003100 + 4 * 16), 0x08003200);
+    fixture_put32(at(0x08003100 + 4 * 20), 0x08003300);
+    at(0x08003200 + 0x14)[0] = 1;
+    at(0x08003300 + 0x14)[0] = 1;
 
     /* Overworld state: map 0:16, one party mon */
     at(SB1)[4] = 0; at(SB1)[5] = 16;
@@ -310,12 +317,22 @@ TEST(snapshot_map_name_empty_when_section_unknown) {
     build_world();
     GameState* gs = test_state();
     GameMem m = test_mem();
-    at(0x02000E20 + 0x14)[0] = 2;  /* past region_map_count */
+    at(0x08003200 + 0x14)[0] = 2;  /* past region_map_count */
     game_update_mem(gs, &m);
     ASSERT_STR_EQ(gs->snap.map_name, "");
-    at(0x02000E20 + 0x14)[0] = 0;  /* null name pointer */
+    at(0x08003200 + 0x14)[0] = 0;  /* null name pointer */
     game_update_mem(gs, &m);
     ASSERT_STR_EQ(gs->snap.map_name, "");
+}
+
+/* Title and Continue screens: the save is loaded but gMapHeader is still zero. */
+TEST(snapshot_map_name_follows_save_location_before_map_loads) {
+    build_world();
+    GameState* gs = test_state();
+    GameMem m = test_mem();
+    memset(at(0x02000E20), 0, 0x1C);
+    game_update_mem(gs, &m);
+    ASSERT_STR_EQ(gs->snap.map_name, "ROUTE ONE");
 }
 
 TEST(snapshot_wild_battle_matchups_and_catch) {
@@ -559,13 +576,6 @@ static GameState* roamer_state(void) {
     s_roamer_profile = k_test_profile;
     s_roamer_profile.roamer_location = ROAMER_LOC;
     s_roamer_profile.roamer_sb1_offset = 0x31DC;
-    s_roamer_profile.map_groups = 0x08003000;
-    s_roamer_profile.map_group_count = 1;
-    fixture_put32(at(0x08003000), 0x08003100);
-    fixture_put32(at(0x08003100 + 4 * 16), 0x08003200);
-    fixture_put32(at(0x08003100 + 4 * 20), 0x08003300);
-    at(0x08003200 + 0x14)[0] = 1;
-    at(0x08003300 + 0x14)[0] = 1;
     at(0x08000C00 + 28 * 3)[0] = 80;
     GameState* gs = test_state();
     gs->profile = &s_roamer_profile;
@@ -633,6 +643,19 @@ TEST(snapshot_roamer_inactive_is_never_here) {
     const GameSnapshot* s = roamer_snap(gs);
     ASSERT_TRUE(!s->roamer.here);
     ASSERT_TRUE(!s->roamer.has_odds);
+    ASSERT_EQ(s->roamer.place[0], '\0');
+}
+
+/* Title and Continue screens: sRoamerLocation is still {0,0} until Continue moves the roamer. */
+TEST(snapshot_roamer_unplaced_before_continue) {
+    build_world();
+    GameState* gs = roamer_state();
+    fixture_put32(at(0x08003100), 0x08003200);  /* map 0:0 resolves to a name */
+    at(SB1)[4] = 0; at(SB1)[5] = 0;             /* player on 0:0 too */
+    put_roamer(3, 117, 40, 0, true, 9, 0, 0);
+    const GameSnapshot* s = roamer_snap(gs);
+    ASSERT_EQ(s->roamer.state, ROAMER_ROAMING);
+    ASSERT_TRUE(!s->roamer.here);
     ASSERT_EQ(s->roamer.place[0], '\0');
 }
 
@@ -1197,6 +1220,7 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_overworld_party_and_encounters);
     RUN_TEST(snapshot_party_species_id_and_shiny);
     RUN_TEST(snapshot_map_name_empty_when_section_unknown);
+    RUN_TEST(snapshot_map_name_follows_save_location_before_map_loads);
     RUN_TEST(snapshot_wild_battle_matchups_and_catch);
     RUN_TEST(snapshot_hidden_power_uses_the_players_ivs);
     RUN_TEST(snapshot_enemy_moves_against_the_player);
@@ -1212,6 +1236,7 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_roamer_roaming_elsewhere);
     RUN_TEST(snapshot_roamer_here_with_odds);
     RUN_TEST(snapshot_roamer_inactive_is_never_here);
+    RUN_TEST(snapshot_roamer_unplaced_before_continue);
     RUN_TEST(snapshot_roamer_end_states);
     RUN_TEST(snapshot_roamer_not_released_hidden);
     RUN_TEST(snapshot_roamer_garbage_hidden);

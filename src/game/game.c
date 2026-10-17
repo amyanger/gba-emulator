@@ -93,11 +93,22 @@ void game_mapsec_name(const GameMem* m, const GameProfile* p, uint8_t sec, char*
     if (n > 0) gen3_decode(raw, n, out, GAME_MAP_NAME_LEN);
 }
 
-/* Name of the current map's region map section (gMapHeader.regionMapSectionId). */
-static void map_name(const GameMem* m, const GameProfile* p, char* out) {
+/* ROM MapHeader for a map (Overworld_GetMapHeaderByGroupAndId), 0 when out of range. */
+static uint32_t rom_map_header(const GameMem* m, const GameProfile* p, uint8_t group, uint8_t num) {
+    uint32_t list, header;
+    if (group >= p->map_group_count || !game_mem_read32(m, p->map_groups + 4u * group, &list) ||
+        !game_mem_read32(m, list + 4u * num, &header) || header < 0x08000000u)
+        return 0;
+    return header;
+}
+
+/* Name of a map's region map section. Read from the ROM header, not gMapHeader: the save's
+ * location is valid on the title and Continue screens, before gMapHeader is loaded. */
+static void map_name(const GameMem* m, const GameProfile* p, uint8_t group, uint8_t num, char* out) {
+    uint32_t header = rom_map_header(m, p, group, num);
     uint8_t sec;
     out[0] = '\0';
-    if (game_mem_read8(m, p->map_header + MAP_HEADER_REGION_MAP_SEC, &sec)) game_mapsec_name(m, p, sec, out);
+    if (header && game_mem_read8(m, header + MAP_HEADER_REGION_MAP_SEC, &sec)) game_mapsec_name(m, p, sec, out);
 }
 
 static bool species_info(const GameMem* m, const GameProfile* p, uint16_t species,
@@ -416,12 +427,9 @@ static void read_roamer(const GameMem* m, const GameProfile* p, uint32_t sb1, ui
         return;
     }
     out->state = ROAMER_ROAMING;
-    uint32_t list, header;
-    uint8_t sec;
-    if (loc[0] < p->map_group_count && game_mem_read32(m, p->map_groups + 4u * loc[0], &list) &&
-        game_mem_read32(m, list + 4u * loc[1], &header) && header >= 0x08000000u &&
-        game_mem_read8(m, header + MAP_HEADER_REGION_MAP_SEC, &sec))
-        game_mapsec_name(m, p, sec, out->place);
+    /* {0,0} until Continue moves it: no roamer table includes map 0:0 in any supported game. */
+    if (loc[0] == 0 && loc[1] == 0) return;
+    map_name(m, p, loc[0], loc[1], out->place);
     out->here = loc[0] == s->map_group && loc[1] == s->map_num;
     uint16_t wild;
     out->has_odds = out->here && hunt_wild_header(p, m, sb1, loc[0], loc[1], &wild);
@@ -491,8 +499,9 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     }
     game_mem_read8(m, sb1 + SB1_LOC_GROUP, &s->map_group);
     game_mem_read8(m, sb1 + SB1_LOC_NUM, &s->map_num);
-    game_mem_read8(m, p->map_header + MAP_HEADER_MAP_TYPE, &s->map_type);
-    map_name(m, p, s->map_name);
+    uint32_t header = rom_map_header(m, p, s->map_group, s->map_num);
+    if (header) game_mem_read8(m, header + MAP_HEADER_MAP_TYPE, &s->map_type);
+    map_name(m, p, s->map_group, s->map_num, s->map_name);
     read_party(m, p, s);
     read_roamer(m, p, sb1, sb2, s);
     if (game_has(p, FEAT_MIRAGE)) mirage_read(&gs->mirage, p, m, &gs->clock, sb1, sb2, &s->mirage);
