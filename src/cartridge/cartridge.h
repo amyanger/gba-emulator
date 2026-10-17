@@ -122,13 +122,21 @@ struct Cartridge {
     // Save file path
     char save_path[256];
 
+    // What per-game files are named after: the patch when one was applied, else the ROM.
+    char id_path[1024];
+    bool patched;
+    uint32_t patch_status;  // ROM_PATCH_* result of the last load
+
     // Autosave bookkeeping
     bool   save_dirty;       // set by cartridge_write8 when save region changes
     time_t last_save_flush;  // wall clock of most recent flush attempt
 };
 typedef struct Cartridge Cartridge;
 
-bool cartridge_load(Cartridge* cart, const char* path);
+/* patch_path is NULL for no patch. On a patch failure the load fails and patch_status says why. */
+bool cartridge_load(Cartridge* cart, const char* path, const char* patch_path);
+/* Looks for a .bps, .ups or .ips next to rom_path (same stem); first one that opens wins. */
+bool cartridge_find_patch(const char* rom_path, char* out, size_t n);
 void cartridge_destroy(Cartridge* cart);
 void cartridge_detect_save_type(Cartridge* cart);
 uint8_t cartridge_read8(Cartridge* cart, uint32_t addr);

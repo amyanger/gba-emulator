@@ -4,7 +4,7 @@ use core::ffi::{c_char, c_void, CStr};
 use core::mem::{offset_of, size_of};
 use core::slice;
 
-use crate::{gfx, msg, nds};
+use crate::{gfx, msg, nds, patch};
 
 /// # Safety
 /// `p` points to `len` readable bytes, or is null.
@@ -279,5 +279,36 @@ pub unsafe extern "C" fn narc_member(r: *const NdsRom, narc: nds::Span, index: u
             true
         }
         None => false,
+    }
+}
+
+/// Returns 0 and sets `*out_len`, or a ROM_PATCH_* error code.
+///
+/// # Safety
+/// Each pointer is null or points to its length in bytes (`out_len` to one
+/// u32). `out` must not overlap `src` or `patch`.
+#[no_mangle]
+pub unsafe extern "C" fn rom_patch_apply(
+    src: *const u8,
+    src_len: u32,
+    patch: *const u8,
+    patch_len: u32,
+    out: *mut u8,
+    out_cap: u32,
+    out_len: *mut u32,
+) -> u32 {
+    if patch.is_null() {
+        return patch::Error::NotPatch as u32;
+    }
+    if src.is_null() || out.is_null() || out_len.is_null() {
+        return patch::Error::Damaged as u32;
+    }
+    let out = slice::from_raw_parts_mut(out, out_cap as usize);
+    match patch::apply(bytes(src, src_len), bytes(patch, patch_len), out) {
+        Ok(n) => {
+            *out_len = n as u32;
+            0
+        }
+        Err(e) => e as u32,
     }
 }

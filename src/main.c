@@ -10,6 +10,7 @@
 #include "frontend/input_display.h"
 #include "frontend/slot_picker.h"
 #include "frontend/toast.h"
+#include "cartridge/rom_patch.h"
 #include "frontend/game_panel.h"
 #include "frontend/rom_picker.h"
 #include "frontend/run_session.h"
@@ -157,6 +158,76 @@ static const char* path_base(const char* p) {
     const char* b = strrchr(p, '\\');
     if (b && (!s || b > s)) s = b;
     return s ? s + 1 : p;
+}
+
+static bool file_exists(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (f) fclose(f);
+    return f != NULL;
+}
+
+static bool has_patch_ext(const char* p) {
+    const char* dot = strrchr(p, '.');
+    if (!dot) return false;
+    char e[4] = {0};
+    for (int i = 0; i < 3 && dot[1 + i]; i++) e[i] = (char)(dot[1 + i] | 0x20);
+    return strlen(dot) == 4 && (!strcmp(e, "bps") || !strcmp(e, "ups") || !strcmp(e, "ips"));
+}
+
+/* Set by load_game for the startup toasts. */
+static char s_patch_warn[48];
+static bool s_patch_sep_save;
+
+/* Picks the ROM/patch pair (--patch, an opened patch, then a sibling patch) and loads it. A bad
+ * sibling patch falls back to the plain ROM; any other patch failure fails with a reason. */
+static bool load_game(GBA* gba, const char* in, const char* explicit_patch, bool probe, char* base,
+                      char* patch, size_t n, char* reason, size_t reason_n) {
+    bool sibling = false;
+    patch[0] = '\0';
+    s_patch_warn[0] = '\0';
+    s_patch_sep_save = false;
+    snprintf(reason, reason_n, "Couldn't load %s as a GBA ROM", path_base(in));
+    int w = snprintf(base, n, "%s", in);
+    if (w < 0 || (size_t)w >= n) return false;
+    if (explicit_patch) {
+        w = snprintf(patch, n, "%s", explicit_patch);
+    } else if (has_patch_ext(in)) {
+        w = snprintf(patch, n, "%s", in);
+        int stem = (int)(strrchr(in, '.') - in);
+        snprintf(base, n, "%.*s.gba", stem, in);
+        if (!file_exists(base)) snprintf(base, n, "%.*s.GBA", stem, in);
+        if (!file_exists(base)) {
+            snprintf(base, n, "%.*s.gba", stem, in);
+            snprintf(reason, reason_n, "No %s next to the patch", path_base(base));
+            return false;
+        }
+    } else if (probe && cartridge_find_patch(in, patch, n)) {
+        sibling = true;
+    }
+    if (w < 0 || (size_t)w >= n) {
+        patch[0] = '\0';
+        return false;
+    }
+    if (patch[0]) {
+        char a[1100], b[1100];
+        snprintf(a, sizeof(a), "%s.sav", base);
+        snprintf(b, sizeof(b), "%s.sav", patch);
+        s_patch_sep_save = file_exists(a) && !file_exists(b);
+    }
+    if (gba_load_rom(gba, base, patch[0] ? patch : NULL)) return true;
+    if (patch[0] && gba->cart.patch_status != ROM_PATCH_OK) {
+        if (!sibling) {
+            snprintf(reason, reason_n, "Couldn't apply %s: %s", path_base(patch),
+                     rom_patch_reason(gba->cart.patch_status));
+            return false;
+        }
+        snprintf(s_patch_warn, sizeof(s_patch_warn), "%s", rom_patch_reason(gba->cart.patch_status));
+        LOG_WARN("Patch %s not applied: %s", patch, s_patch_warn);
+        patch[0] = '\0';
+        s_patch_sep_save = false;
+        return gba_load_rom(gba, base, NULL);
+    }
+    return false;
 }
 
 static void settings_toast(void* user, ToastKind kind, const char* title, const char* detail) {
@@ -314,6 +385,7 @@ static void print_usage(const char* prog) {
     printf("Options:\n");
     printf("  --bios <file>          Load GBA BIOS ROM\n");
     printf("  --scale <n>            Window scale factor (default: 3)\n");
+    printf("  --patch <file>         Apply an IPS, UPS or BPS patch to the ROM in memory\n");
     printf("  --cheats <file>        Cheat file to use instead of <rom>.cht (.cht format)\n");
     printf("  --cheat-report         Print how each cheat was read (device, codes) and exit\n");
     printf("  --keymap <file>        Load custom keyboard bindings\n");
@@ -364,6 +436,7 @@ int main(int argc, char* argv[]) {
     bool no_terminal = no_rom || console_hidden;
     const char* bios_path = NULL;
     const char* cheat_path = NULL;
+    const char* patch_arg = NULL;
     bool cheat_report = false;
     const char* keymap_path = NULL;
     const char* link_master_path = NULL;
@@ -406,6 +479,8 @@ int main(int argc, char* argv[]) {
             bios_path = argv[++i];
         } else if (strcmp(argv[i], "--scale") == 0 && i + 1 < argc) {
             scale = atoi(argv[++i]);
+        } else if (strcmp(argv[i], "--patch") == 0 && i + 1 < argc) {
+            patch_arg = argv[++i];
         } else if (strcmp(argv[i], "--cheats") == 0 && i + 1 < argc) {
             cheat_path = argv[++i];
         } else if (strcmp(argv[i], "--keymap") == 0 && i + 1 < argc) {
@@ -670,39 +745,6 @@ int main(int argc, char* argv[]) {
     GBA gba;
     gba_init(&gba);
 
-    // Set up local link cable if requested. link_peer_listen blocks until a
-    // peer connects, so we do this before the main loop starts.
-    LinkPeer* link_peer = NULL;
-    if ((link_master_path || link_client_path) && !link_lock_rom(rom_path)) {
-        LOG_ERROR("%s is already open in another linked window. Link two copies of the ROM "
-                  "(each keeps its own save), not the same file.", rom_path);
-        gba_destroy(&gba);
-        return 1;
-    }
-    if (link_master_path) {
-        link_peer = link_peer_create();
-        LOG_INFO("Listening for SIO peer at %s ...", link_master_path);
-        if (!link_peer_listen(link_peer, link_master_path)) {
-            LOG_ERROR("Failed to listen on %s", link_master_path);
-            link_peer_shutdown(link_peer);
-            link_peer = NULL;
-        } else {
-            LOG_INFO("SIO peer connected");
-            gba_set_link_peer(&gba, link_peer);
-        }
-    } else if (link_client_path) {
-        link_peer = link_peer_create();
-        LOG_INFO("Connecting to SIO peer at %s ...", link_client_path);
-        if (!link_peer_connect(link_peer, link_client_path)) {
-            LOG_ERROR("Failed to connect to %s", link_client_path);
-            link_peer_shutdown(link_peer);
-            link_peer = NULL;
-        } else {
-            LOG_INFO("SIO peer connected");
-            gba_set_link_peer(&gba, link_peer);
-        }
-    }
-
     /* Prefs load before the BIOS so a saved BIOS file can apply. Headless never touches the user's prefs. */
     if (!headless) {
         char prefs_path[PREFS_PATH_LEN] = "";
@@ -738,29 +780,64 @@ int main(int argc, char* argv[]) {
         cpu_skip_bios(&gba.cpu);
     }
 
+    LinkPeer* link_peer = NULL;
+
     /* From the library, a file that won't load sends you back to it with the reason. */
-    while (fe_ready && !gba_load_rom(&gba, rom_path)) {
-        char reason[160];
-        LOG_ERROR("Failed to load ROM: %s", rom_path);
-        snprintf(reason, sizeof(reason), "Couldn't load %s as a GBA ROM", path_base(rom_path));
+    char base_path[1024], patch_file[1024], reason[160];
+    while (fe_ready && !load_game(&gba, rom_path, patch_arg, !headless, base_path, patch_file,
+                                  sizeof(base_path), reason, sizeof(reason))) {
+        LOG_ERROR("Failed to load ROM: %s (%s)", rom_path, reason);
+        patch_arg = NULL;
         if (!library_run(&fe, &s_library, reason, picked_rom, sizeof(picked_rom))) {
-            if (link_peer) link_peer_shutdown(link_peer);
             frontend_destroy(&fe);
             gba_destroy(&gba);
             return 0;
         }
         rom_path = picked_rom;
     }
-    if (!fe_ready && !gba_load_rom(&gba, rom_path)) {
-        LOG_ERROR("Failed to load ROM: %s", rom_path);
-        if (no_terminal) rom_picker_alert("Couldn't load that file as a GBA ROM.");
-        // Mirror the normal-cleanup path so a failed ROM load doesn't leak
-        // the link socket fd or leave a stray socket file behind.
-        if (link_peer) link_peer_shutdown(link_peer);
+    if (!fe_ready && !load_game(&gba, rom_path, patch_arg, !headless, base_path, patch_file,
+                                sizeof(base_path), reason, sizeof(reason))) {
+        LOG_ERROR("Failed to load ROM: %s (%s)", rom_path, reason);
+        if (no_terminal) rom_picker_alert(reason);
         return 1;
     }
 
-    if (!headless) library_record_launch(rom_path);
+    /* The library lists the base ROM; every per-game file follows the patch when one is applied. */
+    if (!headless) library_record_launch(base_path);
+    rom_path = gba.cart.id_path;
+    if (gba.cart.patched) LOG_INFO("Patch applied: %s", rom_path);
+
+    // Set up local link cable if requested. link_peer_listen blocks until a
+    // peer connects, so we do this before the main loop starts.
+    if ((link_master_path || link_client_path) && !link_lock_rom(rom_path)) {
+        LOG_ERROR("%s is already open in another linked window. Link two copies of the ROM "
+                  "(each keeps its own save), not the same file.", rom_path);
+        gba_destroy(&gba);
+        return 1;
+    }
+    if (link_master_path) {
+        link_peer = link_peer_create();
+        LOG_INFO("Listening for SIO peer at %s ...", link_master_path);
+        if (!link_peer_listen(link_peer, link_master_path)) {
+            LOG_ERROR("Failed to listen on %s", link_master_path);
+            link_peer_shutdown(link_peer);
+            link_peer = NULL;
+        } else {
+            LOG_INFO("SIO peer connected");
+            gba_set_link_peer(&gba, link_peer);
+        }
+    } else if (link_client_path) {
+        link_peer = link_peer_create();
+        LOG_INFO("Connecting to SIO peer at %s ...", link_client_path);
+        if (!link_peer_connect(link_peer, link_client_path)) {
+            LOG_ERROR("Failed to connect to %s", link_client_path);
+            link_peer_shutdown(link_peer);
+            link_peer = NULL;
+        } else {
+            LOG_INFO("SIO peer connected");
+            gba_set_link_peer(&gba, link_peer);
+        }
+    }
 
     game_init(&s_game, gba.cart.rom, gba.cart.rom_size);
     overworld_feed_init(&s_ow, game_has(s_game.profile, FEAT_OVERWORLD) ? s_game.profile : NULL);
@@ -1171,6 +1248,13 @@ int main(int argc, char* argv[]) {
         frontend_toast(&fe, TOAST_WARN, "BIOS file not found", path_base(pref_bios));
     else if (!bios_loaded)
         frontend_toast(&fe, TOAST_WARN, "Running without BIOS", "Using built-in BIOS");
+    if (gba.cart.patched) {
+        frontend_toast(&fe, TOAST_OK, "Patch applied", path_base(rom_path));
+        if (s_patch_sep_save)
+            frontend_toast(&fe, TOAST_INFO, "Separate save", "Your original save is untouched");
+    } else if (s_patch_warn[0]) {
+        frontend_toast(&fe, TOAST_WARN, "Patch not applied", s_patch_warn);
+    }
     if (s_game.support == GAME_SUPPORT_MODIFIED || s_game.support == GAME_SUPPORT_OTHER_REVISION)
         frontend_toast(&fe, TOAST_WARN, "Pok\xC3\xA9mon Companion is off",
                        s_game.support == GAME_SUPPORT_MODIFIED ? "ROM hack not supported"

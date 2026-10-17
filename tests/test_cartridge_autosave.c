@@ -149,7 +149,7 @@ static void check_long_rom_path(size_t len) {
 
     Cartridge cart;
     memset(&cart, 0, sizeof(cart));
-    ASSERT_TRUE(cartridge_load(&cart, path));
+    ASSERT_TRUE(cartridge_load(&cart, path, NULL));
     ASSERT_EQ(cart.save_type, SAVE_SRAM);
 
     cart.sram[0] = 0x5A;
@@ -302,14 +302,14 @@ TEST(cart_load_rejects_file_shorter_than_header) {
     fwrite(rom, 1, 0xBF, fp);
     fclose(fp);
     memset(&cart, 0, sizeof(cart));
-    ASSERT_TRUE(!cartridge_load(&cart, path));
+    ASSERT_TRUE(!cartridge_load(&cart, path, NULL));
 
     fp = fopen(path, "wb");
     ASSERT_TRUE(fp != NULL);
     fwrite(rom, 1, 0xC0, fp);
     fclose(fp);
     memset(&cart, 0, sizeof(cart));
-    ASSERT_TRUE(cartridge_load(&cart, path));
+    ASSERT_TRUE(cartridge_load(&cart, path, NULL));
     cartridge_destroy(&cart);
     remove(path);
 }

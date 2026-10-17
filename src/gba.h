@@ -69,7 +69,7 @@ typedef struct GBA GBA;
 void gba_init(GBA* gba);
 
 // Load a ROM file, returns false on failure
-bool gba_load_rom(GBA* gba, const char* path);
+bool gba_load_rom(GBA* gba, const char* path, const char* patch_path);
 
 // Load BIOS file (optional), returns false on failure
 bool gba_load_bios(GBA* gba, const char* path);

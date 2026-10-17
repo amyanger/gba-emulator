@@ -54,8 +54,8 @@ void gba_init(GBA* gba) {
     LOG_INFO("GBA system initialized");
 }
 
-bool gba_load_rom(GBA* gba, const char* path) {
-    return cartridge_load(&gba->cart, path);
+bool gba_load_rom(GBA* gba, const char* path, const char* patch_path) {
+    return cartridge_load(&gba->cart, path, patch_path);
 }
 
 bool gba_load_bios(GBA* gba, const char* path) {

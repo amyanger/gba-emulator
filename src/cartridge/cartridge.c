@@ -3,6 +3,7 @@
 #include "flash.h"
 #include "gpio.h"
 #include "rtc.h"
+#include "rom_patch.h"
 
 #include "fileio.h"
 
@@ -33,7 +34,89 @@ static bool write_rtc_trailer(FILE* f, const Cartridge* cart) {
     return fwrite(trailer, 1, RTC_TRAILER_SIZE, f) == RTC_TRAILER_SIZE;
 }
 
-bool cartridge_load(Cartridge* cart, const char* path) {
+const char* rom_patch_reason(uint32_t code) {
+    switch (code) {
+    case ROM_PATCH_NOT_PATCH:  return "not a patch file";
+    case ROM_PATCH_DAMAGED:    return "the patch file is damaged";
+    case ROM_PATCH_WRONG_ROM:  return "made for a different ROM";
+    case ROM_PATCH_TOO_BIG:    return "the patched game is too big";
+    case ROM_PATCH_BAD_RESULT: return "patching gave a bad result";
+    case ROM_PATCH_CANT_READ:  return "couldn't read the patch file";
+    default:                   return "unknown error";
+    }
+}
+
+bool cartridge_find_patch(const char* rom_path, char* out, size_t n) {
+    static const char* const exts[] = {".bps", ".ups", ".ips"};
+    const char* dot = strrchr(rom_path, '.');
+    const char* sep = strrchr(rom_path, '/');
+    const char* bsep = strrchr(rom_path, '\\');
+    if (bsep && (!sep || bsep > sep)) sep = bsep;
+    size_t stem = dot && (!sep || dot > sep) ? (size_t)(dot - rom_path) : strlen(rom_path);
+    for (size_t i = 0; i < 3; i++) {
+        int w = snprintf(out, n, "%.*s%s", (int)stem, rom_path, exts[i]);
+        if (w < 0 || (size_t)w >= n) continue;
+        FILE* f = fopen(out, "rb");
+        if (f) {
+            fclose(f);
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Reads a whole file of at most max bytes into a new buffer; NULL on any failure. */
+static uint8_t* read_file_capped(const char* path, long max, long* len) {
+    FILE* f = fopen(path, "rb");
+    if (!f) return NULL;
+    uint8_t* buf = NULL;
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (size >= 0 && size <= max) {
+        buf = (uint8_t*)malloc(size ? (size_t)size : 1);
+        if (buf && fread(buf, 1, (size_t)size, f) != (size_t)size) {
+            free(buf);
+            buf = NULL;
+        }
+    }
+    fclose(f);
+    *len = size;
+    return buf;
+}
+
+/* Applies the patch to cart->rom in memory; on failure the ROM is left untouched. */
+static uint32_t apply_patch_file(Cartridge* cart, const char* patch_path) {
+    long plen = 0;
+    uint8_t* patch = read_file_capped(patch_path, 64L * 1024 * 1024, &plen);
+    if (!patch) return ROM_PATCH_CANT_READ;
+    // Zeroed: Rust takes the whole buffer as an initialized slice.
+    uint8_t* out = (uint8_t*)calloc(1, MAX_ROM_SIZE);
+    if (!out) {
+        free(patch);
+        return ROM_PATCH_TOO_BIG;
+    }
+    uint32_t out_len = 0;
+    uint32_t rc = rom_patch_apply(cart->rom, cart->rom_size, patch, (uint32_t)plen, out,
+                                  MAX_ROM_SIZE, &out_len);
+    free(patch);
+    if (rc == ROM_PATCH_OK && (out_len < 0xC0 || out_len > MAX_ROM_SIZE)) rc = ROM_PATCH_BAD_RESULT;
+    if (rc == ROM_PATCH_OK) {
+        uint8_t* shrunk = (uint8_t*)realloc(out, out_len);
+        if (shrunk) out = shrunk;
+        free(cart->rom);
+        cart->rom = out;
+        cart->rom_size = out_len;
+    } else {
+        free(out);
+    }
+    return rc;
+}
+
+bool cartridge_load(Cartridge* cart, const char* path, const char* patch_path) {
+    cart->patched = false;
+    cart->patch_status = ROM_PATCH_OK;
+
     FILE* f = fopen(path, "rb");
     if (!f) {
         LOG_ERROR("Cannot open ROM: %s", path);
@@ -71,6 +154,27 @@ bool cartridge_load(Cartridge* cart, const char* path) {
     cart->rom_size = (uint32_t)size;
     fclose(f);
 
+    // The patch path is the identity of a patched game, so its saves never touch the base ROM's.
+    const char* id = patch_path ? patch_path : path;
+    int idn = snprintf(cart->id_path, sizeof(cart->id_path), "%s", id);
+    if (idn < 0 || (size_t)idn >= sizeof(cart->id_path)) {
+        LOG_ERROR("Path too long: %s", id);
+        free(cart->rom);
+        cart->rom = NULL;
+        return false;
+    }
+
+    if (patch_path) {
+        cart->patch_status = apply_patch_file(cart, patch_path);
+        if (cart->patch_status != ROM_PATCH_OK) {
+            LOG_ERROR("Cannot apply %s: %s", patch_path, rom_patch_reason(cart->patch_status));
+            free(cart->rom);
+            cart->rom = NULL;
+            return false;
+        }
+        cart->patched = true;
+    }
+
     // Parse header
     memcpy(cart->title, &cart->rom[0xA0], 12);
     cart->title[12] = '\0';
@@ -87,9 +191,9 @@ bool cartridge_load(Cartridge* cart, const char* path) {
     // regardless of the emulator's CWD, and matches the savestate convention.
     // A truncated path could equal the ROM path itself, so on overflow
     // battery saves are disabled for this run (empty save_path).
-    int n = snprintf(cart->save_path, sizeof(cart->save_path), "%s.sav", path);
+    int n = snprintf(cart->save_path, sizeof(cart->save_path), "%s.sav", cart->id_path);
     if (n < 0 || (size_t)n >= sizeof(cart->save_path)) {
-        LOG_ERROR("ROM path too long for save file; saving disabled: %s", path);
+        LOG_ERROR("ROM path too long for save file; saving disabled: %s", cart->id_path);
         cart->save_path[0] = '\0';
     }
 

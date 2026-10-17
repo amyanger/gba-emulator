@@ -9,8 +9,12 @@ RomPickResult rom_picker_choose(char* out, size_t out_size) {
         panel.title = @"Choose a GBA ROM";
         panel.canChooseDirectories = NO;
         panel.allowsMultipleSelection = NO;
-        UTType* gba = [UTType typeWithFilenameExtension:@"gba"];
-        if (gba) panel.allowedContentTypes = @[ gba ];
+        NSMutableArray<UTType*>* types = [NSMutableArray array];
+        for (NSString* ext in @[ @"gba", @"bps", @"ups", @"ips" ]) {
+            UTType* t = [UTType typeWithFilenameExtension:ext];
+            if (t) [types addObject:t];
+        }
+        if (types.count) panel.allowedContentTypes = types;
 
         /* Bring the panel in front of Finder; activate replaces the old call on macOS 14+. */
         if (@available(macOS 14.0, *)) {

@@ -83,6 +83,7 @@ The folder and the recently played list are kept in `library.txt` in the app's s
 | `--bios <file>` | Path to GBA BIOS dump (optional, HLE fallback available). Overrides the BIOS chosen in [Settings](#settings) |
 | `--scale <n>` | Window scale multiplier, 1 to 10 (default: 3) |
 | `--cheats <file>` | Cheat file to use instead of `<rom>.cht` |
+| `--patch <file>` | Apply this IPS, UPS or BPS patch to the ROM for the run (see [ROM patches](#rom-patches)) |
 | `--cheat-report` | Print how each cheat was read (device, decoded codes, problems) and exit |
 | `--keymap <file>` | Path to a keymap `.ini`, applied on top of the bindings saved from Settings (see [Keymap file](#keymap-file)) |
 | `--link-master <path>` | Listen for a peer GBA at AF_UNIX socket path (host side) |
@@ -235,6 +236,18 @@ Open [Settings](#settings) (Cmd+, on macOS, Ctrl+, elsewhere) and pick **Video**
 | ![Route 118 in the bright colors the game was drawn with](screenshots/color-correction-off.png) | ![Route 118 with color correction: darker, muted colors like a real GBA screen](screenshots/color-correction-on.png) |
 
 Filters only change what you see. Screenshots (F12) still save the original pixels.
+
+## ROM patches
+
+Play a ROM hack, translation or fix patch without making a patched copy of the game. The patch is applied in memory each time the game starts, and neither file on disk is changed. IPS, UPS and BPS patches all work.
+
+- **Patch next to the ROM:** give the patch the same name as the ROM, for example `emerald.gba` and `emerald.bps`, and open the ROM as usual. If there are several, `.bps` is used first, then `.ups`, then `.ips`.
+- **Open the patch itself:** open or drop `Hack.bps` and the emulator plays it on `Hack.gba` from the same folder.
+- **Any two files:** `--patch <file>` on the command line.
+
+A patched game is a separate game with its own save. Its save, save states, cheats and logs are named after the patch (`emerald.bps.sav`), so your original `emerald.gba.sav` is never opened. If you already played the hack from a patched copy, rename that save to `<patch>.sav` to keep it.
+
+UPS and BPS patches check that they are made for your ROM. If they aren't, a patch next to the ROM is skipped with a message and the original game starts. A patch you opened directly shows why it couldn't be applied. IPS patches have no such check, so use one made for your exact ROM. The Pokemon Companion stays off on patched games.
 
 ## Following Pokemon
 

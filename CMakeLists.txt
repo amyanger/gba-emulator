@@ -359,6 +359,7 @@ set(TEST_SOURCES
     tests/test_screenshot.c
     tests/test_trace.c
     tests/test_cartridge_autosave.c
+    tests/test_rom_patch.c
     tests/test_keymap.c
     tests/test_eeprom.c
     tests/test_practice.c
