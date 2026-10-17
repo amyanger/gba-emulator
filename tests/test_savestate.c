@@ -1,5 +1,6 @@
 #include "test_harness.h"
 #ifndef _WIN32
+#include <sys/stat.h>
 #include <unistd.h>
 #endif
 

@@ -308,12 +308,17 @@ Headless mode is incompatible with `--link-master` / `--link-client`
 
 Two emulator instances on the same machine can connect over a UNIX domain socket and exchange GBA SIO multiplayer-mode packets. That is enough for Pokemon trade and battle between local windows.
 
+Each window needs its own copy of the ROM, because the save, savestates and logs are named after the ROM file. Two windows on the same file would overwrite each other's save, so the second one refuses to start.
+
 ```bash
+# Once: a second copy for the other player. It gets its own emerald-2.gba.sav.
+cp roms/emerald.gba roms/emerald-2.gba
+
 # Terminal 1 (host): opens the socket and waits for a peer.
 ./build/gba_emulator roms/emerald.gba --link-master /tmp/gba.sock
 
 # Terminal 2 (client): connects to the host's socket.
-./build/gba_emulator roms/emerald.gba --link-client /tmp/gba.sock
+./build/gba_emulator roms/emerald-2.gba --link-client /tmp/gba.sock
 ```
 
 The host blocks at startup until the client connects. After both sides are up, in-game link interactions (Cable Club, trades, battles) cross between the two windows.

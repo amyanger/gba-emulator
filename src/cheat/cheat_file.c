@@ -1,12 +1,10 @@
 #include "cheat/cheat_file.h"
 #include "cheat/cheat_parse.h"
+#include "fileio.h"
 
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
-#ifdef _WIN32
-#include <windows.h>
-#endif
 
 #define LINE_BUF_SIZE 512
 #define BLOCK_BUF_SIZE 8192
@@ -14,14 +12,6 @@
 static const char* const k_headers[CHEAT_DEV_COUNT] = {
     "[CodeBreaker]", "[GameShark]", "[ActionReplay]", "[GameSharkRaw]", "[ActionReplayRaw]",
 };
-
-bool cheat_file_replace(const char* src, const char* dst) {
-#ifdef _WIN32
-    return MoveFileExA(src, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-#else
-    return rename(src, dst) == 0;
-#endif
-}
 
 static char* trim(char* s) {
     while (*s && isspace((unsigned char)*s)) s++;
@@ -163,7 +153,7 @@ bool cheat_file_save(const CheatEngine* engine, const char* path) {
     }
     if (fflush(f) != 0) ok = false;
     if (fclose(f) != 0) ok = false;
-    if (!ok || !cheat_file_replace(tmp, path)) {
+    if (!ok || !fileio_replace(tmp, path)) {
         remove(tmp);
         return false;
     }

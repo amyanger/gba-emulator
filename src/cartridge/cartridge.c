@@ -4,14 +4,7 @@
 #include "gpio.h"
 #include "rtc.h"
 
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <io.h>
-#include <windows.h>
-#else
-#include <unistd.h>
-#endif
+#include "fileio.h"
 
 #define RTC_TRAILER_MAGIC "GRTC"
 #define RTC_TRAILER_VERSION 1u
@@ -38,28 +31,6 @@ static bool write_rtc_trailer(FILE* f, const Cartridge* cart) {
     uint64_t u = (uint64_t)cart->rtc.offset_secs;
     for (int i = 0; i < 8; i++) trailer[8 + i] = (uint8_t)(u >> (i * 8));
     return fwrite(trailer, 1, RTC_TRAILER_SIZE, f) == RTC_TRAILER_SIZE;
-}
-
-/* Push buffered data to disk so a full disk or I/O error surfaces here,
- * before the rename can replace the previous good save. */
-static bool flush_to_disk(FILE* f) {
-    if (fflush(f) != 0) return false;
-#ifdef _WIN32
-    return _commit(_fileno(f)) == 0;
-#else
-    return fsync(fileno(f)) == 0;
-#endif
-}
-
-/* Atomically replace dst with src. MSVC rename() fails when dst exists, which
- * silently dropped every battery save after the first; MoveFileEx replaces in
- * one step, so the old save survives until the new one is in place. */
-static bool replace_file(const char* src, const char* dst) {
-#ifdef _WIN32
-    return MoveFileExA(src, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-#else
-    return rename(src, dst) == 0;
-#endif
 }
 
 bool cartridge_load(Cartridge* cart, const char* path) {
@@ -295,7 +266,7 @@ CartFlushResult cartridge_save_to_file(Cartridge* cart) {
     bool ok = expected > 0 && written == expected;
     if (!ok) {
         LOG_WARN("Save write incomplete: expected %zu, wrote %zu", expected, written);
-    } else if (!write_rtc_trailer(f, cart) || !flush_to_disk(f)) {
+    } else if (!write_rtc_trailer(f, cart) || !fileio_sync(f)) {
         LOG_ERROR("Failed to write save file %s", tmp_path);
         ok = false;
     }
@@ -308,7 +279,7 @@ CartFlushResult cartridge_save_to_file(Cartridge* cart) {
         return CART_FLUSH_FAILED;
     }
 
-    if (!replace_file(tmp_path, cart->save_path)) {
+    if (!fileio_replace(tmp_path, cart->save_path)) {
         LOG_ERROR("Failed to commit save file %s", cart->save_path);
         remove(tmp_path);
         return CART_FLUSH_FAILED;

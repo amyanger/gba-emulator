@@ -6,11 +6,8 @@
 
 #include <SDL2/SDL_keyboard.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 #include "common.h"
+#include "fileio.h"
 #include "input/input.h"
 
 static uint16_t s_table[SDL_NUM_SCANCODES];
@@ -212,14 +209,6 @@ bool keymap_load(const char* path) {
     return true;
 }
 
-static bool replace_file(const char* src, const char* dst) {
-#ifdef _WIN32
-    return MoveFileExA(src, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-#else
-    return rename(src, dst) == 0;
-#endif
-}
-
 static const char* action_name(uint16_t action) {
     switch (action) {
     case KEY_A:          return "A";
@@ -273,7 +262,7 @@ bool keymap_save(const char* path) {
         if (npads == 0 && fprintf(f, "PAD_%s=None\n", name) < 0) ok = false;
     }
     if (fclose(f) != 0) ok = false;
-    if (!ok || !replace_file(tmp, path)) {
+    if (!ok || !fileio_replace(tmp, path)) {
         remove(tmp);
         return false;
     }

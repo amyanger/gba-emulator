@@ -253,6 +253,8 @@ void settings_cheats_draw(UiCanvas* c, UiInput* in, SettingsCheatsPage* p, Setti
     char sub[160];
     const char* file = ctx->cht_path ? ctx->cht_path : "";
     const char* base = strrchr(file, '/');
+    const char* back = strrchr(file, '\\');
+    if (back && (!base || back > base)) base = back;
     snprintf(sub, sizeof(sub), "Paste codes from a cheat site. Changes save to %s.", base ? base + 1 : file);
     ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, r.x, r.y + 26.0f, r.w, UI_ALIGN_LEFT, UI_MUTED,
             ctx->cht_path ? sub : "Paste codes from a cheat site.");

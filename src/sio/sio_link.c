@@ -33,11 +33,15 @@ bool link_peer_exchange(LinkPeer* peer, uint16_t our_payload, uint16_t* peer_out
 }
 void link_peer_shutdown(LinkPeer* peer) { (void)peer; }
 void link_peer_test_inject_fd(LinkPeer* peer, int fd) { (void)peer; (void)fd; }
+bool link_lock_rom(const char* rom_path) { (void)rom_path; return true; }
 
 #else // _WIN32
 
 #include <errno.h>
+#include <fcntl.h>
+#include <sys/file.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -118,10 +122,10 @@ void link_peer_test_inject_fd(LinkPeer* peer, int fd) {
 bool link_peer_listen(LinkPeer* peer, const char* path) {
     if (!peer || !path) return false;
 
-    // Best-effort cleanup of stale socket files from prior crashes. The
-    // listening process always owns its socket path, so an existing entry
-    // here is unrecoverable junk by definition.
-    unlink(path);
+    // Best-effort cleanup of a stale socket from a prior crash. Only a socket:
+    // a mistyped path must never delete a save or ROM.
+    struct stat st;
+    if (lstat(path, &st) == 0 && S_ISSOCK(st.st_mode)) unlink(path);
 
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) return false;
@@ -245,6 +249,16 @@ void link_peer_shutdown(LinkPeer* peer) {
         unlink(peer->socket_path);
     }
     free(peer);
+}
+
+// The fd stays open for the life of the process; the kernel drops the lock on
+// exit or crash, so there is no stale lock to clean up.
+bool link_lock_rom(const char* rom_path) {
+    int fd = open(rom_path, O_RDONLY);
+    if (fd < 0) return true;  // nothing to share if it can't be opened
+    if (flock(fd, LOCK_EX | LOCK_NB) == 0) return true;
+    close(fd);
+    return false;
 }
 
 #endif // _WIN32

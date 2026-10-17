@@ -1,16 +1,10 @@
 #include "savestate/savestate.h"
 #include "gba.h"
+#include "fileio.h"
+#include "game/game_profile.h"
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 #include <time.h>
-#ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
-#define NOMINMAX
-#include <direct.h>
-#include <windows.h>
-#define mkdir(path, mode) _mkdir(path)
-#endif
 
 /* -------------------------------------------------------------------------- */
 /*  Header layout constants                                                   */
@@ -94,30 +88,8 @@ static uint32_t expected_chunk_payload(uint32_t chunk_id) {
 /* -------------------------------------------------------------------------- */
 /*  CRC32 (standard polynomial 0xEDB88320)                                    */
 /* -------------------------------------------------------------------------- */
-static uint32_t crc32_table[256];
-static bool crc32_table_ready = false;
-
-static void crc32_init_table(void) {
-    for (uint32_t i = 0; i < 256; i++) {
-        uint32_t c = i;
-        for (int j = 0; j < 8; j++) {
-            if (c & 1)
-                c = 0xEDB88320u ^ (c >> 1);
-            else
-                c >>= 1;
-        }
-        crc32_table[i] = c;
-    }
-    crc32_table_ready = true;
-}
-
 static uint32_t crc32(const uint8_t* data, size_t len) {
-    if (!crc32_table_ready) crc32_init_table();
-    uint32_t crc = 0xFFFFFFFFu;
-    for (size_t i = 0; i < len; i++) {
-        crc = crc32_table[(crc ^ data[i]) & 0xFF] ^ (crc >> 8);
-    }
-    return crc ^ 0xFFFFFFFFu;
+    return game_crc32(data, (uint32_t)len);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1304,22 +1276,18 @@ SaveStateResult savestate_write_file_atomic(const char* path, const uint8_t* buf
     }
 
     size_t written = fwrite(buf, 1, size, f);
-    fclose(f);
+    /* The tail of the buffer only reaches the disk on flush/close, so a full
+     * disk shows up there; check it before replacing the old slot. */
+    bool synced = written == size && fileio_sync(f);
+    if (fclose(f) != 0) synced = false;
 
-    if (written != size) {
+    if (!synced) {
         LOG_ERROR("Save state: write error (wrote %zu of %zu bytes)", written, size);
         remove(tmp_path);
         return SS_ERR_FILE_WRITE;
     }
 
-#ifdef _WIN32
-    /* MSVC rename() cannot replace an existing file; MoveFileEx does it in one
-     * step, so the old slot survives a crash before the new one lands. */
-    bool replaced = MoveFileExA(tmp_path, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-#else
-    bool replaced = rename(tmp_path, path) == 0;
-#endif
-    if (!replaced) {
+    if (!fileio_replace(tmp_path, path)) {
         LOG_ERROR("Save state: cannot commit '%s'", path);
         remove(tmp_path);
         return SS_ERR_FILE_WRITE;
@@ -1332,9 +1300,6 @@ SaveStateResult savestate_save(GBA* gba, const char* path) {
     size_t   buf_size = 0;
     SaveStateResult r = savestate_save_to_buffer(gba, &buf, &buf_size);
     if (r != SS_OK) return r;
-
-    /* Ensure saves directory exists (legacy path; harmless for ROM-adjacent paths) */
-    mkdir("saves", 0755);
 
     r = savestate_write_file_atomic(path, buf, buf_size);
     free(buf);

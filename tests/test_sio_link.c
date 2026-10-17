@@ -3,8 +3,10 @@
 
 #include <errno.h>
 #include <pthread.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 TEST(link_peer_create_returns_unconnected) {
@@ -110,10 +112,38 @@ TEST(link_peer_exchange_fails_when_peer_closed) {
     link_peer_shutdown(a);
 }
 
+// A mistyped --link-master path must not delete a real file: only a stale
+// socket gets cleaned up, so bind fails and the file survives.
+TEST(link_listen_keeps_regular_file) {
+    char path[] = "/tmp/gba_link_file_XXXXXX";
+    int fd = mkstemp(path);
+    ASSERT_TRUE(fd >= 0);
+    close(fd);
+    LinkPeer* peer = link_peer_create();
+    ASSERT_TRUE(!link_peer_listen(peer, path));
+    link_peer_shutdown(peer);
+    struct stat st;
+    ASSERT_EQ(0, stat(path, &st));
+    unlink(path);
+}
+
+// Two linked windows on one ROM would share its .sav: the second lock fails.
+TEST(link_lock_rom_refuses_second_holder) {
+    char path[] = "/tmp/gba_link_rom_XXXXXX";
+    int fd = mkstemp(path);
+    ASSERT_TRUE(fd >= 0);
+    close(fd);
+    ASSERT_TRUE(link_lock_rom(path));
+    ASSERT_TRUE(!link_lock_rom(path));
+    unlink(path);
+}
+
 void run_sio_link_tests(void) {
     printf("\nSIO Link tests:\n");
     RUN_TEST(link_peer_create_returns_unconnected);
     RUN_TEST(link_peer_exchange_round_trip);
     RUN_TEST(link_peer_exchange_timeout_when_peer_silent);
     RUN_TEST(link_peer_exchange_fails_when_peer_closed);
+    RUN_TEST(link_listen_keeps_regular_file);
+    RUN_TEST(link_lock_rom_refuses_second_holder);
 }

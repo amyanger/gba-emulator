@@ -673,6 +673,12 @@ int main(int argc, char* argv[]) {
     // Set up local link cable if requested. link_peer_listen blocks until a
     // peer connects, so we do this before the main loop starts.
     LinkPeer* link_peer = NULL;
+    if ((link_master_path || link_client_path) && !link_lock_rom(rom_path)) {
+        LOG_ERROR("%s is already open in another linked window. Link two copies of the ROM "
+                  "(each keeps its own save), not the same file.", rom_path);
+        gba_destroy(&gba);
+        return 1;
+    }
     if (link_master_path) {
         link_peer = link_peer_create();
         LOG_INFO("Listening for SIO peer at %s ...", link_master_path);
@@ -1406,7 +1412,9 @@ int main(int argc, char* argv[]) {
 
     // Cleanup
     trace_shutdown();
-    cartridge_save_to_file(&gba.cart);
+    /* Only when the game changed it: a loaded savestate or rewind swaps in an
+     * older save chip, and writing that would roll back the newest in-game save. */
+    if (gba.cart.save_dirty) cartridge_save_to_file(&gba.cart);
     if (fe.follower.enabled) follower_mood_save(&fe.follower);   /* level-up and faint changes since the last talk */
 #ifdef ENABLE_XRAY
     xray_destroy(&s_xray_state);

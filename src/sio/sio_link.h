@@ -31,6 +31,11 @@ bool link_peer_exchange(LinkPeer* peer, uint16_t our_payload, uint16_t* peer_out
 // Close socket and free.
 void link_peer_shutdown(LinkPeer* peer);
 
+// Locks the ROM file so a second linked window can't open the same ROM: both
+// would read and write the same .sav, savestates and logs. False if another
+// process holds it.
+bool link_lock_rom(const char* rom_path);
+
 // ── Internal: test-only ─────────────────────────────────────────────
 // Inject a pre-connected fd as the active connection. Used by the test
 // suite with socketpair() to drive both ends without a filesystem socket.

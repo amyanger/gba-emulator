@@ -1,19 +1,9 @@
 #include "frontend/prefs.h"
+#include "fileio.h"
 
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
-static bool replace_file(const char* src, const char* dst) {
-#ifdef _WIN32
-    return MoveFileExA(src, dst, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-#else
-    return rename(src, dst) == 0;
-#endif
-}
 
 static char* trim(char* s) {
     while (*s && isspace((unsigned char)*s)) s++;
@@ -62,7 +52,7 @@ bool prefs_save(const Prefs* p) {
     for (uint32_t i = 0; i < p->count; i++)
         if (fprintf(f, "%s=%s\n", p->items[i].key, p->items[i].val) < 0) ok = false;
     if (fclose(f) != 0) ok = false;
-    if (!ok || !replace_file(tmp, p->path)) {
+    if (!ok || !fileio_replace(tmp, p->path)) {
         remove(tmp);
         return false;
     }

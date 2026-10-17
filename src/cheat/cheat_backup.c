@@ -1,6 +1,7 @@
 #include "cheat/cheat_backup.h"
 #include "cheat/cheat_file.h"
 #include "cartridge/cartridge.h"
+#include "fileio.h"
 
 #include <stdio.h>
 
@@ -43,13 +44,13 @@ CheatBackupResult cheat_backup_save(Cartridge* cart) {
     for (int k = BACKUP_KEEP - 1; k >= 1; k--) {
         snprintf(from, sizeof(from), "%s.cheatbak%d", cart->save_path, k);
         snprintf(to, sizeof(to), "%s.cheatbak%d", cart->save_path, k + 1);
-        if (file_exists(from) && !cheat_file_replace(from, to)) return CHEAT_BACKUP_FAILED;
+        if (file_exists(from) && !fileio_replace(from, to)) return CHEAT_BACKUP_FAILED;
     }
 
     /* Copy to a temp name first so a failed copy never leaves a short cheatbak1. */
     snprintf(from, sizeof(from), "%s.cheatbak1.tmp", cart->save_path);
     snprintf(to, sizeof(to), "%s.cheatbak1", cart->save_path);
-    if (!copy_file(cart->save_path, from) || !cheat_file_replace(from, to)) {
+    if (!copy_file(cart->save_path, from) || !fileio_replace(from, to)) {
         remove(from);
         return CHEAT_BACKUP_FAILED;
     }

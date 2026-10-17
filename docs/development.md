@@ -273,7 +273,6 @@ src/
     video_filter.c/h       Screen filters and LCD color correction for the game image
     xbr.c/h                xBR 2x/3x/4x scaler (ported from xBRjs, MIT)
     super_xbr.c/h          Super xBR 2x scaler (Hyllian, MIT)
-    debug.c                Register dumps (not built by CMake)
     xray/
       xray.h               X-Ray state struct, public API, notification hooks
       xray.c               SDL2 window: HiDPI, fit to screen, present

@@ -87,6 +87,7 @@ option(ENABLE_REWIND "Enable hold-Backspace-to-rewind playback" ON)
 # tests/test_savestate.c #includes it to reach its static helpers.
 set(CORE_SOURCES
     src/gba.c
+    src/fileio.c
     src/cpu/arm7tdmi.c
     src/cpu/arm_instr.c
     src/cpu/thumb_instr.c
