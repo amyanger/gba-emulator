@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 project(gba_emulator
-    VERSION 0.12.1
+    VERSION 0.12.2
     DESCRIPTION "Game Boy Advance emulator (ARM7TDMI + scanline PPU + SDL2)"
     LANGUAGES C
 )
