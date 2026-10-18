@@ -1,5 +1,6 @@
 #include "game/follower.h"
 #include "game/emerald_layout.h"
+#include "game/runlog_read.h"
 #include <string.h>
 #include "gba.h"
 
@@ -51,7 +52,7 @@ static void read_party(const GameProfile* p, const GameMem* m, FollowerInput* ou
 }
 
 bool follower_read(const GameProfile* p, const GameMem* m, int16_t fol_x, int16_t fol_y, FollowerInput* out) {
-    uint32_t cb2 = 0, sb1 = 0, transition = 0;
+    uint32_t cb2 = 0, sb1 = 0, sb2 = 0, key = 0, heals = 0, transition = 0;
     uint8_t av[6], obj[OBJ_SIZE], cam_active = 0;
     uint16_t fade_y = 0, fade_color = 0;
 
@@ -74,6 +75,19 @@ bool follower_read(const GameProfile* p, const GameMem* m, int16_t fol_x, int16_
     out->facing = obj[OBJ_DIRS] & 0x0F;
     out->move_action = obj[OBJ_ACTION];
     out->player_elevation = obj[OBJ_ELEVATION] & 0x0F;
+    out->player_invisible = BIT(obj[1], 5);
+
+    for (uint32_t i = 0; i < OBJ_COUNT; i++) {
+        uint8_t o[OBJ_CUR + 4];
+        if (i == av[AVATAR_OBJ_ID] || !game_mem_copy(m, p->object_events + i * OBJ_SIZE, o, sizeof(o)) ||
+            !BIT(o[0], 0) || BIT(o[1], 5))
+            continue;
+        if (s16_at(o + OBJ_CUR) == fol_x && s16_at(o + OBJ_CUR + 2) == fol_y) out->fol_blocked = true;
+    }
+    if (game_mem_read32(m, p->save_block2_ptr, &sb2) &&
+        game_mem_read32(m, sb2 + p->rules->sb2_encryption_key, &key) &&
+        game_mem_read32(m, sb1 + p->rules->sb1_game_stats + 4u * RUN_STAT_POKECENTER, &heals))
+        out->pokecenter_heals = heals ^ key;
 
     game_mem_read8(m, p->map_header + MAP_HEADER_REGION_MAP_SEC, &out->mapsec);
     game_mem_read8(m, p->map_header + MAP_HEADER_TYPE, &out->map_type);
@@ -234,6 +248,7 @@ static void store_edges(Follower* f, const FollowerInput* in) {
     f->p_loc_num = in->loc_num;
     f->p_party_hp_zero = in->party_hp_zero;
     if (in->lead_ok) f->p_lead_slot = in->lead_slot;
+    f->p_heals = in->pokecenter_heals;
 }
 
 void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
@@ -305,7 +320,14 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
         f->p_cur_y = (int16_t)(f->p_cur_y - cy);
     }
 
-    bool ball = (in->avatar_flags & AVATAR_ON_BIKE_OR_WATER) ||
+    /* HGSS recalls the follower while the nurse heals the party; an NPC walking onto it (the
+     * game cannot see it) gets the same. It comes back out on the player's next step. */
+    bool blocked = in->fol_blocked && in->fol_x == f->tx && in->fol_y == f->ty;
+    if (f->p_valid && !new_map && f->vis == FOL_VISIBLE && (in->pokecenter_heals != f->p_heals || blocked))
+        f->recalled = true;
+    if (in->cur_x != f->p_cur_x || in->cur_y != f->p_cur_y) f->recalled = false;
+
+    bool ball = f->recalled || (in->avatar_flags & AVATAR_ON_BIKE_OR_WATER) ||
                 (too_tall && (in->map_type == MAP_TYPE_INDOOR || in->map_type == MAP_TYPE_SECRET_BASE));
     if (f->ball_fx != FOL_BALL_NONE) {
         if (f->ball_fx == FOL_BALL_IN && !ball) {
@@ -349,6 +371,17 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
     }
 
     if (!new_map && (in->cur_x != f->p_cur_x || in->cur_y != f->p_cur_y)) on_player_step(f, in);
+
+    /* The player vanished into a door: follow them onto its tile, then hide. */
+    if (in->player_invisible && f->vis == FOL_VISIBLE && f->ball_fx == FOL_BALL_NONE && f->step_t >= f->step_len) {
+        int32_t dx = in->cur_x - f->tx, dy = in->cur_y - f->ty;
+        if ((dx < 0 ? -dx : dx) + (dy < 0 ? -dy : dy) == 1) {
+            start_step(f, in->cur_x, in->cur_y, 8);
+        } else {
+            f->vis = FOL_HIDDEN;
+            f->reveal_pending = true;
+        }
+    }
 
     /* fol_* was read at the tile the follower stood on before this frame's move. */
     if (in->fol_x == f->tx && in->fol_y == f->ty && in->fol_elevation != 0 && in->fol_elevation != 15)
@@ -403,5 +436,15 @@ void follower_capture(const GBA* gba, void* feed) {
     GameMem m = { gba->bus.ewram, gba->bus.iwram, gba->cart.rom, gba->cart.rom_size };
     if (!fd->profile) return;
     follower_read(fd->profile, &m, fd->sim.tx, fd->sim.ty, &fd->in);
+    /* A finished fade clears its palette mask but leaves the screen faded (black during a
+     * warp): keep the last mask while y holds. */
+    if (fd->in.fade_mask) {
+        fd->fade_mask = fd->in.fade_mask;
+        fd->fade_y = fd->in.fade_y;
+    } else if (fd->in.fade_y == fd->fade_y) {
+        fd->in.fade_mask = fd->fade_mask;
+    } else {
+        fd->fade_mask = 0;
+    }
     follower_step(&fd->sim, &fd->in, fd->too_tall);
 }

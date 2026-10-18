@@ -497,6 +497,26 @@ TEST(read_free_needs_no_fade) {
     ASSERT_TRUE(!in.free);
 }
 
+TEST(read_npc_on_tile_and_invisible_player) {
+    FollowerInput in;
+    GameMem m = { s_ewram, s_iwram, s_rom, sizeof(s_rom) };
+    read_scene();
+    ASSERT_TRUE(follower_read(&k_profile, &m, 16, 27, &in));
+    ASSERT_TRUE(!in.fol_blocked);        /* the player's own previous tile does not count */
+    ASSERT_TRUE(!in.player_invisible);
+    put8(OBJS + 0x24, 0x01);
+    put16(OBJS + 0x24 + 0x10, 16); put16(OBJS + 0x24 + 0x12, 27);
+    put8(OBJS + 0x25, 0x20);             /* invisible NPC */
+    ASSERT_TRUE(follower_read(&k_profile, &m, 16, 27, &in));
+    ASSERT_TRUE(!in.fol_blocked);
+    put8(OBJS + 0x25, 0x00);
+    ASSERT_TRUE(follower_read(&k_profile, &m, 16, 27, &in));
+    ASSERT_TRUE(in.fol_blocked);
+    put8(OBJS + 0x01, 0x20);
+    ASSERT_TRUE(follower_read(&k_profile, &m, 16, 27, &in));
+    ASSERT_TRUE(in.player_invisible);
+}
+
 static void settle(Follower* f, FollowerInput* in) {
     follower_step(f, in, false);
     walk(f, in, 1, 0, 0x0B, 16);        /* follower (10,10), player (11,10) */
@@ -655,6 +675,65 @@ TEST(talk_ignored_during_ball_effect) {
     ASSERT_TRUE(!f.talk_request);
 }
 
+TEST(heal_recalls_until_next_step) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    in.pokecenter_heals = 1;            /* the nurse takes the party */
+    for (int i = 0; i <= FOL_BALL_IN_TOTAL; i++) follower_step(&f, &in, false);
+    ASSERT_EQ(f.vis, FOL_HIDDEN);
+    ASSERT_TRUE(f.in_ball);
+    for (int i = 0; i < 60; i++) follower_step(&f, &in, false);
+    ASSERT_EQ(f.vis, FOL_HIDDEN);       /* stays in until the player moves */
+    walk(&f, &in, 1, 0, 0x0B, 1);
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_OUT);
+}
+
+TEST(npc_on_follower_tile_recalls) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    in.fol_x = f.tx; in.fol_y = f.ty;
+    in.fol_blocked = true;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_IN);
+    in.fol_blocked = false;
+    for (int i = 0; i < FOL_BALL_IN_TOTAL; i++) follower_step(&f, &in, false);
+    ASSERT_EQ(f.vis, FOL_HIDDEN);
+    walk(&f, &in, 1, 0, 0x0B, 1);
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    ASSERT_EQ(f.tx, 11);                /* back out behind the player, off the NPC */
+}
+
+TEST(stale_blocked_tile_is_ignored) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    in.fol_x = (int16_t)(f.tx + 1); in.fol_y = f.ty;
+    in.fol_blocked = true;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
+}
+
+TEST(player_into_door_follower_walks_in_and_hides) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    in.player_invisible = true;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.tx, 11);
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+    for (int i = 0; i < 16; i++) follower_step(&f, &in, false);
+    ASSERT_EQ(f.vis, FOL_HIDDEN);
+    ASSERT_TRUE(f.reveal_pending);
+    ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
+}
+
 void run_follower_tests(void) {
     RUN_TEST(reveal_on_first_step);
     RUN_TEST(follows_previous_tile_x_first);
@@ -679,6 +758,7 @@ void run_follower_tests(void) {
     RUN_TEST(failed_read_keeps_camera_edge);
     RUN_TEST(read_lead_skips_egg_and_fainted);
     RUN_TEST(read_free_needs_no_fade);
+    RUN_TEST(read_npc_on_tile_and_invisible_player);
     RUN_TEST(mount_from_visible_plays_ball_in);
     RUN_TEST(follower_does_not_step_during_ball_in);
     RUN_TEST(mount_while_hidden_has_no_effect);
@@ -688,4 +768,8 @@ void run_follower_tests(void) {
     RUN_TEST(reset_mid_effect_clears_it);
     RUN_TEST(new_map_mid_effect_clears_it);
     RUN_TEST(talk_ignored_during_ball_effect);
+    RUN_TEST(heal_recalls_until_next_step);
+    RUN_TEST(npc_on_follower_tile_recalls);
+    RUN_TEST(stale_blocked_tile_is_ignored);
+    RUN_TEST(player_into_door_follower_walks_in_and_hides);
 }

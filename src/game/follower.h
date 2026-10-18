@@ -28,6 +28,9 @@ typedef struct {
     uint8_t fol_behavior, fol_elevation;    /* at the follower tile passed to follower_read */
     int16_t fol_x, fol_y;      /* that tile */
     uint8_t player_elevation;  /* player object's currentElevation */
+    bool player_invisible;     /* player object hidden, e.g. after walking into a door */
+    bool fol_blocked;          /* another visible object stands on the follower tile */
+    uint32_t pokecenter_heals; /* GAME_STAT_USED_POKECENTER */
     bool lead_ok;
     uint8_t lead_slot;
     MonData lead;
@@ -68,6 +71,7 @@ typedef struct {
     uint8_t ball_fx;           /* FOL_BALL_*: Poke Ball effect in progress */
     uint8_t ball_t;            /* frames since the effect started */
     bool reveal_from_ball;     /* the pending reveal follows leaving the ball */
+    bool recalled;             /* in the ball for a heal or an NPC on its tile, until the player steps */
     bool talk_request;         /* set for one frame when A is pressed on the follower */
     uint32_t lead_pid;
     uint8_t lead_level;
@@ -81,6 +85,7 @@ typedef struct {
     uint8_t p_loc_group, p_loc_num;
     uint8_t p_party_hp_zero;   /* bitmask of slots with hp 0 on the last overworld frame */
     uint8_t p_lead_slot;       /* lead slot on the last overworld frame */
+    uint32_t p_heals;          /* pokecenter_heals on the last overworld frame */
 } Follower;
 
 void follower_init(Follower* f);
@@ -100,6 +105,8 @@ typedef struct {
     Follower sim;
     FollowerInput in;          /* last read */
     bool too_tall;             /* set by the frontend when it loads the sprite */
+    uint32_t fade_mask;        /* last non-zero gPaletteFade mask and its y, see follower_capture */
+    uint8_t fade_y;
 } FollowerFeed;
 void follower_feed_init(FollowerFeed* fd, const GameProfile* p);
 void follower_capture(const GBA* gba, void* feed);
