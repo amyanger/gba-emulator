@@ -82,6 +82,7 @@ TEST(rom_patch_find_patch_prefers_bps) {
     clean_files(); /* a failed earlier run leaves files behind */
     char out[64];
     ASSERT_TRUE(!cartridge_find_patch(T_ROM, out, sizeof(out)));
+    ASSERT_TRUE(out[0] == '\0'); /* load_game treats a non-empty path as a patch to apply */
     write_file(T_IPS, IPS_EXTEND, sizeof(IPS_EXTEND));
     ASSERT_TRUE(cartridge_find_patch(T_ROM, out, sizeof(out)));
     ASSERT_TRUE(strcmp(out, T_IPS) == 0);

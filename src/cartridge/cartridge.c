@@ -62,6 +62,7 @@ bool cartridge_find_patch(const char* rom_path, char* out, size_t n) {
             return true;
         }
     }
+    if (n) out[0] = '\0'; /* the loop left the last guess here; callers treat any path as a patch */
     return false;
 }
 
