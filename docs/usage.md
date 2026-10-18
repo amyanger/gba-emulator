@@ -261,7 +261,7 @@ To set it up, open [Settings](#settings) > General, click **Choose** next to Hea
 
 - It needs the original Pokemon Emerald (US/English) ROM. Other games and ROM hacks run normally without it.
 - It is cosmetic only. The game never sees the follower: nothing is written to Emerald's memory or your save, and it never changes friendship or gives items. Its mood is kept in a small `<save>.follow` file next to your save.
-- The follower hides during battles and while you ride a bike, surf or dive, and walks out again once you are back on foot. Like in HeartGold, it goes back into its ball while a Pokemon Center nurse heals your team or when someone walks onto its tile, and comes out on your next step. It follows you through doors instead of waiting outside.
+- The follower hides during battles and while you ride a bike, surf, dive or sail on Mr. Briney's boat, and walks out again once you are back on foot. Like in HeartGold, it goes back into its ball while a Pokemon Center nurse heals your team or when someone walks onto its tile, and comes out on your next step. It follows you through doors instead of waiting outside.
 - Sprites, text and the text box are read from your HeartGold or SoulSilver ROM each time the emulator starts. Nothing from that ROM is copied into the emulator or saved anywhere else.
 
 ## Headless mode

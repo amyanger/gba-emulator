@@ -734,6 +734,23 @@ TEST(player_into_door_follower_walks_in_and_hides) {
     ASSERT_EQ(f.ball_fx, FOL_BALL_NONE);
 }
 
+/* Mr. Briney's boat hides the player and moves it along the water with the boat. */
+TEST(invisible_player_moving_keeps_follower_hidden) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    in.player_invisible = true;
+    for (int i = 0; i < 17; i++) follower_step(&f, &in, false);
+    ASSERT_EQ(f.vis, FOL_HIDDEN);
+    for (int i = 0; i < 5; i++) walk(&f, &in, 0, -1, 0x0A, 8);
+    ASSERT_EQ(f.vis, FOL_HIDDEN);
+    ASSERT_TRUE(f.reveal_pending);
+    in.player_invisible = false;  /* stepped off the boat */
+    walk(&f, &in, 0, -1, 0x0A, 1);
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+}
+
 void run_follower_tests(void) {
     RUN_TEST(reveal_on_first_step);
     RUN_TEST(follows_previous_tile_x_first);
@@ -772,4 +789,5 @@ void run_follower_tests(void) {
     RUN_TEST(npc_on_follower_tile_recalls);
     RUN_TEST(stale_blocked_tile_is_ignored);
     RUN_TEST(player_into_door_follower_walks_in_and_hides);
+    RUN_TEST(invisible_player_moving_keeps_follower_hidden);
 }

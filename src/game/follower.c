@@ -194,6 +194,7 @@ static void start_step(Follower* f, int16_t nx, int16_t ny, uint8_t len) {
 
 static void on_player_step(Follower* f, const FollowerInput* in) {
     f->steps++;
+    if (in->player_invisible && f->vis != FOL_VISIBLE) return;  /* hidden player moved by a script (Briney's boat) */
     if (f->reveal_pending && !f->in_ball) {
         place(f, in, in->prev_x, in->prev_y);
         f->vis = FOL_VISIBLE;
