@@ -215,10 +215,13 @@ void follower_view_objs(FollowerView* v, const FollowerFeed* fd, const uint8_t* 
 
     Follower posed = *s;
     int16_t ox = 0, oy = 0;
-    if (talk_active(&v->talk)) {
-        ox = v->talk.off_x;
-        oy = v->talk.off_y;
-        if (v->talk.facing) posed.facing = v->talk.facing;
+    const TalkPlayer* tp = talk_active(&v->talk)          ? &v->talk
+                           : ambient_active(&v->ambient) ? &v->ambient.player
+                                                         : NULL;
+    if (tp) {
+        ox = tp->off_x;
+        oy = tp->off_y;
+        if (tp->facing) posed.facing = tp->facing;
     }
     uint8_t frame = follower_frame(&posed);
     int16_t x = (int16_t)(fx - size / 2 + ox);
@@ -352,16 +355,19 @@ static void blit_emote(uint16_t* fb, const HgssEmoteGfx* g, uint8_t frame, int32
 }
 
 void follower_view_overlay(const FollowerView* v, const FollowerFeed* fd, uint16_t* fb) {
-    const TalkPlayer* t = &v->talk;
-    if (!v->assets || !v->assets->ok || !talk_active(t)) return;
+    bool talking = talk_active(&v->talk);
+    const TalkPlayer* t = talking ? &v->talk : &v->ambient.player;
+    if (!v->assets || !v->assets->ok || (!talking && !ambient_active(&v->ambient))) return;
     int8_t dy;
     uint8_t frame;
     if (t->emote >= 1 && t->emote <= HGSS_EMOTES && talk_emote_pose(t, &dy, &frame)) {
         int16_t fx, fy;
         follower_feet(&fd->sim, &fd->in, &fx, &fy);
+        /* The player standing right above would be covered: lean the bubble to the right. */
+        if (fd->in.cur_x == fd->sim.tx && fd->in.cur_y == fd->sim.ty - 1) fx = (int16_t)(fx + 16);
         blit_emote(fb, &v->assets->emote[t->emote - 1], frame & 1, fx - 16, fy - v->gfx.size - 24 + dy);
     }
-    if (t->phase == TALK_TEXT && t->page_i < t->page_n && t->page_i < HGSS_PAGE_MAX) {
+    if (talking && t->phase == TALK_TEXT && t->page_i < t->page_n && t->page_i < HGSS_PAGE_MAX) {
         const HgssTextPage* pg = &t->pages[t->page_i];
         uint32_t len = 0;
         for (uint32_t i = 0; i < HGSS_TEXT_LINES; i++) len += pg->len[i];

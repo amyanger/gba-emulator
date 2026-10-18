@@ -404,6 +404,7 @@ static const GameProfile k_profile = {
     .palette_fade_byte = FADE + 7, .lock_field_controls = LOCK,
     .player_avatar = AVATAR, .camera = CAMERA, .palette_fade = FADE, .weather = WEATHER,
     .script_status = SCRIPT_ST, .main_new_keys = KEYS, .transition_data = TRANS,
+    .approaching_trainers = 0x03000800, .last_talked = 0x02005000, .species_info = 0x08000000,
 };
 
 static uint8_t* at(uint32_t a) {
@@ -515,6 +516,44 @@ TEST(read_npc_on_tile_and_invisible_player) {
     put8(OBJS + 0x01, 0x20);
     ASSERT_TRUE(follower_read(&k_profile, &m, 16, 27, &in));
     ASSERT_TRUE(in.player_invisible);
+}
+
+TEST(read_event_inputs) {
+    FollowerInput in;
+    GameMem m = { s_ewram, s_iwram, s_rom, sizeof(s_rom) };
+    read_scene();
+    ASSERT_TRUE(follower_read(&k_profile, &m, 16, 27, &in));
+    ASSERT_EQ(in.talked_gfx, 0xFF);
+    ASSERT_EQ_HEX(in.sb1, SB1);
+    put8(0x03000800, 2);
+    put16(0x02005000, 3);
+    put8(WEATHER + 0x6D1, 5);
+    put8(0x08000000 + 25 * 28 + 6, 10); put8(0x08000000 + 25 * 28 + 7, 2);
+    put8(OBJS + 0x24, 0x01);             /* local id 3 on this map, graphics 0x2A */
+    put8(OBJS + 0x24 + 0x05, 0x2A);
+    put8(OBJS + 0x24 + 0x08, 3); put8(OBJS + 0x24 + 0x09, 33); put8(OBJS + 0x24 + 0x0A, 0);
+    put8(OBJS + 0x48, 0x01);             /* same local id, other map */
+    put8(OBJS + 0x48 + 0x05, 0x11);
+    put8(OBJS + 0x48 + 0x08, 3); put8(OBJS + 0x48 + 0x09, 34);
+    uint32_t fl = SB1 + 0x1270;
+    put8(fl + (0x1F4 >> 3), 0xFF);       /* bits below 0x1F4 are not item flags */
+    put8(fl + (0x263 >> 3), 0xFF);
+    put8(fl + (0x3E8 >> 3), 0x01);
+    put8(fl + (0x492 >> 3), 0xFF);
+    ASSERT_TRUE(follower_read(&k_profile, &m, 16, 27, &in));
+    ASSERT_EQ(in.trainers, 2);
+    ASSERT_EQ(in.last_talked, 3);
+    ASSERT_EQ(in.talked_gfx, 0x2A);
+    ASSERT_EQ(in.next_weather, 5);
+    put8(OBJS + 0x24 + 0x06, 0x0C);      /* berry tree with a berry: graphicsId is the berry's */
+    ASSERT_TRUE(follower_read(&k_profile, &m, 16, 27, &in));
+    ASSERT_EQ(in.talked_gfx, OBJ_EVENT_GFX_BERRY_TREE);
+    put8(OBJS + 0x24 + 0x06, 0);
+    ASSERT_EQ(in.lead_type1, 10); ASSERT_EQ(in.lead_type2, 2);
+    ASSERT_EQ_HEX(in.item_flags[0], 0xF0);
+    ASSERT_EQ_HEX(in.item_flags[14], 0x0F);
+    ASSERT_EQ_HEX(in.item_flags[15], 0x01);
+    ASSERT_EQ_HEX(in.item_flags[ITEM_FLAG_BYTES - 1], 0x07);
 }
 
 static void settle(Follower* f, FollowerInput* in) {
@@ -751,6 +790,147 @@ TEST(invisible_player_moving_keeps_follower_hidden) {
     ASSERT_EQ(f.vis, FOL_VISIBLE);
 }
 
+static void steps(Follower* f, const FollowerInput* in, int n) {
+    for (int i = 0; i < n; i++) follower_step(f, in, false);
+}
+
+TEST(ev_trainer_rise) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    steps(&f, &in, 2);
+    in.trainers = 1;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_TRAINER);
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    in.trainers = 0;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    in.trainers = 1;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_TRAINER);
+}
+
+TEST(ev_npc_talk) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    in.talked_gfx = 0x2A;
+    steps(&f, &in, 2);
+    in.lock = 1; in.free = false; in.last_talked = 3;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NPC_TALK);
+    ASSERT_EQ(f.event_arg, 0x2A);
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    in.lock = 0; in.free = true; in.last_talked = 0;
+    steps(&f, &in, 2);
+    in.lock = 1; in.free = false;               /* sign: no talked object */
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    in.lock = 0; in.free = true; in.last_talked = 3;
+    steps(&f, &in, 2);
+    in.lock = 1; in.free = false; in.trainers = 1;   /* trainer sighting, not a talk */
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_TRAINER);
+}
+
+TEST(ev_item_flag) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    in.sb1 = 0x02025A00;
+    in.item_flags[3] = 0x01;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);            /* first frame: no baseline */
+    in.lock = 1; in.free = false;
+    follower_step(&f, &in, false);
+    in.item_flags[20] |= 0x10;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_ITEM);            /* allowed while locked */
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    in.item_flags[5] = 0x02; in.sb1 = 0x02025B00;   /* save block moved */
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    in.item_flags[6] = 0x02; in.loc_num = 34;   /* location changed */
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    follower_reset(&f);
+    in.item_flags[7] = 0x04;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    in.overworld = false;                       /* battle, then back */
+    follower_step(&f, &in, false);
+    in.overworld = true; in.item_flags[8] = 0x08;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+}
+
+TEST(ev_weather) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    in.weather = in.next_weather = 2;
+    steps(&f, &in, 61);
+    in.weather = in.next_weather = 3;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_WEATHER);
+    ASSERT_EQ(f.event_arg, 3);
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    in.weather = 5; in.next_weather = 4;        /* not settled yet */
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    in.next_weather = 5;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_WEATHER);
+    ASSERT_EQ(f.event_arg, 5);
+    in.loc_num = 34;                            /* connection: weather lags the map */
+    steps(&f, &in, 30);
+    in.weather = in.next_weather = 2;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    steps(&f, &in, 61);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    in.free = false; in.lock = 1; in.weather = in.next_weather = 8;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    in.free = true; in.lock = 0;
+    steps(&f, &in, 70);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+}
+
+TEST(ev_weather_slow_connection) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    in.weather = in.next_weather = 3;
+    steps(&f, &in, 61);
+    in.loc_num = 34;                            /* leaving rain finishes after the settle window */
+    steps(&f, &in, 10);
+    in.next_weather = 2;
+    steps(&f, &in, 60);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+    in.weather = 2;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+}
+
+TEST(ev_cleared_off_overworld) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    steps(&f, &in, 2);
+    in.trainers = 1;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_TRAINER);
+    in.overworld = false;
+    follower_step(&f, &in, false);
+    ASSERT_EQ(f.event, FOL_EV_NONE);
+}
+
 void run_follower_tests(void) {
     RUN_TEST(reveal_on_first_step);
     RUN_TEST(follows_previous_tile_x_first);
@@ -790,4 +970,11 @@ void run_follower_tests(void) {
     RUN_TEST(stale_blocked_tile_is_ignored);
     RUN_TEST(player_into_door_follower_walks_in_and_hides);
     RUN_TEST(invisible_player_moving_keeps_follower_hidden);
+    RUN_TEST(ev_trainer_rise);
+    RUN_TEST(ev_npc_talk);
+    RUN_TEST(ev_item_flag);
+    RUN_TEST(ev_weather);
+    RUN_TEST(ev_weather_slow_connection);
+    RUN_TEST(ev_cleared_off_overworld);
+    RUN_TEST(read_event_inputs);
 }

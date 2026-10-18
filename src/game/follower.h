@@ -10,6 +10,16 @@
 
 typedef struct GBA GBA;
 
+/* Item flags (pret flags.h): hidden items 0x1F4..0x263, item balls 0x3E8..0x492, whole bytes. */
+#define FOL_HIDDEN_FLAG_FIRST 0x1F4
+#define FOL_HIDDEN_FLAG_LAST  0x263
+#define FOL_BALL_FLAG_FIRST   0x3E8
+#define FOL_BALL_FLAG_LAST    0x492
+#define FOL_HIDDEN_FLAG_BYTES ((FOL_HIDDEN_FLAG_LAST >> 3) - (FOL_HIDDEN_FLAG_FIRST >> 3) + 1)
+#define ITEM_FLAG_BYTES (FOL_HIDDEN_FLAG_BYTES + (FOL_BALL_FLAG_LAST >> 3) - (FOL_BALL_FLAG_FIRST >> 3) + 1)
+
+typedef enum { FOL_EV_NONE, FOL_EV_TRAINER, FOL_EV_NPC_TALK, FOL_EV_ITEM, FOL_EV_WEATHER } FollowerEvent;
+
 /* Raw per-frame Emerald state at line 160. Filled by follower_read. */
 typedef struct {
     bool ok;
@@ -42,9 +52,20 @@ typedef struct {
     bool fade_active;
     uint8_t weather_state, weather_counter, weather;
     uint16_t weather_color;
+    uint8_t trainers;          /* gNoOfApproachingTrainers */
+    uint16_t last_talked;      /* gSpecialVar_LastTalked, a local object id, 0 none */
+    uint8_t talked_gfx;        /* graphicsId of the object last_talked names on this map, 0xFF none */
+    uint8_t next_weather;      /* gWeather.nextWeather */
+    uint32_t sb1;              /* gSaveBlock1Ptr value this frame */
+    uint8_t item_flags[ITEM_FLAG_BYTES];   /* hidden then item ball flag bytes, non-item bits cleared */
+    uint8_t lead_type1, lead_type2;        /* for the weather pick */
 } FollowerInput;
 
 typedef enum { FOL_OFF, FOL_HIDDEN, FOL_VISIBLE } FollowerVis;
+
+/* pret pokeemerald include/constants/event_objects.h */
+#define OBJ_EVENT_GFX_ITEM_BALL 59
+#define OBJ_EVENT_GFX_BERRY_TREE 60
 
 #define FOL_BALL_NONE 0
 #define FOL_BALL_IN 1
@@ -79,6 +100,8 @@ typedef struct {
     int16_t mood_delta;        /* accumulated mood events this frame, consumed by the frontend */
     uint32_t faint_pid;        /* set for one frame: personality of a lead that fainted in battle, 0 none */
     uint16_t steps;            /* player steps this frame (mood decay) */
+    uint8_t event;             /* FollowerEvent, set for one frame */
+    uint8_t event_arg;         /* FOL_EV_WEATHER: new weather; FOL_EV_NPC_TALK: talked_gfx */
     /* edge detection */
     bool p_valid, p_free, p_cam_active, p_in_battle;
     int16_t p_cur_x, p_cur_y;
@@ -86,6 +109,11 @@ typedef struct {
     uint8_t p_party_hp_zero;   /* bitmask of slots with hp 0 on the last overworld frame */
     uint8_t p_lead_slot;       /* lead slot on the last overworld frame */
     uint32_t p_heals;          /* pokecenter_heals on the last overworld frame */
+    uint8_t p_trainers;
+    uint32_t p_sb1;            /* 0 after a frame off the overworld, so items re-baseline */
+    uint8_t p_item_flags[ITEM_FLAG_BYTES];
+    uint8_t p_weather;         /* last settled weather */
+    uint8_t weather_hold;      /* frames free on the same map, saturating */
 } Follower;
 
 void follower_init(Follower* f);

@@ -2,6 +2,7 @@
 #define FOLLOWER_DRAW_H
 
 #include "frontend/cry_player.h"
+#include "frontend/follower_ambient.h"
 #include "frontend/follower_talk_ui.h"
 #include "game/follower.h"
 #include "hgss/hgss_assets.h"
@@ -25,6 +26,7 @@ typedef struct {
     FollowMood mood[FOLLOW_MOOD_SLOTS];
     char mood_path[300];
     TalkPlayer talk;
+    FollowerAmbient ambient;       /* idle actions and event bubbles, when no A-talk runs */
     CryPlayer cry;
     uint32_t rng;
     /* Private to follower_draw.c */

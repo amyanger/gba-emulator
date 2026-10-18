@@ -177,6 +177,8 @@ const GameProfile g_emerald_profile = {
     .cb2_whiteout = 0x08085F59,     /* CB2_WhiteOut 0x08085F58 | Thumb */
     .palette_fade_byte = 0x02037FDB,
     .lock_field_controls = 0x03000F2C,
+    .approaching_trainers = 0x030060A8,
+    .last_talked = 0x020375F2,
     .trainers = 0x08310030, .trainer_count = 855,
     .trainer_class_names = 0x0830FCD4, .trainer_class_count = 66,
     .map_groups = 0x08486578, .map_group_count = 34,

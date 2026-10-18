@@ -269,6 +269,7 @@ src/
     follower_glue.c/h      Wires Following Pokemon into each frame
     follower_draw.c/h      Follower sprites and effects
     follower_talk_ui.c/h   Follower talk sequence and HGSS text box
+    follower_ambient.c/h   Follower idle actions and event bubbles
     cry_player.c/h         Decodes and plays Emerald cries for the follower
     video_filter.c/h       Screen filters and LCD color correction for the game image
     xbr.c/h                xBR 2x/3x/4x scaler (ported from xBRjs, MIT)

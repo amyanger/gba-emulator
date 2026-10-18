@@ -142,11 +142,13 @@ static void headless_after(GBA* gba, void* ctx) {
     nuz_tick(gba, &s_nuz);
 }
 
-/* The frame as the player sees it: with the follower's text box and emote during a talk.
- * gba.ppu.framebuffer itself stays untouched (hashes and F12 use it). */
+/* The frame as the player sees it: with the follower's text box and emote during a talk or an
+ * ambient bubble. gba.ppu.framebuffer itself stays untouched (hashes and F12 use it). */
 static uint16_t* follower_composite(Frontend* fe, GBA* gba) {
     static uint16_t talk_fb[SCREEN_WIDTH * SCREEN_HEIGHT];
-    if (!fe->follower.enabled || !fe->fol_feed || !talk_active(&fe->follower.talk)) return gba->ppu.framebuffer;
+    const FollowerView* v = &fe->follower;
+    if (!v->enabled || !fe->fol_feed || (!talk_active(&v->talk) && !ambient_active(&v->ambient)))
+        return gba->ppu.framebuffer;
     memcpy(talk_fb, gba->ppu.framebuffer, sizeof(talk_fb));
     follower_view_overlay(&fe->follower, fe->fol_feed, talk_fb);
     return talk_fb;

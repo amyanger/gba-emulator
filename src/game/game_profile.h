@@ -184,6 +184,8 @@ typedef struct {
     uint32_t cb2_whiteout;          /* callback2 value while whiting out (Thumb bit set) */
     uint32_t palette_fade_byte;     /* gPaletteFade byte 7: bit 7 = fade active */
     uint32_t lock_field_controls;   /* u8 sLockFieldControls */
+    uint32_t approaching_trainers;  /* u8 gNoOfApproachingTrainers */
+    uint32_t last_talked;           /* u16 gSpecialVar_LastTalked */
     uint32_t trainers;            uint16_t trainer_count;        /* 0x28-byte stride */
     uint32_t trainer_class_names; uint8_t trainer_class_count;   /* 13-byte stride */
     uint32_t map_groups;          uint8_t map_group_count;       /* pointer per group */

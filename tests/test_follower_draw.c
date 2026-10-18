@@ -393,6 +393,55 @@ TEST(ball_fx_missing_falls_back) {
     ASSERT_TRUE(objs[0].pixels == v.gfx.px[2]);
 }
 
+TEST(ambient_offsets_used_without_talk) {
+    static FollowerView v;
+    static FollowerFeed fd;
+    static uint8_t oam[1024];
+    PpuExtraObj objs[PPU_EXTRA_OBJ_MAX];
+    visible_setup(&v, &fd);
+    clear_oam(oam);
+    follower_view_objs(&v, &fd, oam, objs);
+    int16_t base_y = objs[0].y;
+    v.ambient.player.phase = TALK_ANIM;
+    v.ambient.player.off_y = -4;
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ(objs[0].y, base_y - 4);
+    v.talk.phase = TALK_ANIM;
+    v.talk.off_y = 2;
+    follower_view_objs(&v, &fd, oam, objs);
+    ASSERT_EQ(objs[0].y, base_y + 2);              /* the A-talk wins */
+}
+
+TEST(overlay_draws_ambient_emote) {
+    static FollowerView v;
+    static FollowerFeed fd;
+    static HgssAssets assets;
+    static uint16_t fb[SCREEN_WIDTH * SCREEN_HEIGHT];
+    memset(&assets, 0, sizeof(assets));
+    assets.ok = true;
+    memset(assets.emote[0].px, 1, sizeof(assets.emote[0].px));
+    assets.emote[0].pal[1] = 0x1234;
+    visible_setup_with(&v, &fd, &assets);
+    memset(fb, 0, sizeof(fb));
+    follower_view_overlay(&v, &fd, fb);
+    for (uint32_t i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) ASSERT_EQ(fb[i], 0);
+    v.ambient.player.phase = TALK_EMOTE;
+    v.ambient.player.emote = 1;
+    follower_view_overlay(&v, &fd, fb);
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++) n += fb[i] == 0x1234;
+    ASSERT_TRUE(n > 0);
+    ASSERT_EQ(fb[(80 - 32 - 24 + 16) * SCREEN_WIDTH + 88], 0x1234);   /* above the follower's head */
+
+    /* Player on the tile above: the bubble leans right instead of covering them. */
+    fd.in.cur_x = fd.sim.tx;
+    fd.in.cur_y = (int16_t)(fd.sim.ty - 1);
+    memset(fb, 0, sizeof(fb));
+    follower_view_overlay(&v, &fd, fb);
+    ASSERT_EQ(fb[(80 - 32 - 24 + 16) * SCREEN_WIDTH + 76], 0);
+    ASSERT_EQ(fb[(80 - 32 - 24 + 16) * SCREEN_WIDTH + 112], 0x1234);
+}
+
 void run_follower_draw_tests(void) {
     RUN_TEST(slot_sorts_by_feet);
     RUN_TEST(fade_palette);
@@ -411,4 +460,6 @@ void run_follower_draw_tests(void) {
     RUN_TEST(ball_loses_feet_tie);
     RUN_TEST(ball_out_burst_frames);
     RUN_TEST(ball_fx_missing_falls_back);
+    RUN_TEST(ambient_offsets_used_without_talk);
+    RUN_TEST(overlay_draws_ambient_emote);
 }

@@ -476,6 +476,7 @@ void frontend_sync_observer(Frontend* fe, GBA* gba) {
 void frontend_follower_reset(Frontend* fe, GBA* gba) {
     if (fe->fol_feed) follower_reset(&fe->fol_feed->sim);
     follower_glue_talk_stop(&fe->follower);
+    ambient_reset(&fe->follower.ambient);
     fe->follower.cry.playing = false;
     memset(gba->ppu.extra_obj, 0, sizeof(gba->ppu.extra_obj));
 }

@@ -73,6 +73,7 @@ void run_follower_ctx_tests(void);
 void run_follower_places_tests(void);
 void run_follower_draw_tests(void);
 void run_follower_talk_ui_tests(void);
+void run_follower_ambient_tests(void);
 void run_cry_player_tests(void);
 void run_script_walk_tests(void);
 void run_ui_font_data_tests(void);
@@ -184,6 +185,7 @@ int main(void) {
     RUN_SUITE(run_follower_places_tests);
     RUN_SUITE(run_follower_draw_tests);
     RUN_SUITE(run_follower_talk_ui_tests);
+    RUN_SUITE(run_follower_ambient_tests);
     RUN_SUITE(run_cry_player_tests);
     RUN_SUITE(run_script_walk_tests);
     RUN_SUITE(run_ui_font_data_tests);

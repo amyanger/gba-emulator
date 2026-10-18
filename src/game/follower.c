@@ -18,6 +18,14 @@
 #define WEATHER_STATE      0x6C6
 #define WEATHER_COUNTER    0x6C7
 #define WEATHER_CURRENT    0x6D0
+#define WEATHER_NEXT       0x6D1
+#define OBJ_GFX            0x05
+#define OBJ_MOVEMENT       0x06
+#define MOVEMENT_TYPE_BERRY_TREE_GROWTH 0x0C
+#define OBJ_LOCAL_ID       0x08
+#define OBJ_MAP_NUM        0x09
+#define OBJ_MAP_GROUP      0x0A
+#define WEATHER_SETTLE     60     /* map changes lead currWeather by a few frames on warps and connections */
 #define PARTY_SLOTS        6
 
 #define AVATAR_ON_BIKE_OR_WATER (0x02 | 0x04 | 0x08 | 0x10)
@@ -76,14 +84,34 @@ bool follower_read(const GameProfile* p, const GameMem* m, int16_t fol_x, int16_
     out->move_action = obj[OBJ_ACTION];
     out->player_elevation = obj[OBJ_ELEVATION] & 0x0F;
     out->player_invisible = BIT(obj[1], 5);
+    out->sb1 = sb1;
+    out->talked_gfx = 0xFF;
+    game_mem_read8(m, p->approaching_trainers, &out->trainers);
+    game_mem_read16(m, p->last_talked, &out->last_talked);
 
     for (uint32_t i = 0; i < OBJ_COUNT; i++) {
         uint8_t o[OBJ_CUR + 4];
         if (i == av[AVATAR_OBJ_ID] || !game_mem_copy(m, p->object_events + i * OBJ_SIZE, o, sizeof(o)) ||
-            !BIT(o[0], 0) || BIT(o[1], 5))
+            !BIT(o[0], 0))
             continue;
+        if (out->last_talked != 0 && o[OBJ_LOCAL_ID] == out->last_talked && o[OBJ_MAP_NUM] == out->loc_num &&
+            o[OBJ_MAP_GROUP] == out->loc_group)
+            /* a tree's graphicsId follows its berry; only empty soil is BERRY_TREE */
+            out->talked_gfx = o[OBJ_MOVEMENT] == MOVEMENT_TYPE_BERRY_TREE_GROWTH ? OBJ_EVENT_GFX_BERRY_TREE : o[OBJ_GFX];
+        if (BIT(o[1], 5)) continue;
         if (s16_at(o + OBJ_CUR) == fol_x && s16_at(o + OBJ_CUR + 2) == fol_y) out->fol_blocked = true;
     }
+
+    uint32_t flags = sb1 + p->rules->sb1_flags;
+    uint8_t* fl = out->item_flags;
+    game_mem_copy(m, flags + (FOL_HIDDEN_FLAG_FIRST >> 3), fl, FOL_HIDDEN_FLAG_BYTES);
+    game_mem_copy(m, flags + (FOL_BALL_FLAG_FIRST >> 3), fl + FOL_HIDDEN_FLAG_BYTES,
+                  ITEM_FLAG_BYTES - FOL_HIDDEN_FLAG_BYTES);
+    /* the end bytes also hold neighbouring non-item flags */
+    fl[0] &= (uint8_t)(0xFF << (FOL_HIDDEN_FLAG_FIRST & 7));
+    fl[FOL_HIDDEN_FLAG_BYTES - 1] &= (uint8_t)(0xFF >> (7 - (FOL_HIDDEN_FLAG_LAST & 7)));
+    fl[FOL_HIDDEN_FLAG_BYTES] &= (uint8_t)(0xFF << (FOL_BALL_FLAG_FIRST & 7));
+    fl[ITEM_FLAG_BYTES - 1] &= (uint8_t)(0xFF >> (7 - (FOL_BALL_FLAG_LAST & 7)));
     if (game_mem_read32(m, p->save_block2_ptr, &sb2) &&
         game_mem_read32(m, sb2 + p->rules->sb2_encryption_key, &key) &&
         game_mem_read32(m, sb1 + p->rules->sb1_game_stats + 4u * RUN_STAT_POKECENTER, &heals))
@@ -111,11 +139,17 @@ bool follower_read(const GameProfile* p, const GameMem* m, int16_t fol_x, int16_
     game_mem_read8(m, p->weather + WEATHER_STATE, &out->weather_state);
     game_mem_read8(m, p->weather + WEATHER_COUNTER, &out->weather_counter);
     game_mem_read8(m, p->weather + WEATHER_CURRENT, &out->weather);
+    game_mem_read8(m, p->weather + WEATHER_NEXT, &out->next_weather);
 
     out->fol_x = fol_x;
     out->fol_y = fol_y;
     overworld_tile_info(p, m, fol_x, fol_y, &out->fol_behavior, &out->fol_elevation);
     read_party(p, m, out);
+    if (out->lead_ok) {
+        uint32_t info = p->species_info + (uint32_t)out->lead.species * SPECIES_INFO_SIZE;
+        game_mem_read8(m, info + SI_TYPE1, &out->lead_type1);
+        game_mem_read8(m, info + SI_TYPE2, &out->lead_type2);
+    }
 
     out->in_transition = transition != 0;
     out->free = out->overworld && out->lock == 0 && !out->fade_active && out->fade_y == 0 && !out->in_transition;
@@ -239,6 +273,15 @@ static bool is_hop(const Follower* f) {
 }
 
 static void store_edges(Follower* f, const FollowerInput* in) {
+    bool same_map = f->p_valid && in->loc_group == f->p_loc_group && in->loc_num == f->p_loc_num;
+    f->weather_hold = in->free && same_map ? (uint8_t)(f->weather_hold + (f->weather_hold < 0xFF)) : 0;
+    /* settling: baseline the target, since leaving rain or fog can finish after the window;
+     * free: a change that has not reached nextWeather yet stays pending */
+    if (!in->free || f->weather_hold < WEATHER_SETTLE) f->p_weather = in->next_weather;
+    else if (in->weather == in->next_weather) f->p_weather = in->weather;
+    f->p_trainers = in->trainers;
+    f->p_sb1 = in->sb1;
+    memcpy(f->p_item_flags, in->item_flags, sizeof(f->p_item_flags));
     f->p_valid = true;
     f->p_free = in->free;
     f->p_cam_active = in->cam_active;
@@ -252,12 +295,36 @@ static void store_edges(Follower* f, const FollowerInput* in) {
     f->p_heals = in->pokecenter_heals;
 }
 
+/* At most one event per frame, priority trainer > item > NPC talk > weather. */
+static void detect_event(Follower* f, const FollowerInput* in) {
+    bool same_map = in->loc_group == f->p_loc_group && in->loc_num == f->p_loc_num;
+    bool item = false;
+    if (!f->p_valid) return;
+    for (uint32_t i = 0; i < ITEM_FLAG_BYTES; i++)
+        if (in->item_flags[i] & ~f->p_item_flags[i]) item = true;
+    if (in->trainers != 0 && f->p_trainers == 0) {
+        f->event = FOL_EV_TRAINER;
+    } else if (item && same_map && in->sb1 == f->p_sb1) {   /* sb1 moves at battle start */
+        f->event = FOL_EV_ITEM;
+    } else if (f->p_free && in->lock != 0 && in->last_talked != 0 && in->trainers == 0) {
+        /* p_free: lock rose from 0 on the overworld; last_talked persists, so only read it now */
+        f->event = FOL_EV_NPC_TALK;
+        f->event_arg = in->talked_gfx;
+    } else if (f->p_free && in->free && same_map && f->weather_hold >= WEATHER_SETTLE &&
+               in->weather != f->p_weather && in->weather == in->next_weather) {
+        f->event = FOL_EV_WEATHER;
+        f->event_arg = in->weather;
+    }
+}
+
 void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
     f->talk_request = false;
     f->mood_delta = 0;
     f->faint_pid = 0;
     f->steps = 0;
     f->lead_changed = false;
+    f->event = FOL_EV_NONE;
+    f->event_arg = 0;
 
     /* Off the overworld: keep the tile, coordinates and party mask from the last
      * overworld frame so a warp or a faint is seen when the field returns. */
@@ -268,6 +335,8 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
             f->p_cam_active = in->cam_active;
         }
         f->p_free = false;
+        f->p_sb1 = 0;
+        f->weather_hold = 0;
         return;
     }
 
@@ -404,6 +473,7 @@ void follower_step(Follower* f, const FollowerInput* in, bool too_tall) {
         if ((dx || dy) && in->cur_x + dx == f->tx && in->cur_y + dy == f->ty) f->talk_request = true;
     }
 
+    detect_event(f, in);
     store_edges(f, in);
 }
 

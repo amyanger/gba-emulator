@@ -66,7 +66,7 @@ These need the original, unmodified US/English ROM of Pokémon Emerald, FireRed 
 | &nbsp;&nbsp;[Hunt](docs/pokemon-companion.md#hunt) | [ ] | Shiny hunting in tall grass: counts every encounter, shows the next Pokemon and when a match comes up. (Emerald only) |
 | &nbsp;&nbsp;[Run stats](docs/pokemon-companion.md#run) | F10 | Your playthrough's story: badge art and times, catches, faints, evolutions, an MVP and the game's own counters. |
 | **[Overworld X-Ray](docs/pokemon-companion.md#overworld-x-ray)** | F4 | Trainer sight lines, item names, NPC gifts and the hidden Feebas tiles drawn right on the map. (Emerald only) |
-| **[Following Pokemon](docs/usage.md#following-pokemon)** | F1 | Your lead Pokemon walks behind you and talks like it does in HeartGold and SoulSilver, using your own HeartGold or SoulSilver ROM (Emerald only). |
+| **[Following Pokemon](docs/usage.md#following-pokemon)** | F1 | Your lead Pokemon walks behind you, talks like it does in HeartGold and SoulSilver and reacts to trainers, people, items and weather, using your own HeartGold or SoulSilver ROM (Emerald only). |
 
 ## Screenshots
 

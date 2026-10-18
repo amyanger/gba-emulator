@@ -208,6 +208,7 @@ set(CORE_SOURCES
     src/frontend/overworld_draw.c
     src/frontend/follower_draw.c
     src/frontend/follower_talk_ui.c
+    src/frontend/follower_ambient.c
     src/frontend/cry_player.c
     # Shared overlay drawing primitives (used by input_display, slot_picker,
     # and the X-Ray panels regardless of ENABLE_XRAY).
@@ -392,6 +393,7 @@ set(TEST_SOURCES
     tests/test_follower_ctx.c
     tests/test_follower_places.c
     tests/test_follower_draw.c
+    tests/test_follower_ambient.c
     tests/test_follower_talk_ui.c
     tests/test_cry_player.c
     tests/test_script_walk.c

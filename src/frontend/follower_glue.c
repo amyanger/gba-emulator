@@ -16,6 +16,7 @@
 #define FOL_AVATAR_OBJ_ID     0x05
 #define FOL_PAL_TAG_GRASS     0x1005 /* FLDEFF_PAL_TAG_GENERAL_1, the tall grass palette */
 #define FOL_FAINT_MOOD        (-80)
+#define FOL_TYPE_FIRE         10     /* include/constants/pokemon.h TYPE_FIRE */
 
 static uint8_t s_fol_rules[HGSS_RULES][HGSS_RULE_SIZE];
 static HgssStrVars s_fol_vars;
@@ -239,8 +240,21 @@ void follower_glue_frame_begin(Frontend* fe, GBA* gba) {
                  v->gfx_pid == fd->sim.lead_pid;
     if (talk_active(&v->talk) && !shown)
         follower_glue_talk_stop(v);
-    else if (fd->sim.talk_request && shown && !talk_active(&v->talk))
+    else if (fd->sim.talk_request && shown && !talk_active(&v->talk)) {
+        ambient_reset(&v->ambient);   /* R10: the A-talk owns the bubble */
         follower_talk_begin(fe, gba, &m);
+    }
+    const MonData* lead = &fd->in.lead;
+    AmbientCtx ctx = {
+        .shown = shown && fd->sim.ball_fx == FOL_BALL_NONE,
+        .talking = talk_active(&v->talk),
+        .mood = follower_mood_get(v, fd->sim.lead_pid),
+        .friendship = lead->friendship,
+        .poisoned = (lead->status & 0x88) != 0,
+        .low_hp = (uint32_t)lead->hp * 4 < lead->max_hp,
+        .fire_type = fd->in.lead_type1 == FOL_TYPE_FIRE || fd->in.lead_type2 == FOL_TYPE_FIRE,
+    };
+    ambient_frame(&v->ambient, &fd->sim, &fd->in, &ctx, follower_rand, v);
     follower_view_objs(v, fd, gba->ppu.oam, gba->ppu.extra_obj);
 }
 
