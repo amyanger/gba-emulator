@@ -9,6 +9,12 @@
 
 static int round_px(float v) { return (int)(v + 0.5f); }
 
+/* The panel is as tall as a 3x game; above that it grows with the game so the two stay
+ * the same height. game_scale is in window units (gps / ui). */
+static float panel_density(float ui, float game_scale) {
+    return game_scale > 3.0f ? ui * game_scale / 3.0f : ui;
+}
+
 /* Window size in window units for a game scale and panel density. Rounds up
  * (with a small float tolerance) so the drawable is never 1 px short of the
  * planned content, which would drop the game to the next integer scale down. */
@@ -40,7 +46,7 @@ LayoutPlan panel_layout_plan(const LayoutInput* in) {
     ui = c.pt_to_px * c.os_scale;
     gps = round_px((float)c.game_scale * ui);
     if (gps < 1) gps = 1;
-    density = ui;
+    density = panel_density(ui, (float)c.game_scale);
     if (BODY_PT * density < MIN_BODY_PX) density = MIN_BODY_PX / BODY_PT;
     known = c.usable_w_pt > 0 && c.usable_h_pt > 0;
 
@@ -49,16 +55,21 @@ LayoutPlan panel_layout_plan(const LayoutInput* in) {
     if (known) {
         bool fits = false;
         float base = density;
+        float step = 1.0f;
         int nsteps = c.panel_visible ? 3 : 1;
         for (int i = 0; i < nsteps && !fits; i++) {
             float d = base * steps[i];
             if (i > 0 && BODY_PT * d < MIN_BODY_PX) continue;
             density = d;
+            step = steps[i];
             window_units(&c, gps, density, &p.window_w, &p.window_h);
             fits = p.window_w <= c.usable_w_pt && p.window_h <= c.usable_h_pt;
         }
         while (!fits && gps > 1) {
             gps--;
+            /* A smaller game takes the panel down with it. */
+            density = panel_density(ui, (float)gps / ui) * step;
+            if (BODY_PT * density < MIN_BODY_PX) density = MIN_BODY_PX / BODY_PT;
             window_units(&c, gps, density, &p.window_w, &p.window_h);
             fits = p.window_w <= c.usable_w_pt && p.window_h <= c.usable_h_pt;
         }

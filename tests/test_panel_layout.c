@@ -42,6 +42,30 @@ TEST(layout_standard_monitor_scale2) {
     ASSERT_EQ(pn.h, 480);
 }
 
+/* Above 3x the panel keeps the game's height instead of staying 480 pt tall. */
+TEST(layout_panel_grows_with_game) {
+    LayoutInput in = input(6, 1.0f, 1.0f, 5120, 2135);
+    LayoutPlan p = panel_layout_plan(&in);
+    ASSERT_EQ((int)p.density, 2);
+    ASSERT_EQ(p.game_px_scale, 6);
+    ASSERT_EQ(p.window_w, 1440 + 1200);
+    ASSERT_EQ(p.window_h, 960);
+    in = input(6, 2.0f, 1.0f, 0, 0);
+    p = panel_layout_plan(&in);
+    ASSERT_EQ((int)p.density, 4);
+    ASSERT_EQ(p.window_w, 1440 + 1200);
+    ASSERT_EQ(p.window_h, 960);
+}
+
+/* When a big scale doesn't fit, the panel shrinks along with the game. */
+TEST(layout_panel_shrinks_with_game) {
+    LayoutInput in = input(6, 1.0f, 1.0f, 1728, 1080);
+    LayoutPlan p = panel_layout_plan(&in);
+    ASSERT_EQ(p.game_px_scale, 4);
+    ASSERT_TRUE(p.window_w <= 1728 && p.window_h <= 1080);
+    ASSERT_TRUE(PANEL_H_PT * p.density <= 160.0f * p.game_px_scale + 0.5f);
+}
+
 TEST(layout_x11_dpi_150) {
     LayoutInput in = input(3, 1.0f, 1.5f, 0, 0);
     LayoutPlan p = panel_layout_plan(&in);
@@ -127,7 +151,7 @@ TEST(layout_sanitizes_input) {
     in = input(99, 1.0f, 1.0f, 0, 0);
     p = panel_layout_plan(&in);
     ASSERT_EQ(p.game_px_scale, 10);
-    ASSERT_EQ(p.window_w, 2400 + 600);
+    ASSERT_EQ(p.window_w, 2400 + 2000); /* the panel grows with the game: 600 * 10 / 3 */
     volatile float zero = 0.0f; /* MSVC rejects a constant 0.0f / 0.0f (C2124) */
     in = input(3, zero / zero, 1.0f, 0, 0);
     p = panel_layout_plan(&in);
@@ -271,6 +295,8 @@ void run_panel_layout_tests(void) {
     TEST_SUITE("panel_layout");
     RUN_TEST(layout_retina_scale3);
     RUN_TEST(layout_standard_monitor_scale2);
+    RUN_TEST(layout_panel_grows_with_game);
+    RUN_TEST(layout_panel_shrinks_with_game);
     RUN_TEST(layout_x11_dpi_150);
     RUN_TEST(layout_fits_small_display);
     RUN_TEST(layout_fullscreen_grows_game);
