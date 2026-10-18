@@ -17,6 +17,7 @@ typedef struct {
     HgssAssets* assets;            /* NULL or !ok: feature unavailable */
     HgssFollowerGfx gfx;
     uint32_t gfx_pid;              /* pid the sprite was loaded for, 0 none */
+    uint16_t gfx_species;          /* and its species, which changes on evolution */
     bool shiny;
     uint8_t split_px[2][HGSS_FOLLOW_MAX * HGSS_FOLLOW_MAX];   /* top / bottom halves for long grass */
     uint8_t grass_px[5][16 * 16];
@@ -31,6 +32,7 @@ typedef struct {
     uint32_t rng;
     /* Private to follower_draw.c */
     uint32_t tried_pid;            /* last pid follower_view_sync tried to load, 0 none */
+    uint16_t tried_species;
     bool rom_loaded;               /* elev_prio and grass_px read from the Emerald ROM */
     uint8_t mood_n;                /* used mood entries, most recently changed first */
     bool grass_in;                 /* follower tile was tall grass last frame */

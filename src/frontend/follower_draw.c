@@ -69,15 +69,18 @@ static void rom_load(FollowerView* v, const GameMem* m, const GameProfile* p) {
 bool follower_view_sync(FollowerView* v, const GameMem* m, const GameProfile* p, FollowerFeed* fd) {
     if (!v->rom_loaded) rom_load(v, m, p);
     uint32_t pid = fd->sim.lead_pid;
-    if (pid != 0 && pid == v->gfx_pid) return true;
+    /* Evolution keeps the pid, so the species is part of the key. */
+    uint16_t species = fd->in.lead_ok ? fd->in.lead.species : v->gfx_species;
+    if (pid != 0 && pid == v->gfx_pid && species == v->gfx_species) return true;
     if (!v->assets || !v->assets->ok || !fd->in.lead_ok || pid == 0) return false;
     const MonData* mon = &fd->in.lead;
     if (mon->personality != pid) return false;
-    if (pid == v->tried_pid) return false;   /* already failed for this lead */
+    if (pid == v->tried_pid && species == v->tried_species) return false;   /* already failed for this lead */
     v->tried_pid = pid;
+    v->tried_species = species;
     v->gfx_pid = 0;
 
-    uint16_t species = mon->species, national = species;
+    uint16_t national = species;
     if (species == 0) return false;
     if (species > 251 && !game_mem_read16(m, p->species_to_national + 2u * (species - 1u), &national))
         return false;
@@ -93,6 +96,7 @@ bool follower_view_sync(FollowerView* v, const GameMem* m, const GameProfile* p,
     uint32_t ot = mon->ot_id;
     v->shiny = ((ot >> 16) ^ (ot & 0xFFFF) ^ (pid >> 16) ^ (pid & 0xFFFF)) < 8;
     v->gfx_pid = pid;
+    v->gfx_species = species;
     fd->too_tall = too_tall;
     return true;
 }
@@ -363,8 +367,6 @@ void follower_view_overlay(const FollowerView* v, const FollowerFeed* fd, uint16
     if (t->emote >= 1 && t->emote <= HGSS_EMOTES && talk_emote_pose(t, &dy, &frame)) {
         int16_t fx, fy;
         follower_feet(&fd->sim, &fd->in, &fx, &fy);
-        /* The player standing right above would be covered: lean the bubble to the right. */
-        if (fd->in.cur_x == fd->sim.tx && fd->in.cur_y == fd->sim.ty - 1) fx = (int16_t)(fx + 16);
         blit_emote(fb, &v->assets->emote[t->emote - 1], frame & 1, fx - 16, fy - v->gfx.size - 24 + dy);
     }
     if (talking && t->phase == TALK_TEXT && t->page_i < t->page_n && t->page_i < HGSS_PAGE_MAX) {

@@ -790,6 +790,23 @@ TEST(invisible_player_moving_keeps_follower_hidden) {
     ASSERT_EQ(f.vis, FOL_VISIBLE);
 }
 
+/* The boat sails on the frame after the player is hidden, while the follower is still walking in. */
+TEST(boat_sails_while_follower_walks_in) {
+    Follower f;
+    follower_init(&f);
+    FollowerInput in = base_in();
+    settle(&f, &in);
+    in.player_invisible = true;
+    follower_step(&f, &in, false);       /* starts the walk onto the player's tile */
+    walk(&f, &in, 0, 1, 0x0A, 1);
+    ASSERT_EQ(f.vis, FOL_HIDDEN);
+    for (int i = 0; i < 5; i++) walk(&f, &in, 0, 1, 0x0A, 8);
+    ASSERT_EQ(f.vis, FOL_HIDDEN);
+    in.player_invisible = false;
+    walk(&f, &in, 0, 1, 0x0A, 1);
+    ASSERT_EQ(f.vis, FOL_VISIBLE);
+}
+
 static void steps(Follower* f, const FollowerInput* in, int n) {
     for (int i = 0; i < n; i++) follower_step(f, in, false);
 }
@@ -970,6 +987,7 @@ void run_follower_tests(void) {
     RUN_TEST(stale_blocked_tile_is_ignored);
     RUN_TEST(player_into_door_follower_walks_in_and_hides);
     RUN_TEST(invisible_player_moving_keeps_follower_hidden);
+    RUN_TEST(boat_sails_while_follower_walks_in);
     RUN_TEST(ev_trainer_rise);
     RUN_TEST(ev_npc_talk);
     RUN_TEST(ev_item_flag);

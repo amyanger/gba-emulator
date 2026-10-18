@@ -433,13 +433,13 @@ TEST(overlay_draws_ambient_emote) {
     ASSERT_TRUE(n > 0);
     ASSERT_EQ(fb[(80 - 32 - 24 + 16) * SCREEN_WIDTH + 88], 0x1234);   /* above the follower's head */
 
-    /* Player on the tile above: the bubble leans right instead of covering them. */
+    /* Player on the tile above: the bubble stays over the follower, like HGSS. */
     fd.in.cur_x = fd.sim.tx;
     fd.in.cur_y = (int16_t)(fd.sim.ty - 1);
     memset(fb, 0, sizeof(fb));
     follower_view_overlay(&v, &fd, fb);
-    ASSERT_EQ(fb[(80 - 32 - 24 + 16) * SCREEN_WIDTH + 76], 0);
-    ASSERT_EQ(fb[(80 - 32 - 24 + 16) * SCREEN_WIDTH + 112], 0x1234);
+    ASSERT_EQ(fb[(80 - 32 - 24 + 16) * SCREEN_WIDTH + 76], 0x1234);
+    ASSERT_EQ(fb[(80 - 32 - 24 + 16) * SCREEN_WIDTH + 112], 0);
 }
 
 void run_follower_draw_tests(void) {
