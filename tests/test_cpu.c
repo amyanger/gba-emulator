@@ -405,6 +405,21 @@ TEST(irq_dispatch_rechecks_ime_when_it_fires) {
     free(gba);
 }
 
+TEST(hle_irq_return_leaves_real_bios_latch) {
+    /* Emerald's cave-hole scripts copyvar from var 0x1, which reads address 0.
+     * Real hardware returns 0xE55EC002 there after an IRQ; a 0 drops the
+     * player through the floor on arriving at Granite Cave B1F. */
+    GBA* gba = make_irq_delay_gba();
+    bus_write32(&gba->bus, 0x03000200, 0xE12FFF1E); /* bx lr */
+    bus_write32(&gba->bus, 0x03FFFFFC, 0x03000200);
+    interrupt_request(&gba->interrupts, IRQ_VBLANK);
+    ASSERT_TRUE(cycles_until_irq_mode(&gba->cpu, 50) >= 0);
+    for (int i = 0; i < 50 && cpu_get_mode(&gba->cpu) == CPU_MODE_IRQ; i++) cpu_run(&gba->cpu, 1);
+    ASSERT_EQ(cpu_get_mode(&gba->cpu), CPU_MODE_SYS);
+    ASSERT_EQ_HEX(bus_read16(&gba->bus, 0), 0xC002);
+    free(gba);
+}
+
 TEST(irq_dispatch_ime_write_delays_six_from_instruction_start) {
     /* mGBA: an IME/IE/IF write tests with cyclesLate = 1, so the check
      * lands 6 cycles after the start of the writing instruction. */
@@ -871,6 +886,7 @@ void run_cpu_tests(void) {
     RUN_TEST(irq_dispatch_waits_seven_cycles_after_raise);
     RUN_TEST(irq_dispatch_earliest_pending_check_wins);
     RUN_TEST(irq_dispatch_rechecks_ime_when_it_fires);
+    RUN_TEST(hle_irq_return_leaves_real_bios_latch);
     RUN_TEST(irq_dispatch_ime_write_delays_six_from_instruction_start);
     RUN_TEST(irq_dispatch_msr_unmask_delays_seven);
     RUN_TEST(halt_wakes_only_after_irq_delay);

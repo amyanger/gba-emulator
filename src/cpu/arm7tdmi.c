@@ -315,6 +315,12 @@ static void install_hle_bios_stubs(Bus* bus) {
      * SUBS PC, LR, #4 restores CPSR from SPSR and returns to the
      * interrupted instruction. */
     write_le32(b, p, 0xE25EF004); p += 4;  /* SUBS PC, LR, #4 */
+
+    /* The SUBS has already prefetched 0x144, so its word is the BIOS
+     * read latch after every IRQ. Real hardware leaves 0xE55EC002 there;
+     * Emerald's cave-hole scripts read it (copyvar from var 0x1) and a 0
+     * drops the player through the floor at Granite Cave B1F. */
+    write_le32(b, 0x144, 0xE55EC002);
 }
 
 /* Set CPU to the state the BIOS would leave it in.

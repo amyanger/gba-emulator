@@ -1280,7 +1280,9 @@ static uint8_t bus_read8_raw(Bus* bus, uint32_t addr) {
              * the program counter is inside the BIOS region. At all other
              * times, reads return the last successfully fetched BIOS word.
              */
-            if (bus->cpu &&
+            /* An opcode fetch from BIOS always counts: the one a flushing
+             * SUBS PC makes at 0x144 runs after PC has left the BIOS. */
+            if (bus->cpu && !bus->fetching &&
                 bus->cpu->regs[REG_PC] >= BIOS_SIZE + 8) {
                 /* CPU is outside BIOS -- return cached value */
                 return (uint8_t)(bus->last_bios_read >> ((addr & 3) * 8));
