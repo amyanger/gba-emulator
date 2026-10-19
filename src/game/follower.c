@@ -145,7 +145,7 @@ bool follower_read(const GameProfile* p, const GameMem* m, int16_t fol_x, int16_
     out->fol_y = fol_y;
     overworld_tile_info(p, m, fol_x, fol_y, &out->fol_behavior, &out->fol_elevation);
     read_party(p, m, out);
-    if (out->lead_ok) {
+    if (out->lead_ok && out->lead.species < p->species_count) {
         uint32_t info = p->species_info + (uint32_t)out->lead.species * SPECIES_INFO_SIZE;
         game_mem_read8(m, info + SI_TYPE1, &out->lead_type1);
         game_mem_read8(m, info + SI_TYPE2, &out->lead_type2);

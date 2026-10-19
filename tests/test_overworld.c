@@ -268,6 +268,19 @@ TEST(ow_trainer_beaten_flag) {
     ASSERT_TRUE(first_trainer(&s)->beaten);
 }
 
+TEST(ow_trainer_id_past_table_is_not_beaten) {
+    /* An id the trainer table does not hold must not read FLAG_TRAINER_BASE + id
+     * out of unrelated save data. */
+    OverworldSnapshot s;
+    GameMem m = mem();
+    scene();
+    put16(SCRIPT + 2, 0xFFFF);
+    put8(SB1 + 0x1270 + ((0x500 + 0xFFFF) >> 3), 0xFF);
+    overworld_read(&k_profile, &m, &s);
+    ASSERT_TRUE(first_trainer(&s) != NULL);
+    ASSERT_TRUE(!first_trainer(&s)->beaten);
+}
+
 TEST(ow_trainer_position_comes_from_sprite) {
     OverworldSnapshot s;
     GameMem m = mem();
@@ -940,6 +953,7 @@ void run_overworld_tests(void) {
     RUN_TEST(ow_bad_grid_omits_cones_keeps_trainer);
     RUN_TEST(ow_trainer_resolved_from_save_template);
     RUN_TEST(ow_trainer_beaten_flag);
+    RUN_TEST(ow_trainer_id_past_table_is_not_beaten);
     RUN_TEST(ow_trainer_position_comes_from_sprite);
     RUN_TEST(ow_unknown_script_still_listed);
     RUN_TEST(ow_skips_range0_type2_and_offscreen);

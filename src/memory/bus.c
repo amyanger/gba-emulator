@@ -1494,6 +1494,7 @@ void bus_write8(Bus* bus, uint32_t addr, uint8_t val) {
 }
 
 void bus_write16(Bus* bus, uint32_t addr, uint16_t val) {
+    uint32_t lane = addr & 1;
     addr &= ~1u;
     bus_charge_access(bus, addr, 2, false);
     /* Palette, VRAM, and OAM need direct writes — the byte path has special
@@ -1525,6 +1526,11 @@ void bus_write16(Bus* bus, uint32_t addr, uint16_t val) {
             cartridge_write16(bus->cart, addr, val);
         }
         return;
+    case 0x0E: case 0x0F: /* 8-bit bus: one byte, the lane the address selects (mGBA STORE_SRAM) */
+        if (bus->cart) {
+            cartridge_write8(bus->cart, addr | lane, (uint8_t)(val >> (8 * lane)));
+        }
+        return;
     default:
         bus_write8_raw(bus, addr, (uint8_t)(val & 0xFF));
         bus_write8_raw(bus, addr + 1, (uint8_t)(val >> 8));
@@ -1533,6 +1539,7 @@ void bus_write16(Bus* bus, uint32_t addr, uint16_t val) {
 }
 
 void bus_write32(Bus* bus, uint32_t addr, uint32_t val) {
+    uint32_t lane = addr & 3;
     addr &= ~3u;
     bus_charge_access(bus, addr, 4, false);
     switch (decode_region(addr)) {
@@ -1581,6 +1588,11 @@ void bus_write32(Bus* bus, uint32_t addr, uint32_t val) {
         if (bus->cart) {
             cartridge_write16(bus->cart, addr, (uint16_t)val);
             cartridge_write16(bus->cart, addr + 2, (uint16_t)(val >> 16));
+        }
+        return;
+    case 0x0E: case 0x0F: /* 8-bit bus, see bus_write16 */
+        if (bus->cart) {
+            cartridge_write8(bus->cart, addr | lane, (uint8_t)(val >> (8 * lane)));
         }
         return;
     default:

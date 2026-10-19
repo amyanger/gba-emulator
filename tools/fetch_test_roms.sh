@@ -43,13 +43,17 @@ fi
 # tonc demos
 # Prebuilt tonc v1.4.2 binaries (J. Vijn, 2013-03-24). The zip has not
 # changed since 2013, so the sha256 pins it; a mismatch aborts the fetch.
-TONC_URL="https://www.coranac.com/files/tonc-bin.zip"
+# coranac.com stopped resolving in 2026-10; the Wayback copy is byte-identical.
+TONC_URLS="https://www.coranac.com/files/tonc-bin.zip https://web.archive.org/web/2024id_/https://www.coranac.com/files/tonc-bin.zip"
 TONC_SHA256="f172fc9308eb030ae8d3479872e9f3521b7f0cae3a64b0cd5f526b7b4b1650ba"
 TONC_DEMOS="m3_demo pageflip win_demo dma_demo m7_ex oacombo prio_demo"
 
 TONC_TMP="$(mktemp -d)"
 trap 'rm -rf "$TONC_TMP"' EXIT
-curl -fsSL "$TONC_URL" -o "${TONC_TMP}/tonc-bin.zip"
+for url in $TONC_URLS; do
+    curl -fsSL "$url" -o "${TONC_TMP}/tonc-bin.zip" && break
+    echo "tonc-bin.zip: $url failed, trying the next mirror" >&2
+done
 if command -v sha256sum >/dev/null 2>&1; then
     TONC_GOT="$(sha256sum "${TONC_TMP}/tonc-bin.zip" | cut -d' ' -f1)"
 else

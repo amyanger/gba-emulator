@@ -65,6 +65,7 @@ void dma_on_fifo(DMAController* dma, int fifo_id) {
 }
 
 int dma_execute(DMAController* dma, int ch) {
+    if (ch < 0 || ch > 3) return 0; /* keeps GCC's -Warray-bounds quiet on the FIFO path */
     DMAChannel* dc = &dma->channels[ch];
     Bus* bus = dma->bus;
 

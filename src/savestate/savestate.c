@@ -554,6 +554,7 @@ static bool load_dma_chunk(const uint8_t** cur, DMAController* dma) {
     /* Owed completion IRQs were saved into IF; drop any from before the
      * load, along with the unsaved read latches. */
     memset(dma->irq_stall, 0, sizeof(dma->irq_stall));
+    dma->pending_stall = 0;
     for (int ch = 0; ch < 4; ch++) dma->channels[ch].data_latch = 0;
     return true;
 }
@@ -1036,7 +1037,7 @@ static SaveStateResult save_to_buffer(GBA* gba, uint8_t** out, size_t* out_size,
     h[22] = (uint8_t)((gba->cart.rom_size >> 16) & 0xFF);
     h[23] = (uint8_t)((gba->cart.rom_size >> 24) & 0xFF);
     memset(h + HEADER_OFF_TITLE, 0, 12);
-    strncpy((char*)(h + HEADER_OFF_TITLE), gba->cart.title, 12);
+    memcpy(h + HEADER_OFF_TITLE, gba->cart.title, strnlen(gba->cart.title, 12));
     uint64_t ts = (uint64_t)time(NULL);
     h[36] = (uint8_t)(ts & 0xFF);
     h[37] = (uint8_t)((ts >> 8) & 0xFF);

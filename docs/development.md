@@ -118,7 +118,7 @@ cmake .. -DMACOS_APP_BUNDLE=ON
 - **Bus as integration point**: The CPU never directly calls PPU, APU, or other subsystems. All communication happens through memory-mapped I/O reads and writes via the bus, mirroring real GBA hardware.
 - **Scanline-based rendering**: The PPU renders one complete scanline at each HBlank. Not cycle-accurate per-pixel, but sufficient for Pokemon Emerald and most commercial games.
 - **CPU runs in scanline chunks**: 1,006 cycles up to the HBlank flag, then 226 more (1,232 per scanline, 228 scanlines per frame). A chunk also ends early at the next timer IRQ so the CPU sees it on time.
-- **No dynamic allocation**: All subsystem memory is statically sized. The only heap allocation is ROM loading.
+- **No dynamic allocation in the emulated core**: All subsystem memory is statically sized; the core allocates only when loading a ROM. The frontend, rewind, savestates and screenshots use the heap.
 - **One file = one hardware component**: Each source file maps to a discrete piece of GBA hardware.
 - **X-Ray is a passive observer**: It reads GBA state but never writes to it. Zero overhead when disabled.
 - **The game layer is a passive observer too**: `src/game/` reads RAM and ROM arrays directly, never through the bus, and never writes to emulated memory.
@@ -350,7 +350,7 @@ The ARM7TDMI uses a 3-stage pipeline (fetch-decode-execute). The PC is always 2 
 | Game | Status |
 |------|--------|
 | Pokemon Emerald (BPEE) | Fully playable |
-| Pokemon FireRed (BPRE) | Boots through the Game Freak intro to the title screen. Save type auto-detected (Flash 128K). Full playthrough not yet verified. |
+| Pokemon FireRed (BPRE) / LeafGreen (BPGE) | Fully playable; Pokémon Companion supports both (Emerald-only pages are hidden). |
 
 ## Testing
 

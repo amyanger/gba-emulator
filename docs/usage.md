@@ -167,7 +167,7 @@ Press Ctrl+, (Cmd+, on macOS), or use the Settings entry in the macOS menu bar. 
 Click the box next to a GBA button, in the keyboard column or the controller column, then press the key or controller button you want. Backspace clears the binding and Esc cancels. Controller triggers can be bound too.
 
 - **Turbo A** and **Turbo B** press and release the button every 2 frames (15 times a second) while the key or button is held.
-- Keys the emulator already uses can't be bound: F1 to F12, the number keys, Tab, `` ` ``, `\`, Space, M and H. Backspace and Esc can't be bound either, since they clear and cancel.
+- Keys the emulator already uses can't be bound: F1 to F12, the number keys, Tab, `` ` ``, `\`, Space, M, H and C. Backspace and Esc can't be bound either, since they clear and cancel.
 - The left stick always works as the D-pad.
 - **Reset to defaults** restores the layout in the tables above. The default controller layout is A, B, Start, Back as Select, the D-pad, and the shoulder buttons as L and R. X and Y are unbound.
 

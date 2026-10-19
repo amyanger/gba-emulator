@@ -405,6 +405,7 @@ static const GameProfile k_profile = {
     .player_avatar = AVATAR, .camera = CAMERA, .palette_fade = FADE, .weather = WEATHER,
     .script_status = SCRIPT_ST, .main_new_keys = KEYS, .transition_data = TRANS,
     .approaching_trainers = 0x03000800, .last_talked = 0x02005000, .species_info = 0x08000000,
+    .species_count = 26,
 };
 
 static uint8_t* at(uint32_t a) {
@@ -559,6 +560,21 @@ TEST(read_event_inputs) {
 static void settle(Follower* f, FollowerInput* in) {
     follower_step(f, in, false);
     walk(f, in, 1, 0, 0x0B, 16);        /* follower (10,10), player (11,10) */
+}
+
+TEST(read_lead_species_past_table_has_no_type) {
+    /* Every other reader rejects species >= species_count; the lead's type
+     * lookup must too, or a corrupt save indexes past the species table. */
+    FollowerInput in;
+    GameMem m = { s_ewram, s_iwram, s_rom, sizeof(s_rom) };
+    GameProfile p = k_profile;
+    read_scene();
+    memset(&in, 0, sizeof(in));
+    put8(0x08000000 + 25 * 28 + 6, 10); put8(0x08000000 + 25 * 28 + 7, 2);
+    p.species_count = 25;                /* the lead is species 25 */
+    ASSERT_TRUE(follower_read(&p, &m, 16, 27, &in));
+    ASSERT_TRUE(in.lead_ok);
+    ASSERT_EQ(in.lead_type1, 0); ASSERT_EQ(in.lead_type2, 0);
 }
 
 TEST(mount_from_visible_plays_ball_in) {
@@ -971,6 +987,7 @@ void run_follower_tests(void) {
     RUN_TEST(same_map_warp_hides);
     RUN_TEST(failed_read_keeps_camera_edge);
     RUN_TEST(read_lead_skips_egg_and_fainted);
+    RUN_TEST(read_lead_species_past_table_has_no_type);
     RUN_TEST(read_free_needs_no_fade);
     RUN_TEST(read_npc_on_tile_and_invisible_player);
     RUN_TEST(mount_from_visible_plays_ball_in);

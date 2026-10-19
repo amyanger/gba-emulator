@@ -492,6 +492,38 @@ TEST(swi_arctan_precedence_matches_bios) {
     free(gba);
 }
 
+TEST(swi_lz77_wram_writes_bytes_at_odd_dest) {
+    /* SWI 0x11 is the 8-bit WRAM variant: an odd destination and an odd
+     * size are legal, and nothing past the last byte may be touched. */
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+    uint8_t* w = gba->bus.ewram;
+    w[0] = 0x10; w[1] = 3; w[2] = 0; w[3] = 0;          /* LZ77, 3 bytes out */
+    w[4] = 0x00; w[5] = 0x11; w[6] = 0x22; w[7] = 0x33; /* one flag byte, 3 literals */
+    w[0x1000] = 0xA5; w[0x1004] = 0x5A;                 /* sentinels around the output */
+    cpu->regs[0] = 0x02000000; cpu->regs[1] = 0x02001001;
+    bios_hle_execute(cpu, 0x11);
+    ASSERT_EQ_HEX(w[0x1000], 0xA5);
+    ASSERT_EQ_HEX(w[0x1001], 0x11); ASSERT_EQ_HEX(w[0x1002], 0x22); ASSERT_EQ_HEX(w[0x1003], 0x33);
+    ASSERT_EQ_HEX(w[0x1004], 0x5A);
+    free(gba);
+}
+
+TEST(swi_rl_wram_writes_bytes_at_odd_dest) {
+    GBA* gba = make_gba();
+    ARM7TDMI* cpu = &gba->cpu;
+    uint8_t* w = gba->bus.ewram;
+    w[0] = 0x30; w[1] = 3; w[2] = 0; w[3] = 0;          /* RL, 3 bytes out */
+    w[4] = 0x02; w[5] = 0x11; w[6] = 0x22; w[7] = 0x33; /* literal run of 3 */
+    w[0x1000] = 0xA5; w[0x1004] = 0x5A;
+    cpu->regs[0] = 0x02000000; cpu->regs[1] = 0x02001001;
+    bios_hle_execute(cpu, 0x14);
+    ASSERT_EQ_HEX(w[0x1000], 0xA5);
+    ASSERT_EQ_HEX(w[0x1001], 0x11); ASSERT_EQ_HEX(w[0x1002], 0x22); ASSERT_EQ_HEX(w[0x1003], 0x33);
+    ASSERT_EQ_HEX(w[0x1004], 0x5A);
+    free(gba);
+}
+
 TEST(vblank_intr_wait_honors_mask_and_rehalts) {
     /* GBATEK: VBlankIntrWait = IntrWait(1, 1).  It must (a) discard a
      * stale VBlank flag on entry, (b) stay waiting when a NON-VBlank
@@ -894,6 +926,8 @@ void run_cpu_tests(void) {
     RUN_TEST(swi_div_int_min_by_minus_one_no_crash);
     RUN_TEST(vblank_intr_wait_honors_mask_and_rehalts);
     RUN_TEST(swi_arctan_precedence_matches_bios);
+    RUN_TEST(swi_lz77_wram_writes_bytes_at_odd_dest);
+    RUN_TEST(swi_rl_wram_writes_bytes_at_odd_dest);
     RUN_TEST(mode_switch_banks_sp_independently);
     RUN_TEST(fiq_mode_banks_r8_through_r12);
     RUN_TEST(stmfd_ldmfd_round_trip_in_iwram);

@@ -118,6 +118,21 @@ TEST(savestate_snapshot_roundtrip_skips_crc) {
     gba_destroy(&gba);
 }
 
+TEST(savestate_load_clears_pending_dma_stall) {
+    /* pending_stall is transient: the loaded machine must not burn the
+     * old machine's DMA stall before its first instruction. */
+    GBA gba;
+    gba_init(&gba);
+    uint8_t* buf = NULL;
+    size_t   buf_size = 0;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &buf, &buf_size));
+    gba.dma.pending_stall = 50;
+    ASSERT_EQ(SS_OK, savestate_load_from_buffer(&gba, buf, buf_size));
+    ASSERT_EQ(gba.dma.pending_stall, 0);
+    free(buf);
+    gba_destroy(&gba);
+}
+
 TEST(savestate_sio_roundtrip) {
     GBA src;
     gba_init(&src);
@@ -698,6 +713,7 @@ void run_savestate_tests(void) {
     RUN_TEST(slot_path_small_buffer);
     RUN_TEST(savestate_buffer_roundtrip);
     RUN_TEST(savestate_snapshot_roundtrip_skips_crc);
+    RUN_TEST(savestate_load_clears_pending_dma_stall);
     RUN_TEST(savestate_sio_roundtrip);
     RUN_TEST(savestate_v5_loads_with_empty_label);
     RUN_TEST(savestate_save_writes_v6_with_label);

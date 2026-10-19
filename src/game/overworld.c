@@ -158,8 +158,7 @@ static bool object_screen_pos(const OwCtx* c, const uint8_t* o, int16_t* x, int1
 
 static void class_name(const OwCtx* c, uint16_t id, char* out) {
     uint8_t cls = 0, raw[CLASS_NAME_LEN];
-    if (id >= c->p->trainer_count ||
-        !game_mem_read8(c->m, c->p->trainers + (uint32_t)id * TRAINER_SIZE + TRAINER_CLASS, &cls) ||
+    if (!game_mem_read8(c->m, c->p->trainers + (uint32_t)id * TRAINER_SIZE + TRAINER_CLASS, &cls) ||
         cls >= c->p->trainer_class_count ||
         !game_mem_copy(c->m, c->p->trainer_class_names + (uint32_t)cls * CLASS_NAME_LEN, raw, CLASS_NAME_LEN))
         return;
@@ -276,8 +275,10 @@ static void read_trainer(const OwCtx* c, int i, OverworldSnapshot* s) {
         head[0] == SCRIPT_TRAINERBATTLE) {
         t.known = true;
         t.id = (uint16_t)(head[2] | (head[3] << 8));
-        t.beaten = flag_set(c, FLAG_TRAINER_BASE + t.id);
-        class_name(c, t.id, t.class_name);
+        if (t.id < c->p->trainer_count) {
+            t.beaten = flag_set(c, FLAG_TRAINER_BASE + t.id);
+            class_name(c, t.id, t.class_name);
+        }
     }
     memcpy(&s->trainers[s->trainer_count++], &t, sizeof(t));
 }

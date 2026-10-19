@@ -47,6 +47,22 @@ TEST(sram_wide_reads_repeat_byte) {
     ASSERT_EQ_HEX(bus_read32(&gba->bus, 0x0E000013), 0x0E0E0E0E);
 }
 
+TEST(sram_wide_writes_store_one_byte) {
+    /* 8-bit bus: a halfword or word store lands one byte, the lane the
+     * address selects (GBATEK "bytewise 8bit transfers"; mGBA STORE_SRAM
+     * writes value >> (8 * (addr & 3))). */
+    GBA* gba = make_gba();
+    gba->cart.save_type = SAVE_SRAM;
+    bus_write16(&gba->bus, 0x0E000011, 0x1234);
+    ASSERT_EQ_HEX(gba->cart.sram[0x10], 0x00);
+    ASSERT_EQ_HEX(gba->cart.sram[0x11], 0x12);
+    ASSERT_EQ_HEX(gba->cart.sram[0x12], 0x00);
+    bus_write32(&gba->bus, 0x0E000022, 0x11223344);
+    ASSERT_EQ_HEX(gba->cart.sram[0x20], 0x00);
+    ASSERT_EQ_HEX(gba->cart.sram[0x22], 0x22);
+    ASSERT_EQ_HEX(gba->cart.sram[0x23], 0x00);
+}
+
 /* ---- IWRAM -------------------------------------------------------- */
 
 TEST(iwram_write_read) {
@@ -627,6 +643,7 @@ void run_bus_tests(void) {
     RUN_TEST(ewram_write_read);
     RUN_TEST(ewram_mirror);
     RUN_TEST(sram_wide_reads_repeat_byte);
+    RUN_TEST(sram_wide_writes_store_one_byte);
     RUN_TEST(iwram_write_read);
     RUN_TEST(palette_8bit_duplicate);
     RUN_TEST(vram_8bit_duplicate);

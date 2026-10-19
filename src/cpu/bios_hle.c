@@ -521,7 +521,7 @@ static void swi_bit_unpack(ARM7TDMI* cpu) {
  * Then: flag bytes + compressed data, 8 blocks per flag byte (MSB first)
  * For VRAM variant: buffer bytes and write 16-bit at a time
  * ====================================================================== */
-static void swi_lz77_uncomp_vram(ARM7TDMI* cpu) {
+static void swi_lz77_uncomp_vram(ARM7TDMI* cpu, bool bytes) {
     uint32_t src = cpu->regs[0];
     uint32_t dst = cpu->regs[1];
 
@@ -568,7 +568,9 @@ static void swi_lz77_uncomp_vram(ARM7TDMI* cpu) {
                         val = bus_read8(bus, read_addr);
                     }
 
-                    if (!have_low_byte) {
+                    if (bytes) {
+                        bus_write8(bus, dst + bytes_written, val);
+                    } else if (!have_low_byte) {
                         out_halfword = val;
                         have_low_byte = true;
                     } else {
@@ -584,7 +586,9 @@ static void swi_lz77_uncomp_vram(ARM7TDMI* cpu) {
                 uint8_t val = bus_read8(bus, src);
                 src++;
 
-                if (!have_low_byte) {
+                if (bytes) {
+                    bus_write8(bus, dst + bytes_written, val);
+                } else if (!have_low_byte) {
                     out_halfword = val;
                     have_low_byte = true;
                 } else {
@@ -598,7 +602,7 @@ static void swi_lz77_uncomp_vram(ARM7TDMI* cpu) {
         }
     }
 
-    /* Flush any remaining byte (pad with 0) */
+    /* Flush any remaining byte (pad with 0); the 8-bit variant has none */
     if (have_low_byte) {
         bus_write16(bus, dst + bytes_written - 1, out_halfword);
     }
@@ -706,7 +710,7 @@ static void swi_huff_uncomp(ARM7TDMI* cpu) {
  * Header: type[7:4]=3 (RLE), decompressed_size[31:8]
  * Flag byte: bit7 set = compressed run, bit7 clear = literal run
  * ====================================================================== */
-static void swi_rl_uncomp_vram(ARM7TDMI* cpu) {
+static void swi_rl_uncomp_vram(ARM7TDMI* cpu, bool bytes) {
     uint32_t src = cpu->regs[0];
     uint32_t dst = cpu->regs[1];
 
@@ -732,7 +736,9 @@ static void swi_rl_uncomp_vram(ARM7TDMI* cpu) {
 
             for (uint32_t j = 0; j < run_len && bytes_written < decomp_size;
                  j++) {
-                if (!have_low_byte) {
+                if (bytes) {
+                    bus_write8(bus, dst + bytes_written, val);
+                } else if (!have_low_byte) {
                     out_halfword = val;
                     have_low_byte = true;
                 } else {
@@ -751,7 +757,9 @@ static void swi_rl_uncomp_vram(ARM7TDMI* cpu) {
                 uint8_t val = bus_read8(bus, src);
                 src++;
 
-                if (!have_low_byte) {
+                if (bytes) {
+                    bus_write8(bus, dst + bytes_written, val);
+                } else if (!have_low_byte) {
                     out_halfword = val;
                     have_low_byte = true;
                 } else {
@@ -1112,11 +1120,11 @@ void bios_hle_execute(ARM7TDMI* cpu, uint32_t swi_num) {
         break;
 
     case 0x11: /* LZ77UnCompWram (8-bit writes) */
-        swi_lz77_uncomp_vram(cpu);  /* 8-bit writes work via 16-bit path */
+        swi_lz77_uncomp_vram(cpu, true);
         break;
 
     case 0x12: /* LZ77UnCompVram (16-bit writes) */
-        swi_lz77_uncomp_vram(cpu);
+        swi_lz77_uncomp_vram(cpu, false);
         break;
 
     case 0x13: /* HuffUnComp */
@@ -1124,11 +1132,11 @@ void bios_hle_execute(ARM7TDMI* cpu, uint32_t swi_num) {
         break;
 
     case 0x14: /* RLUnCompWram (8-bit writes) */
-        swi_rl_uncomp_vram(cpu);  /* 8-bit writes work via 16-bit path */
+        swi_rl_uncomp_vram(cpu, true);
         break;
 
     case 0x15: /* RLUnCompVram (16-bit writes) */
-        swi_rl_uncomp_vram(cpu);
+        swi_rl_uncomp_vram(cpu, false);
         break;
 
     case 0x16: /* Diff8bitUnFilterWram */
