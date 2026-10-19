@@ -1005,6 +1005,16 @@ TEST(snapshot_doubles_two_foes_both_get_damage) {
         ASSERT_EQ(gs->snap.enemies[i].moves[0].dmg_kind, DMG_RANGE);
         ASSERT_EQ(gs->snap.enemies[i].moves[0].dmg_hi, 6);
     }
+    char buf[4096];
+    FILE* f = tmpfile();
+    ASSERT_TRUE(f != NULL);
+    ASSERT_TRUE(game_dump(&gs->snap, f));
+    rewind(f);
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    ASSERT_TRUE(strstr(buf, "\nyour_move 0 0 WATER GUN type 11 x8 dmg 1 18 22\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "\nyour_move 1 0 WATER GUN type 11 x8 dmg 1 18 22\n") != NULL);
 
     fixture_put16(at(0x02000C00 + 0x58 + 0x28), 0);  /* foe A fainted */
     game_update_mem(gs, &m);
@@ -1218,8 +1228,8 @@ TEST(snapshot_damage_dump_lines) {
     size_t n = fread(buf, 1, sizeof(buf) - 1, f);
     fclose(f);
     buf[n] = '\0';
-    ASSERT_TRUE(strstr(buf, "\nyour_move 0 WATER GUN type 11 x8 dmg 1 18 22\n") != NULL);
-    ASSERT_TRUE(strstr(buf, "\nyour_move 1 GROWL type 3 x0 status\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "\nyour_move 0 0 WATER GUN type 11 x8 dmg 1 18 22\n") != NULL);
+    ASSERT_TRUE(strstr(buf, "\nyour_move 0 1 GROWL type 3 x0 status\n") != NULL);
     ASSERT_TRUE(strstr(buf, "\nenemy_move 0 0 WATER GUN type 11 x8 dmg 1 5 6\n") != NULL);
     ASSERT_TRUE(strstr(buf, "\nenemy_move 0 1 GROWL type 3 x0 status\n") != NULL);
 }

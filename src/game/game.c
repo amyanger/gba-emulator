@@ -958,10 +958,9 @@ bool game_dump(const GameSnapshot* s, FILE* out) {
         ok &= fprintf(out, "enemy %u %s lv%u hp %u/%u nature %s iv %u/%u/%u/%u/%u/%u ability %s item %s\n",
                       i, e->species, e->level, e->hp, e->max_hp, e->nature, e->ivs[0], e->ivs[1],
                       e->ivs[2], e->ivs[3], e->ivs[4], e->ivs[5], e->ability, e->item) >= 0;
-        for (uint8_t j = 0; i == 0 && j < e->eff_count; j++)
-            ok &= dump_move(out, "your_move", "", j, &e->eff[j]);
         char prefix[8];
         snprintf(prefix, sizeof(prefix), "%u ", i);
+        for (uint8_t j = 0; j < e->eff_count; j++) ok &= dump_move(out, "your_move", prefix, j, &e->eff[j]);
         for (uint8_t j = 0; j < e->move_count; j++) ok &= dump_move(out, "enemy_move", prefix, j, &e->moves[j]);
     }
     for (uint8_t i = 0; i < s->catch_count; i++)
