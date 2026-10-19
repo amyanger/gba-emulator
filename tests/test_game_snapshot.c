@@ -980,6 +980,57 @@ TEST(snapshot_damage_doubles_uses_battler_id) {
     ASSERT_EQ(gs->snap.enemies[0].eff[1].dmg_hi, 11);    /* player's is not */
 }
 
+/* Doubles with two foes (battlers 1 and 3): both are listed and both get damage. A foe that
+ * fainted (hp 0) or is absent drops out while the other is alive, so the page shows the one
+ * left as in singles. */
+TEST(snapshot_doubles_two_foes_both_get_damage) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    memcpy(at(0x02000C00 + 3 * 0x58), at(0x02000C00 + 0x58), 0x58);  /* foe B at battler 3 */
+    fixture_put16(at(0x02000C00 + 3 * 0x58 + 0x28), 7);              /* foe B hp 7 */
+    at(0x02000E00)[0] = 4;                                           /* gBattlersCount */
+    at(0x02000E04)[2] = 2; at(0x02000E04)[3] = 3;
+    fixture_put16(at(0x02000E0E), 0);                                /* gBattlerPartyIndexes[3] */
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemy_count, 2);
+    ASSERT_EQ(gs->snap.enemies[0].hp, 10);
+    ASSERT_EQ(gs->snap.enemies[1].hp, 7);
+    for (int i = 0; i < 2; i++) {
+        ASSERT_EQ(gs->snap.enemies[i].eff[0].dmg_kind, DMG_RANGE);
+        ASSERT_EQ(gs->snap.enemies[i].eff[0].dmg_hi, 22);
+        ASSERT_EQ(gs->snap.enemies[i].moves[0].dmg_kind, DMG_RANGE);
+        ASSERT_EQ(gs->snap.enemies[i].moves[0].dmg_hi, 6);
+    }
+
+    fixture_put16(at(0x02000C00 + 0x58 + 0x28), 0);  /* foe A fainted */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemy_count, 1);
+    ASSERT_EQ(gs->snap.enemies[0].hp, 7);
+    ASSERT_EQ(gs->snap.enemies[0].eff[0].dmg_kind, DMG_RANGE);
+
+    fixture_put16(at(0x02000C00 + 0x58 + 0x28), 10);
+    fixture_put16(at(0x02000C00 + 3 * 0x58 + 0x28), 0);  /* foe B fainted */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemy_count, 1);
+    ASSERT_EQ(gs->snap.enemies[0].hp, 10);
+
+    fixture_put16(at(0x02000C00 + 3 * 0x58 + 0x28), 7);
+    at(0x02000E58)[0] = 1u << 1;                      /* gAbsentBattlerFlags: battler 1 gone */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemy_count, 1);
+    ASSERT_EQ(gs->snap.enemies[0].hp, 7);
+
+    at(0x02000E58)[0] = 0;                            /* both fainted: keep both, nothing to pick */
+    fixture_put16(at(0x02000C00 + 0x58 + 0x28), 0);
+    fixture_put16(at(0x02000C00 + 3 * 0x58 + 0x28), 0);
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemy_count, 2);
+}
+
 /* R7: Weather Ball in rain is a Water move for the pill and the multiplier. */
 TEST(snapshot_damage_weather_ball_effective_type) {
     build_world();
@@ -1325,6 +1376,7 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_damage_stale_personality_is_none);
     RUN_TEST(snapshot_damage_reads_status3_by_battler_id);
     RUN_TEST(snapshot_damage_doubles_uses_battler_id);
+    RUN_TEST(snapshot_doubles_two_foes_both_get_damage);
     RUN_TEST(snapshot_damage_weather_ball_effective_type);
     RUN_TEST(snapshot_damage_fainted_target_is_none);
     RUN_TEST(snapshot_damage_resources_outside_ewram_is_none);

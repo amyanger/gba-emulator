@@ -1705,6 +1705,29 @@ TEST(panel_hunt_views_stay_in_bounds) {
         }
 }
 
+/* BATTLE_PREVIEW=1 writes battle_preview_{single,double0,double1}.png to the CWD. */
+TEST(panel_battle_preview_png) {
+    if (!getenv("BATTLE_PREVIEW")) return;
+    static GameSnapshot snap;
+    static const char* const names[3] = {"single", "double0", "double1"};
+    fill_battle(&snap, GAME_CTX_BATTLE_TRAINER);
+    game_strcpy(snap.active_name, GAME_NAME_LEN, "MARSHTOMP");
+    game_strcpy(snap.enemies[0].species, GAME_NAME_LEN, "MIGHTYENA");
+    game_strcpy(snap.enemies[1].species, GAME_NAME_LEN, "GOLBAT");
+    snap.enemies[0].hp = 210; snap.enemies[0].level = 32;
+    snap.enemies[1].hp = 60; snap.enemies[1].max_hp = 110; snap.enemies[1].level = 31;
+    for (int i = 0; i < 3; i++) {
+        snap.enemy_count = i == 0 ? 1 : 2;
+        UiCanvas c;
+        ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
+        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, (uint8_t)(i == 2), NULL, 0, 0, true, NULL, NULL, 0, false,
+                        NULL, NULL);
+        char path[48];
+        snprintf(path, sizeof(path), "battle_preview_%s.png", names[i]);
+        ASSERT_TRUE(screenshot_save_argb(s_buf, 600, 480, path));
+    }
+}
+
 static void fill_run_sample(RunView* v);
 
 /* HUNT_PREVIEW=1 writes hunt_preview_*.png to the CWD. */
@@ -1829,6 +1852,7 @@ void run_game_panel_tests(void) {
     RUN_TEST(panel_follow_battle_keeps_hunt_page);
     RUN_TEST(panel_hunt_views_stay_in_bounds);
     RUN_TEST(panel_hunt_preview_png);
+    RUN_TEST(panel_battle_preview_png);
     RUN_TEST(panel_berries_more_places_line_stays_above_footer);
     RUN_TEST(panel_berry_time_format);
     RUN_TEST(panel_berry_place_order_here_first);

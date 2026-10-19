@@ -42,7 +42,7 @@ Differences from Emerald:
 |-----|--------------|
 | F9 | Show or hide the panel |
 | F10 | Cycle the page: Auto, Party, Route, Nuzlocke, Berries, Search, Hunt, Run (Berries and Hunt are Emerald only and hidden on FireRed and LeafGreen). Auto shows the battle page during a battle and the route page otherwise. When a battle starts the panel switches to Auto, and when it ends it goes back to the page you had, unless you changed the page during the battle. |
-| [ and ] | Select the previous or next Pokemon on the Party page, switch views on the Nuzlocke page, open the previous or next place on the Berries page, move the Search selection, pick the target species on the Hunt page, or scroll the list on the Run page |
+| [ and ] | Select the previous or next Pokemon on the Party page, pick the opponent shown on the Battle page in a double battle, switch views on the Nuzlocke page, open the previous or next place on the Berries page, move the Search selection, pick the target species on the Hunt page, or scroll the list on the Run page |
 | N | Start a Nuzlocke run, on the Nuzlocke page |
 | J, twice | Move the clock to the next Mirage Island day, on the Route page |
 | B | Turn berry alerts on or off, on the Berries page |
@@ -55,7 +55,7 @@ On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is s
 
 ## Battle
 
-The opposing Pokemon's species, level, HP, types, nature, IVs, ability, held item and any status condition, how your active Pokemon's moves match up against it, the opponent's own moves and how they match up against your active Pokemon, and, in wild battles, the catch chance for each ball in your bag. For the opponent's moves the colors are from your side: red means a move is super effective against you, green means you resist it or are immune. In a double battle a line under the name shows the second opponent's species, level and HP.
+The opposing Pokemon's species, level, HP, types, nature, IVs, ability, held item and any status condition, how your active Pokemon's moves match up against it, the opponent's own moves and how they match up against your active Pokemon, and, in wild battles, the catch chance for each ball in your bag. For the opponent's moves the colors are from your side: red means a move is super effective against you, green means you resist it or are immune. In a double battle both opponents sit in two tabs at the top with their level and HP. Press **[** or **]** to pick which one the page shows, and every number below is for that one. When one of them faints and nobody takes its place, the tabs go away and the page shows the one still standing.
 
 The panel switches to this page by itself when a battle starts, even if you were on Party or Route, and goes back to your page when the battle ends.
 
@@ -89,7 +89,7 @@ The color of the number says whether the move can finish the target from its cur
 
 Some moves fall back to the older ×2 or ×0.5 matchup display because their damage cannot be known ahead of time: multi-hit moves, Psywave, Magnitude, Present, Rollout, Ice Ball, Fury Cutter, Revenge, Counter, Mirror Coat, Bide, Future Sight, Doom Desire and Beat Up. The same happens when a Pokemon holds an Enigma Berry, in Safari Zone battles, and for moves whose power varies, or that hit harder against Fly, Dig, Dive or Minimize, while the user is locked into a multi-turn move.
 
-Not modelled: critical hits, accuracy, Helping Hand, and redirection from Lightning Rod or Follow Me. In double battles only the main enemy gets numbers. Right after a switch-in the numbers take a moment to settle.
+Not modelled: critical hits, accuracy, Helping Hand, and redirection from Lightning Rod or Follow Me. Right after a switch-in the numbers take a moment to settle.
 
 The calculation follows the damage code in pokeemerald. Its unit fixtures were checked against two independent derivations, and the real in-game hits we compared against all landed inside the predicted ranges.
 

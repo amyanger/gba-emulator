@@ -124,7 +124,7 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 | F4 | Show or hide Overworld X-Ray: trainer sight lines and hidden items on the map (original Pokemon Emerald US/English ROM only, remembered between launches) |
 | F9 | Show or hide Pokémon Companion (original US/English Pokemon Emerald, FireRed 1.0 or LeafGreen 1.1) |
 | F10 | Cycle the Pokémon Companion page: Auto, Party, Route, Nuzlocke, Berries, Search, Hunt, Run (Berries and Hunt are Emerald only and hidden on FireRed and LeafGreen; Auto shows the battle page during battles; a battle switches to Auto and the old page returns afterwards, except on the Hunt page, which stays up) |
-| [ and ] | Select the previous or next Pokemon on the Party page, switch Nuzlocke views, open another place on the Berries page, move the Search selection, pick the target species on the Hunt page, or scroll the Run page (unless bound to a GBA button) |
+| [ and ] | Select the previous or next Pokemon on the Party page, pick which opponent the Battle page shows in a double battle, switch Nuzlocke views, open another place on the Berries page, move the Search selection, pick the target species on the Hunt page, or scroll the Run page (unless bound to a GBA button) |
 | / | Start typing a Pokemon name, on the Search page (unless bound to a GBA button) |
 | N | Start a Nuzlocke run, on the Nuzlocke page (unless bound to a GBA button) |
 | J, twice | Move the clock to the next Mirage Island day, on the Route page (unless bound to a GBA button) |

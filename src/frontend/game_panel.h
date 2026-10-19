@@ -48,7 +48,8 @@ typedef struct {
  * Berries page (0 = the first, which is the current place when it has trees). search
  * may be NULL; the Search page then says it is unavailable. run may be NULL; run_scroll
  * scrolls its list and run_details shows the Details sheet. hunt may be NULL (the Hunt
- * page then says it is unavailable). daycare may be NULL (no Daycare block on the Party page). */
+ * page then says it is unavailable). daycare may be NULL (no Daycare block on the Party page).
+ * On the Battle page party_sel is the shown foe in a double battle. */
 void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8_t party_sel,
                      const NuzView* nuz, uint8_t nuz_sub, uint8_t berry_sel, bool berry_alerts,
                      const GamePanelSearch* search, const RunView* run, uint8_t run_scroll,

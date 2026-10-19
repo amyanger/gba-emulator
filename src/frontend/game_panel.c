@@ -484,7 +484,30 @@ static void upper_copy(char* out, size_t out_size, const char* in) {
     out[n] = '\0';
 }
 
-static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
+/* Doubles: one tab per foe (species, level, HP bar); sel is highlighted. Returns the height. */
+static float foe_tabs(UiCanvas* c, const GameSnapshot* s, uint8_t sel, float y) {
+    float w = (RIGHT - LEFT - 8.0f) / 2, h = 40.0f;
+    char buf[16];
+    for (uint8_t i = 0; i < 2; i++) {
+        const GameEnemy* e = &s->enemies[i];
+        float x = LEFT + i * (w + 8.0f);
+        ui_fill_round_rect(c, (UiRect){x, y, w, h}, UI_RADIUS, i == sel ? UI_SELECTED : UI_SURFACE);
+        if (i == sel)
+            ui_fill_round_rect(c, (UiRect){x, y + 4.0f, 2.0f, h - 8.0f}, 1.0f, UI_ACCENT);
+        Name n = title(e->species);
+        float nw = ui_text(c, i == sel ? UI_FONT_SEMIBOLD : UI_FONT_REGULAR, KV_SIZE, x + 12.0f,
+                           y + 6.0f, w - 70.0f, UI_ALIGN_LEFT, i == sel ? UI_TEXT : UI_MUTED, n.s);
+        snprintf(buf, sizeof(buf), "Lv %u", e->level);
+        ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, x + 12.0f + nw + 6.0f, y + 7.0f, 0,
+                UI_ALIGN_LEFT, UI_MUTED, buf);
+        ui_bar(c, (UiRect){x + 12.0f, y + h - 11.0f, w - 24.0f, 4.0f}, hp_frac(e->hp, e->max_hp),
+               hp_color(e->hp, e->max_hp));
+    }
+    return h + 10.0f;
+}
+
+/* sel picks the shown foe when there are two; out of range shows the first. */
+static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top, uint8_t sel) {
     if (s->enemy_count == 0) {
         ui_text(c, UI_FONT_REGULAR, UI_SIZE_BODY, PANEL_W / 2, 220.0f, 568.0f, UI_ALIGN_CENTER,
                 UI_MUTED, "Waiting for battle data");
@@ -503,10 +526,14 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
         ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, gy, 0, UI_ALIGN_LEFT, UI_MUTED, "Can't catch");
         return;
     }
-    const GameEnemy* e = &s->enemies[0];
+    if (sel >= s->enemy_count)
+        sel = 0;
+    const GameEnemy* e = &s->enemies[sel];
     bool wild = s->context == GAME_CTX_BATTLE_WILD;
     char buf[64];
     float y = top + 4.0f;
+    if (s->enemy_count > 1)
+        y += foe_tabs(c, s, sel, y);
 
     /* Title row */
     float pills_w = type_pills(c, RIGHT, y + 3.0f, e->type_ids, true);
@@ -517,16 +544,6 @@ static void draw_battle(UiCanvas* c, const GameSnapshot* s, float top) {
     title_meta(c, LEFT + name_w + 8.0f, y, RIGHT - pills_w - 8.0f,
                wild ? "Wild" MDOT : "Trainer" MDOT, e->gender, buf);
     y += 28.0f;
-
-    if (s->enemy_count > 1) {
-        const GameEnemy* e2 = &s->enemies[1];
-        Name species2 = title(e2->species);
-        snprintf(buf, sizeof(buf), "Also: %s Lv %u, HP %u/%u", species2.s, e2->level,
-                 e2->hp, e2->max_hp);
-        ui_text(c, UI_FONT_REGULAR, UI_SIZE_SMALL, LEFT, y, RIGHT - LEFT, UI_ALIGN_LEFT, UI_MUTED,
-                buf);
-        y += 18.0f;
-    }
 
     /* HP row */
     ui_text(c, UI_FONT_REGULAR, KV_SIZE, LEFT, y, 0, UI_ALIGN_LEFT, UI_MUTED, "HP");
@@ -2313,6 +2330,8 @@ void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8
     int active = tab_index(shown);
     bool search_focused = search && search->view && search->view->focused;
     const char* hint = game_panel_hint(shown, nuz, search_focused, run, run_details);
+    if (shown == GAME_PAGE_COUNT && snap->enemy_count > 1)
+        hint = "[ ] target   F10 page";
 
     ui_canvas_unclip(c);
     ui_canvas_clear(c, UI_BG);
@@ -2344,7 +2363,7 @@ void game_panel_draw(UiCanvas* c, const GameSnapshot* snap, GamePage page, uint8
     } else if (active == 2) {
         draw_route(c, snap, top);
     } else {
-        draw_battle(c, snap, top);
+        draw_battle(c, snap, top, party_sel);
     }
     ui_canvas_unclip(c);
 }

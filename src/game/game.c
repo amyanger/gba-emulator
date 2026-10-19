@@ -259,6 +259,20 @@ static uint8_t read_battlers(const GameMem* m, const GameProfile* p,
             *player_battler = b;
         }
     }
+    /* Doubles: a foe that fainted (hp 0, species kept) or is in gAbsentBattlerFlags drops out
+     * while the other is alive, so the page shows the one left. */
+    uint8_t absent = 0;
+    game_mem_read8(m, p->absent_battler_flags, &absent);
+    if (n == 2) {
+        bool up0 = rd16(enemies[0] + BMON_HP) != 0 && !((absent >> enemy_ids[0]) & 1);
+        bool up1 = rd16(enemies[1] + BMON_HP) != 0 && !((absent >> enemy_ids[1]) & 1);
+        if (!up0 && up1) {
+            memcpy(enemies[0], enemies[1], BMON_SIZE);
+            enemy_ids[0] = enemy_ids[1];
+        }
+        if (up0 != up1)
+            n = 1;
+    }
     return n;
 }
 
@@ -555,17 +569,18 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     uint8_t type_table[TYPE_TABLE_MAX];
     uint32_t type_len = p->type_effectiveness_len <= TYPE_TABLE_MAX ? p->type_effectiveness_len : 0;
     if (type_len && !game_mem_copy(m, p->type_effectiveness, type_table, type_len)) type_len = 0;
-    /* Damage for enemies[0] only (R20); enemy 1 keeps DMG_NONE. */
-    DamageCtx ctx;
-    DamageMon dm_player, dm_enemy;
-    bool dmg = have_player && gs->dmg_tables.valid &&
-               damage_read_battle(m, p, player_battler, enemy_ids[0], &ctx, &dm_player, &dm_enemy);
-    DamagePair to_player = { &gs->dmg_tables, &ctx, &dm_enemy, &dm_player };
-    DamagePair from_player = { &gs->dmg_tables, &ctx, &dm_player, &dm_enemy };
-    for (uint8_t i = 0; i < n; i++)
+    /* Damage for each enemy against the player's active mon (R20, extended to doubles). */
+    for (uint8_t i = 0; i < n; i++) {
+        DamageCtx ctx;
+        DamageMon dm_player, dm_enemy;
+        bool dmg =
+            have_player && gs->dmg_tables.valid &&
+            damage_read_battle(m, p, player_battler, enemy_ids[i], &ctx, &dm_player, &dm_enemy);
+        DamagePair to_player = {&gs->dmg_tables, &ctx, &dm_enemy, &dm_player};
+        DamagePair from_player = {&gs->dmg_tables, &ctx, &dm_player, &dm_enemy};
         fill_enemy(m, p, enemies[i], player, have_player, type_table, type_len,
-                   dmg && i == 0 ? &to_player : NULL, dmg && i == 0 ? &from_player : NULL,
-                   &s->enemies[i]);
+                   dmg ? &to_player : NULL, dmg ? &from_player : NULL, &s->enemies[i]);
+    }
     s->enemy_count = n;
     if (have_player) read_active_name(m, p, player_battler, s);
     if (s->context == GAME_CTX_BATTLE_WILD && !s->uncatchable)

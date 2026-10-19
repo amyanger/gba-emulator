@@ -1303,9 +1303,9 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 fe->panel_follow.restore = false;
                 if (fe->panel_page == GAME_PAGE_RUN) fe->run_scroll = 0;
             }
-            /* [ and ] move the party selection (or switch Nuzlocke views, or scroll the Run
-             * page) unless the keymap binds them; N starts a Nuzlocke run from its page, D
-             * flips the Run page between its dashboard and Details sheet. */
+            /* [ and ] move the party selection (or the battle target, or switch Nuzlocke views, or
+             * scroll the Run page) unless the keymap binds them; N starts a Nuzlocke run from its
+             * page, D flips the Run page between its dashboard and Details sheet. */
             GamePage shown_page = game_panel_resolve_page((GamePage)fe->panel_page, fe->last_snap.context);
             if ((event.key.keysym.scancode == SDL_SCANCODE_LEFTBRACKET ||
                  event.key.keysym.scancode == SDL_SCANCODE_RIGHTBRACKET) &&
@@ -1314,6 +1314,8 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                 if (shown_page == GAME_PAGE_PARTY)
                     fe->panel_sel = game_panel_select(fe->panel_sel, delta,
                                                       game_panel_party_rows(&fe->last_snap, &fe->last_daycare));
+                else if (shown_page == GAME_PAGE_COUNT)
+                    fe->foe_sel = game_panel_select(fe->foe_sel, delta, fe->last_snap.enemy_count);
                 else if (shown_page == GAME_PAGE_NUZLOCKE)
                     fe->nuz_sub = game_panel_nuz_sub(fe->nuz_sub, delta);
                 else if (shown_page == GAME_PAGE_BERRIES) {

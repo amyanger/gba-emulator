@@ -317,6 +317,11 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
             caret_phase = (SDL_GetTicks() - fe->search_caret_ms) / UI_CARET_MS;
         /* Run changes only repaint while the Run page is shown; switching to it repaints anyway. */
         GamePage shown = game_panel_resolve_page((GamePage)fe->panel_page, s_game.snap.context);
+        /* The battle target starts on the first foe each battle; [ ] picks it. */
+        if (s_game.snap.context != GAME_CTX_BATTLE_WILD &&
+            s_game.snap.context != GAME_CTX_BATTLE_TRAINER)
+            fe->foe_sel = 0;
+        uint8_t sel = shown == GAME_PAGE_COUNT ? fe->foe_sel : fe->panel_sel;
         bool run_shown = shown == GAME_PAGE_RUN;
         /* The hunt scans and rebuilds its view only while its page is shown (R10). */
         bool hunt_shown = shown == GAME_PAGE_HUNT;
@@ -334,7 +339,7 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
             game_daycare_forget(&s_game);
         }
         /* Redraw only when something on the panel can have changed. */
-        if (fe->panel_dirty || fe->last_page != fe->panel_page || fe->last_sel != fe->panel_sel ||
+        if (fe->panel_dirty || fe->last_page != fe->panel_page || fe->last_sel != sel ||
             fe->last_nuz_sub != fe->nuz_sub || fe->last_nuz_version != s_nuz.view_version ||
             fe->last_berry_sel != fe->berry_sel || fe->last_berry_alerts != fe->berry_alerts ||
             fe->last_search_version != fe->search.version || fe->last_caret_phase != caret_phase ||
@@ -349,9 +354,9 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
             GamePanelSearch search = {&fe->search, &s_game.search, s_search_results,
                                       fe->search.result_count > 0 ? &s_search_detail : NULL,
                                       caret_phase % 2 == 0};
-            game_panel_draw(&canvas, &s_game.snap, (GamePage)fe->panel_page, fe->panel_sel,
-                            &s_nuz.view, fe->nuz_sub, fe->berry_sel, fe->berry_alerts, &search,
-                            &s_run.view, fe->run_scroll, fe->run_details, hunt_session_view(&s_hunt),
+            game_panel_draw(&canvas, &s_game.snap, (GamePage)fe->panel_page, sel, &s_nuz.view,
+                            fe->nuz_sub, fe->berry_sel, fe->berry_alerts, &search, &s_run.view,
+                            fe->run_scroll, fe->run_details, hunt_session_view(&s_hunt),
                             daycare_shown ? &daycare : NULL);
             fe->last_hunt_version = hunt_session_view(&s_hunt)->version;
             fe->last_search_version = fe->search.version;
@@ -368,7 +373,7 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
             fe->last_snap = s_game.snap;
             fe->last_daycare = daycare;
             fe->last_page = fe->panel_page;
-            fe->last_sel = fe->panel_sel;
+            fe->last_sel = sel;
             fe->panel_dirty = false;
         }
     } else {
