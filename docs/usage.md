@@ -14,7 +14,13 @@ Each download includes everything it needs, SDL2 included.
 2. Drag **GBA Emulator** into **Applications**.
 3. Double-click **GBA Emulator**. The game library opens: click **Choose folder…** once to pick where you keep your games, then double-click one to play. You can also drop a ROM onto the app icon.
 
-The app isn't signed with a paid Apple certificate, so the first launch is blocked with a "can't be opened" message. Open **System Settings > Privacy & Security**, scroll down and click **Open Anyway**. You only need to do this once. From Terminal, this does the same:
+The app isn't signed with a paid Apple certificate, so the first launch is blocked with a message like *"GBA Emulator" Not Opened: Apple could not verify "GBA Emulator" is free of malware*. This is expected for unsigned apps and doesn't mean a virus was found. To allow it:
+
+1. Click **Done** (not **Move to Trash**).
+2. Open **System Settings > Privacy & Security** and scroll down to the **Security** section. Next to *"GBA Emulator" was blocked to protect your Mac*, click **Open Anyway**.
+3. Double-click the app again, click **Open Anyway** once more and type your Mac password if asked.
+
+You only need to do this once. Right-clicking the app and choosing **Open** no longer skips the check on macOS 15 and newer. From Terminal, this does the same:
 
 ```bash
 xattr -dr com.apple.quarantine "/Applications/GBA Emulator.app"
@@ -43,7 +49,7 @@ The folder and file dialogs use `zenity` (GNOME and most desktops) or `kdialog` 
 1. Download `gba_emulator-0.14.0-Windows-AMD64.zip` from the Releases page and extract it.
 2. Double-click `gba_emulator.exe` in the `bin` folder. The game library opens: click **Choose folder…** once to pick where you keep your games, then double-click one to play. Dragging a ROM onto the `.exe` also works.
 
-Windows SmartScreen may warn that the app is from an unknown publisher, because it isn't signed with a paid certificate. Click **More info**, then **Run anyway**.
+Windows SmartScreen may warn that the app is from an unknown publisher, because it isn't signed with a paid certificate. Click **More info**, then **Run anyway**. Your browser may also flag the download as uncommon or unsafe for the same reason: in Edge or Chrome, open the downloads list, click the **...** next to the file and choose **Keep**.
 
 Command-line options still work from a terminal:
 
