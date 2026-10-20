@@ -1,0 +1,45 @@
+name: Bug report
+description: Something in the emulator or the Pokémon Companion is wrong
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Emulator version
+      description: From the release you downloaded, or the commit if you built it yourself.
+      placeholder: v0.14.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options: [macOS, Windows, Linux]
+    validations:
+      required: true
+  - type: input
+    id: game
+    attributes:
+      label: Game
+      description: Name and region. The Companion only supports retail Emerald, FireRed and LeafGreen; ROM hacks are not supported.
+      placeholder: Pokemon Emerald (USA)
+    validations:
+      required: true
+  - type: dropdown
+    id: bios
+    attributes:
+      label: BIOS
+      options: [Real BIOS file, Built-in (no BIOS file)]
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Do not attach ROM or BIOS files. Screenshots are welcome.
+    validations:
+      required: true

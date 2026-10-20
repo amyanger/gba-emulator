@@ -140,6 +140,7 @@ Build options, the architecture, the test suite and the golden-frame checks are 
 - [Hardware X-Ray Mode](docs/hardware-xray.md)
 - [HQ music](docs/hq-music.md)
 - [Development](docs/development.md): building, what's emulated, architecture, project structure, testing, roadmap, references
+- [Contributing](CONTRIBUTING.md): ground rules and the checks to run before opening a pull request
 
 ## License
 
