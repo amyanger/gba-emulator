@@ -74,6 +74,13 @@ typedef struct {
     uint16_t player_hp, player_max_hp; /* the player's active battler, target of moves[] */
 } GameEnemy;
 
+/* One of the player's battlers. */
+typedef struct {
+    char name[GAME_NAME_LEN]; /* nickname, empty when unknown */
+    uint8_t level;
+    uint16_t hp, max_hp;
+} GameAlly;
+
 typedef struct {
     char ball[GAME_NAME_LEN];
     uint16_t quantity;
@@ -118,12 +125,13 @@ typedef struct {
     GameSupport support; /* OK unless the ROM itself is unsupported */
     char reason[48];
     GameContext context;
-    char active_name[GAME_NAME_LEN]; /* player's active battler, empty when unknown */
     uint8_t party_count;
     GamePartyMon party[6];
     GameRelearn relearn[6]; /* parallel to party */
+    uint8_t ally_count;      /* the player's battlers on the field, 2 in doubles */
+    GameAlly allies[2];
     uint8_t enemy_count;
-    GameEnemy enemies[2];
+    GameEnemy enemies[4];    /* [ally * 2 + foe]: foe against that ally, enemy_count foes each */
     uint8_t catch_count;
     bool ghost;              /* FRLG GHOST battle not yet unveiled: the game hides the species */
     bool uncatchable;        /* rules->uncatchable_mask: balls always miss */

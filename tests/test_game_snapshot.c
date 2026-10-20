@@ -416,7 +416,7 @@ TEST(snapshot_wild_battle_matchups_and_catch) {
     fixture_put16(at(0x02000E08), 0);  /* gBattlerPartyIndexes[0] */
     game_update_mem(gs, &m);
     ASSERT_EQ(gs->snap.context, GAME_CTX_BATTLE_WILD);
-    ASSERT_STR_EQ(gs->snap.active_name, "B");
+    ASSERT_STR_EQ(gs->snap.allies[0].name, "B");
     ASSERT_EQ(gs->snap.enemy_count, 1);
     const GameEnemy* e = &gs->snap.enemies[0];
     ASSERT_STR_EQ(e->species, "ZIGZAGOON");
@@ -530,10 +530,10 @@ TEST(snapshot_active_name_clamps_bad_party_index) {
     GameMem m = test_mem();
     game_update_mem(gs, &m);
     ASSERT_EQ(gs->snap.context, GAME_CTX_BATTLE_WILD);
-    ASSERT_STR_EQ(gs->snap.active_name, "");
+    ASSERT_STR_EQ(gs->snap.allies[0].name, "");
     fixture_put16(at(0x02000E08), 1);  /* in 0..5 but past the party count */
     game_update_mem(gs, &m);
-    ASSERT_STR_EQ(gs->snap.active_name, "");
+    ASSERT_STR_EQ(gs->snap.allies[0].name, "");
 }
 
 TEST(snapshot_trainer_battle_has_no_catch_rows) {
@@ -1041,6 +1041,51 @@ TEST(snapshot_doubles_two_foes_both_get_damage) {
     ASSERT_EQ(gs->snap.enemy_count, 2);
 }
 
+/* Doubles on the player's side (battlers 0 and 2): both allies are listed, each foe is filled
+ * against each (enemies[ally * 2 + foe]). A fainted ally drops out while the other stands, and
+ * a replacement in the same slot shows up on the next read. */
+TEST(snapshot_doubles_two_allies) {
+    build_world();
+    enter_wild_battle();
+    give_enemy_moves();
+    GameState* gs = test_state();
+    ASSERT_TRUE(enable_damage(gs));
+    memcpy(at(0x02000C00 + 2 * 0x58), at(0x02000C00), 0x58);  /* ally B at battler 2 */
+    uint8_t* b = at(0x02000C00 + 2 * 0x58);
+    b[0x2A] = 7;                                               /* level 7 */
+    fixture_put16(b + 0x28, 5);                                /* hp 5 */
+    fixture_put16(b + 0x0C, 0);                                /* no Water Gun */
+    at(0x02000E00)[0] = 4;
+    at(0x02000E04)[2] = 2; at(0x02000E04)[3] = 3;              /* battler 3: no species */
+    fixture_put16(at(0x02000E08), 0);                          /* gBattlerPartyIndexes[0] */
+    fixture_put16(at(0x02000E0C), 0);                          /* gBattlerPartyIndexes[2] */
+    GameMem m = test_mem();
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.enemy_count, 1);
+    ASSERT_EQ(gs->snap.ally_count, 2);
+    ASSERT_STR_EQ(gs->snap.allies[1].name, "B");
+    ASSERT_EQ(gs->snap.allies[1].level, 7);
+    ASSERT_EQ(gs->snap.allies[1].hp, 5);
+    ASSERT_STR_EQ(gs->snap.enemies[0].eff[0].move, "WATER GUN");
+    ASSERT_EQ(gs->snap.enemies[2].eff_count, 1);               /* ally B's own moves */
+    ASSERT_STR_EQ(gs->snap.enemies[2].species, "ZIGZAGOON");
+    ASSERT_EQ(gs->snap.enemies[2].player_hp, 5);
+    ASSERT_EQ(gs->snap.enemies[2].moves[0].dmg_kind, DMG_RANGE);
+
+    fixture_put16(at(0x02000C00 + 0x28), 0);                   /* ally A fainted */
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.ally_count, 1);
+    ASSERT_EQ(gs->snap.allies[0].hp, 5);
+    ASSERT_EQ(gs->snap.enemies[0].player_hp, 5);
+
+    at(0x02000C00)[0x2A] = 40;                                 /* replacement in slot 0 */
+    fixture_put16(at(0x02000C00 + 0x28), 30);
+    game_update_mem(gs, &m);
+    ASSERT_EQ(gs->snap.ally_count, 2);
+    ASSERT_EQ(gs->snap.allies[0].level, 40);
+    ASSERT_EQ(gs->snap.enemies[0].player_hp, 30);
+}
+
 /* R7: Weather Ball in rain is a Water move for the pill and the multiplier. */
 TEST(snapshot_damage_weather_ball_effective_type) {
     build_world();
@@ -1387,6 +1432,7 @@ void run_game_snapshot_tests(void) {
     RUN_TEST(snapshot_damage_reads_status3_by_battler_id);
     RUN_TEST(snapshot_damage_doubles_uses_battler_id);
     RUN_TEST(snapshot_doubles_two_foes_both_get_damage);
+    RUN_TEST(snapshot_doubles_two_allies);
     RUN_TEST(snapshot_damage_weather_ball_effective_type);
     RUN_TEST(snapshot_damage_fainted_target_is_none);
     RUN_TEST(snapshot_damage_resources_outside_ewram_is_none);

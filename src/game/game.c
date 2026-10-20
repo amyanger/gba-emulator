@@ -236,11 +236,25 @@ static void read_party(const GameMem* m, const GameProfile* p, GameSnapshot* s) 
 
 /* Battlers: returns enemy battle structs (up to 2) with their battler ids, and the player's
  * active one. */
+/* Doubles: a mon that fainted (hp 0, species kept) or is in gAbsentBattlerFlags drops out
+ * while the other on its side is alive, so the page shows the one left. */
+static uint8_t drop_down(uint8_t mons[2][BMON_SIZE], uint8_t ids[2], uint8_t n, uint8_t absent) {
+    if (n != 2) return n;
+    bool up0 = rd16(mons[0] + BMON_HP) != 0 && !((absent >> ids[0]) & 1);
+    bool up1 = rd16(mons[1] + BMON_HP) != 0 && !((absent >> ids[1]) & 1);
+    if (!up0 && up1) {
+        memcpy(mons[0], mons[1], BMON_SIZE);
+        ids[0] = ids[1];
+    }
+    return up0 != up1 ? 1 : 2;
+}
+
+/* Foes and the player's battlers (up to two each); returns the foe count, 0 outside battle. */
 static uint8_t read_battlers(const GameMem* m, const GameProfile* p,
                              uint8_t enemies[2][BMON_SIZE], uint8_t enemy_ids[2],
-                             uint8_t player[BMON_SIZE], bool* have_player, uint8_t* player_battler) {
+                             uint8_t allies[2][BMON_SIZE], uint8_t ally_ids[2], uint8_t* ally_n) {
     uint8_t in_battle, count, n = 0;
-    *have_player = false;
+    *ally_n = 0;
     if (!game_mem_read8(m, p->main_in_battle, &in_battle) || !(in_battle & 0x02)) return 0;
     if (!game_mem_read8(m, p->battlers_count, &count) || (count != 2 && count != 4)) return 0;
     for (uint8_t b = 0; b < count; b++) {
@@ -253,32 +267,20 @@ static uint8_t read_battlers(const GameMem* m, const GameProfile* p,
                 enemy_ids[n] = b;
                 memcpy(enemies[n++], mon, BMON_SIZE);
             }
-        } else if (!*have_player) {
-            memcpy(player, mon, BMON_SIZE);
-            *have_player = true;
-            *player_battler = b;
+        } else if (*ally_n == 0 || (species != 0 && species < p->species_count && *ally_n < 2)) {
+            ally_ids[*ally_n] = b;
+            memcpy(allies[(*ally_n)++], mon, BMON_SIZE);
         }
     }
-    /* Doubles: a foe that fainted (hp 0, species kept) or is in gAbsentBattlerFlags drops out
-     * while the other is alive, so the page shows the one left. */
     uint8_t absent = 0;
     game_mem_read8(m, p->absent_battler_flags, &absent);
-    if (n == 2) {
-        bool up0 = rd16(enemies[0] + BMON_HP) != 0 && !((absent >> enemy_ids[0]) & 1);
-        bool up1 = rd16(enemies[1] + BMON_HP) != 0 && !((absent >> enemy_ids[1]) & 1);
-        if (!up0 && up1) {
-            memcpy(enemies[0], enemies[1], BMON_SIZE);
-            enemy_ids[0] = enemy_ids[1];
-        }
-        if (up0 != up1)
-            n = 1;
-    }
-    return n;
+    *ally_n = drop_down(allies, ally_ids, *ally_n, absent);
+    return drop_down(enemies, enemy_ids, n, absent);
 }
 
 /* Nickname of gPlayerParty[gBattlerPartyIndexes[battler]]; left empty when out of range. */
 static void read_active_name(const GameMem* m, const GameProfile* p, uint8_t battler,
-                             GameSnapshot* s) {
+                             char name[GAME_NAME_LEN]) {
     uint16_t idx;
     uint8_t raw[MON_PARTY_SIZE], count;
     MonData d;
@@ -289,7 +291,7 @@ static void read_active_name(const GameMem* m, const GameProfile* p, uint8_t bat
     if (!game_mem_copy(m, p->player_party + (uint32_t)idx * MON_PARTY_SIZE, raw, sizeof(raw)) ||
         !pokemon_decode(raw, true, &d) || d.bad)
         return;
-    gen3_decode(d.nickname_raw, sizeof(d.nickname_raw), s->active_name, GAME_NAME_LEN);
+    gen3_decode(d.nickname_raw, sizeof(d.nickname_raw), name, GAME_NAME_LEN);
 }
 
 /* Damage calculator inputs for one direction; NULL in fill_move_eff when not computed. */
@@ -550,10 +552,9 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     if (game_has(p, FEAT_MIRAGE)) mirage_read(&gs->mirage, p, m, &gs->clock, sb1, sb2, &s->mirage);
     if (game_has(p, FEAT_BERRIES)) berry_read(&gs->places, p, m, &gs->clock, &s->berries);
 
-    uint8_t enemies[2][BMON_SIZE], player[BMON_SIZE], enemy_ids[2] = {0, 0};
-    bool have_player;
-    uint8_t player_battler = 0;
-    uint8_t n = read_battlers(m, p, enemies, enemy_ids, player, &have_player, &player_battler);
+    uint8_t enemies[2][BMON_SIZE], allies[2][BMON_SIZE], enemy_ids[2] = {0, 0}, ally_ids[2] = {0, 0};
+    uint8_t ally_n;
+    uint8_t n = read_battlers(m, p, enemies, enemy_ids, allies, ally_ids, &ally_n);
     if (n == 0) {
         s->context = GAME_CTX_OVERWORLD;
         read_encounters(m, p, sb1, sb2, s);
@@ -569,20 +570,29 @@ void game_update_mem(GameState* gs, const GameMem* m) {
     uint8_t type_table[TYPE_TABLE_MAX];
     uint32_t type_len = p->type_effectiveness_len <= TYPE_TABLE_MAX ? p->type_effectiveness_len : 0;
     if (type_len && !game_mem_copy(m, p->type_effectiveness, type_table, type_len)) type_len = 0;
-    /* Damage for each enemy against the player's active mon (R20, extended to doubles). */
-    for (uint8_t i = 0; i < n; i++) {
-        DamageCtx ctx;
-        DamageMon dm_player, dm_enemy;
-        bool dmg =
-            have_player && gs->dmg_tables.valid &&
-            damage_read_battle(m, p, player_battler, enemy_ids[i], &ctx, &dm_player, &dm_enemy);
-        DamagePair to_player = {&gs->dmg_tables, &ctx, &dm_enemy, &dm_player};
-        DamagePair from_player = {&gs->dmg_tables, &ctx, &dm_player, &dm_enemy};
-        fill_enemy(m, p, enemies[i], player, have_player, type_table, type_len,
-                   dmg ? &to_player : NULL, dmg ? &from_player : NULL, &s->enemies[i]);
+    /* Damage for each enemy against each of the player's battlers (R20, extended to doubles). */
+    bool have_player = ally_n > 0;
+    for (uint8_t a = 0; a < (have_player ? ally_n : 1); a++) {
+        for (uint8_t i = 0; i < n; i++) {
+            DamageCtx ctx;
+            DamageMon dm_player, dm_enemy;
+            bool dmg = have_player && gs->dmg_tables.valid &&
+                       damage_read_battle(m, p, ally_ids[a], enemy_ids[i], &ctx, &dm_player, &dm_enemy);
+            DamagePair to_player = {&gs->dmg_tables, &ctx, &dm_enemy, &dm_player};
+            DamagePair from_player = {&gs->dmg_tables, &ctx, &dm_player, &dm_enemy};
+            fill_enemy(m, p, enemies[i], allies[a], have_player, type_table, type_len,
+                       dmg ? &to_player : NULL, dmg ? &from_player : NULL, &s->enemies[a * 2 + i]);
+        }
     }
     s->enemy_count = n;
-    if (have_player) read_active_name(m, p, player_battler, s);
+    s->ally_count = ally_n;
+    for (uint8_t a = 0; a < ally_n; a++) {
+        GameAlly* al = &s->allies[a];
+        read_active_name(m, p, ally_ids[a], al->name);
+        al->level = allies[a][BMON_LEVEL];
+        al->hp = rd16(allies[a] + BMON_HP);
+        al->max_hp = rd16(allies[a] + BMON_MAX_HP);
+    }
     if (s->context == GAME_CTX_BATTLE_WILD && !s->uncatchable)
         read_catch_rows(m, p, sb1, sb2, enemies[0], flags, s);
 }
@@ -953,13 +963,20 @@ bool game_dump(const GameSnapshot* s, FILE* out) {
                       place, t->name, t->stage, t->next_min, (unsigned)t->ripe_min, t->yield_lo, t->yield_hi,
                       (int)t->status, t->watered, t->paused ? " paused" : "") >= 0;
     }
-    for (uint8_t i = 0; i < s->enemy_count; i++) {
-        const GameEnemy* e = &s->enemies[i];
-        ok &= fprintf(out, "enemy %u %s lv%u hp %u/%u nature %s iv %u/%u/%u/%u/%u/%u ability %s item %s\n",
-                      i, e->species, e->level, e->hp, e->max_hp, e->nature, e->ivs[0], e->ivs[1],
-                      e->ivs[2], e->ivs[3], e->ivs[4], e->ivs[5], e->ability, e->item) >= 0;
-        char prefix[8];
-        snprintf(prefix, sizeof(prefix), "%u ", i);
+    for (uint8_t a = 0; a < s->ally_count; a++)
+        ok &= fprintf(out, "ally %u %s lv%u hp %u/%u\n", a, s->allies[a].name, s->allies[a].level,
+                      s->allies[a].hp, s->allies[a].max_hp) >= 0;
+    /* Ally 1's move lines read "<foe> ally1 <slot>"; ally 0 keeps "<foe> <slot>". */
+    for (uint8_t k = 0; k < (s->ally_count > 1 ? 2 : 1) * 2; k++) {
+        uint8_t i = k % 2;
+        if (i >= s->enemy_count) continue;
+        const GameEnemy* e = &s->enemies[k];
+        if (k < 2)
+            ok &= fprintf(out, "enemy %u %s lv%u hp %u/%u nature %s iv %u/%u/%u/%u/%u/%u ability %s item %s\n",
+                          i, e->species, e->level, e->hp, e->max_hp, e->nature, e->ivs[0], e->ivs[1],
+                          e->ivs[2], e->ivs[3], e->ivs[4], e->ivs[5], e->ability, e->item) >= 0;
+        char prefix[12];
+        snprintf(prefix, sizeof(prefix), k < 2 ? "%u " : "%u ally1 ", i);
         for (uint8_t j = 0; j < e->eff_count; j++) ok &= dump_move(out, "your_move", prefix, j, &e->eff[j]);
         for (uint8_t j = 0; j < e->move_count; j++) ok &= dump_move(out, "enemy_move", prefix, j, &e->moves[j]);
     }

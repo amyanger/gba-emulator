@@ -46,6 +46,7 @@ typedef struct Frontend {
     PanelBattleFollow panel_follow; /* switches to Auto while a battle runs */
     uint8_t panel_sel;            /* selected party slot, [ and ] */
     uint8_t foe_sel;              /* shown foe in a double battle, [ and ]; 0 outside battle */
+    uint8_t ally_sel;             /* your shown mon in a double battle, , and .; 0 outside battle */
     uint8_t nuz_sub;              /* NuzSubView on the Nuzlocke page, [ and ] */
     uint8_t berry_sel;            /* open place on the Berries page, [ and ] */
     bool berry_alerts;            /* berry toasts; B on the Berries page, prefs berry_alerts */

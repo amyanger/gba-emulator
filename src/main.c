@@ -317,11 +317,13 @@ static void render_with_overlay(Frontend* fe, GBA* gba) {
             caret_phase = (SDL_GetTicks() - fe->search_caret_ms) / UI_CARET_MS;
         /* Run changes only repaint while the Run page is shown; switching to it repaints anyway. */
         GamePage shown = game_panel_resolve_page((GamePage)fe->panel_page, s_game.snap.context);
-        /* The battle target starts on the first foe each battle; [ ] picks it. */
+        /* The battle target starts on the first foe and your first mon each battle; [ ] and , . pick them. */
         if (s_game.snap.context != GAME_CTX_BATTLE_WILD &&
-            s_game.snap.context != GAME_CTX_BATTLE_TRAINER)
+            s_game.snap.context != GAME_CTX_BATTLE_TRAINER) {
             fe->foe_sel = 0;
-        uint8_t sel = shown == GAME_PAGE_COUNT ? fe->foe_sel : fe->panel_sel;
+            fe->ally_sel = 0;
+        }
+        uint8_t sel = shown == GAME_PAGE_COUNT ? (uint8_t)(fe->ally_sel * 2 + fe->foe_sel) : fe->panel_sel;
         bool run_shown = shown == GAME_PAGE_RUN;
         /* The hunt scans and rebuilds its view only while its page is shown (R10). */
         bool hunt_shown = shown == GAME_PAGE_HUNT;

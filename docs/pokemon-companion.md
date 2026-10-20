@@ -47,7 +47,7 @@ Differences from Emerald:
 | J, twice | Move the clock to the next Mirage Island day, on the Route page |
 | B | Turn berry alerts on or off, on the Berries page |
 | / | Start typing a Pokemon name, on the Search page |
-| , and . | Pick the nature the Hunt page looks for |
+| , and . | Pick the nature the Hunt page looks for, or which of your Pokemon the Battle page shows in a double battle |
 | R, twice | Reset the Hunt page's encounter counts |
 | D | Switch between the Run page's dashboard and its Details sheet |
 
@@ -55,7 +55,7 @@ On macOS, hold **fn** with the F-keys (fn+F9, fn+F10), unless your keyboard is s
 
 ## Battle
 
-The opposing Pokemon's species, level, HP, types, nature, IVs, ability, held item and any status condition, how your active Pokemon's moves match up against it, the opponent's own moves and how they match up against your active Pokemon, and, in wild battles, the catch chance for each ball in your bag. For the opponent's moves the colors are from your side: red means a move is super effective against you, green means you resist it or are immune. In a double battle both opponents sit in two tabs at the top with their level and HP. Press **[** or **]** to pick which one the page shows, and every number below is for that one. When one of them faints and nobody takes its place, the tabs go away and the page shows the one still standing.
+The opposing Pokemon's species, level, HP, types, nature, IVs, ability, held item and any status condition, how your active Pokemon's moves match up against it, the opponent's own moves and how they match up against your active Pokemon, and, in wild battles, the catch chance for each ball in your bag. For the opponent's moves the colors are from your side: red means a move is super effective against you, green means you resist it or are immune. In a double battle both opponents sit in two tabs at the top with their level and HP. Press **[** or **]** to pick which one the page shows, and every number below is for that one. When one of them faints and nobody takes its place, the tabs go away and the page shows the one still standing. When you have two Pokemon out, they get their own row of tabs under **Your side**. Press **,** or **.** to pick one, and its moves, damage numbers and HP are the ones used against the chosen opponent. If one of yours faints, the Pokemon you send in replaces it in the tabs. If nobody replaces it, the page shows the one still standing.
 
 The panel switches to this page by itself when a battle starts, even if you were on Party or Route, and goes back to your page when the battle ends.
 

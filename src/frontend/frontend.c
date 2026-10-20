@@ -1332,14 +1332,20 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
                     hunt_session_target(fe->hunt, delta);
                 }
             }
-            /* , and . pick the Hunt nature filter. Ctrl+, (settings) is taken earlier, but a held
-             * one repeats past it, so modified presses never count; neither does Cmd. */
+            /* , and . pick the Hunt nature filter, or your shown mon in a double battle. Ctrl+,
+             * (settings) is taken earlier, but a held one repeats past it, so modified presses
+             * never count; neither does Cmd. */
             if ((event.key.keysym.scancode == SDL_SCANCODE_COMMA ||
                  event.key.keysym.scancode == SDL_SCANCODE_PERIOD) &&
-                fe->panel_visible && !fe->search.focused && shown_page == GAME_PAGE_HUNT && fe->hunt &&
+                fe->panel_visible && !fe->search.focused &&
                 (event.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) == 0 &&
-                keymap_lookup(event.key.keysym.scancode) == 0)
-                hunt_session_nature(fe->hunt, event.key.keysym.scancode == SDL_SCANCODE_COMMA ? -1 : 1);
+                keymap_lookup(event.key.keysym.scancode) == 0) {
+                int delta = event.key.keysym.scancode == SDL_SCANCODE_COMMA ? -1 : 1;
+                if (shown_page == GAME_PAGE_HUNT && fe->hunt)
+                    hunt_session_nature(fe->hunt, delta);
+                else if (shown_page == GAME_PAGE_COUNT)
+                    fe->ally_sel = game_panel_select(fe->ally_sel, delta, fe->last_snap.ally_count);
+            }
             /* R arms a reset of the hunt counts; a second R within 3 s confirms it. */
             if (event.key.keysym.scancode == SDL_SCANCODE_R && !event.key.repeat && fe->panel_visible &&
                 !fe->search.focused && shown_page == GAME_PAGE_HUNT && fe->hunt &&

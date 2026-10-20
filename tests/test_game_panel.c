@@ -191,9 +191,13 @@ static void fill_battle(GameSnapshot* s, GameContext ctx) {
     memset(s, 0, sizeof(*s));
     s->valid = true;
     s->context = ctx;
-    game_strcpy(s->active_name, GAME_NAME_LEN, "WWWWWWWWWW");
-    s->enemy_count = 2;
+    s->ally_count = 1;
     for (int i = 0; i < 2; i++) {
+        game_strcpy(s->allies[i].name, GAME_NAME_LEN, "WWWWWWWWWW");
+        s->allies[i].level = 100; s->allies[i].hp = 30; s->allies[i].max_hp = 300;
+    }
+    s->enemy_count = 2;
+    for (int i = 0; i < 4; i++) {
         GameEnemy* e = &s->enemies[i];
         game_strcpy(e->species, GAME_NAME_LEN, "WWWWWWWWWW");
         game_strcpy(e->nature, GAME_NAME_LEN, "HASTY");
@@ -467,11 +471,15 @@ TEST(panel_nuzlocke_route_window_keeps_current_place) {
 
 TEST(panel_pages_stay_in_bounds_at_all_densities) {
     static const float densities[] = {0.75f, 1.0f, 1.25f, 1.5f, 2.0f, 3.0f};
-    static GameSnapshot battle, rest;
+    static GameSnapshot battle, doubles, rest;
     fill_battle(&battle, GAME_CTX_BATTLE_WILD);
+    fill_battle(&doubles, GAME_CTX_BATTLE_TRAINER);  /* two allies, two foes */
+    doubles.ally_count = 2;
     fill_party_and_route(&rest);
     for (size_t d = 0; d < sizeof(densities) / sizeof(densities[0]); d++) {
         ASSERT_TRUE(draw_checked(densities[d], &battle, GAME_PAGE_AUTO, 0));
+        for (uint8_t sel = 0; sel < 4; sel++)
+            ASSERT_TRUE(draw_checked(densities[d], &doubles, GAME_PAGE_AUTO, sel));
         for (uint8_t sel = 0; sel < 6; sel++)
             ASSERT_TRUE(draw_checked(densities[d], &rest, GAME_PAGE_PARTY, sel));
         ASSERT_TRUE(draw_checked(densities[d], &rest, GAME_PAGE_ENCOUNTERS, 0));
@@ -1705,23 +1713,28 @@ TEST(panel_hunt_views_stay_in_bounds) {
         }
 }
 
-/* BATTLE_PREVIEW=1 writes battle_preview_{single,double0,double1}.png to the CWD. */
+/* BATTLE_PREVIEW=1 writes battle_preview_{single,double0,double1,double3}.png to the CWD. */
 TEST(panel_battle_preview_png) {
     if (!getenv("BATTLE_PREVIEW")) return;
     static GameSnapshot snap;
-    static const char* const names[3] = {"single", "double0", "double1"};
+    static const char* const names[4] = {"single", "double0", "double1", "double3"};
     fill_battle(&snap, GAME_CTX_BATTLE_TRAINER);
-    game_strcpy(snap.active_name, GAME_NAME_LEN, "MARSHTOMP");
-    game_strcpy(snap.enemies[0].species, GAME_NAME_LEN, "MIGHTYENA");
-    game_strcpy(snap.enemies[1].species, GAME_NAME_LEN, "GOLBAT");
-    snap.enemies[0].hp = 210; snap.enemies[0].level = 32;
-    snap.enemies[1].hp = 60; snap.enemies[1].max_hp = 110; snap.enemies[1].level = 31;
-    for (int i = 0; i < 3; i++) {
+    game_strcpy(snap.allies[0].name, GAME_NAME_LEN, "MARSHTOMP");
+    game_strcpy(snap.allies[1].name, GAME_NAME_LEN, "SWELLOW");
+    for (int a = 0; a < 2; a++) {
+        game_strcpy(snap.enemies[a * 2].species, GAME_NAME_LEN, "MIGHTYENA");
+        game_strcpy(snap.enemies[a * 2 + 1].species, GAME_NAME_LEN, "GOLBAT");
+        snap.enemies[a * 2].hp = 210; snap.enemies[a * 2].level = 32;
+        snap.enemies[a * 2 + 1].hp = 60; snap.enemies[a * 2 + 1].max_hp = 110;
+        snap.enemies[a * 2 + 1].level = 31;
+    }
+    for (int i = 0; i < 4; i++) {
         snap.enemy_count = i == 0 ? 1 : 2;
+        snap.ally_count = i == 3 ? 2 : 1;
         UiCanvas c;
         ui_canvas_init(&c, s_buf, 600, 480, 1.0f);
-        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, (uint8_t)(i == 2), NULL, 0, 0, true, NULL, NULL, 0, false,
-                        NULL, NULL);
+        game_panel_draw(&c, &snap, GAME_PAGE_AUTO, (uint8_t)(i == 0 ? 0 : i), NULL, 0, 0, true, NULL, NULL, 0,
+                        false, NULL, NULL);
         char path[48];
         snprintf(path, sizeof(path), "battle_preview_%s.png", names[i]);
         ASSERT_TRUE(screenshot_save_argb(s_buf, 600, 480, path));
