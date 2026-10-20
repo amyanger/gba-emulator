@@ -16,15 +16,47 @@ Built around an ARM7TDMI CPU interpreter, scanline-based PPU, and an SDL2 fronte
 
 ## Download
 
-Ready-to-run apps for **macOS** (Apple Silicon), **Windows** and **Linux** are on the [latest release](https://github.com/amyanger/gba-emulator/releases/latest). Download the one for your system, double-click it and pick a game from the library. There's nothing else to install.
+Ready-to-run apps for **macOS** (Apple Silicon), **Windows** and **Linux** are on the [latest release](https://github.com/amyanger/gba-emulator/releases/latest). There's nothing else to install.
 
-| System | File |
-|--------|------|
-| macOS 11+ (Apple Silicon) | `gba_emulator-<version>-macOS-arm64.dmg` |
-| Windows (64-bit) | `gba_emulator-<version>-Windows-AMD64.zip` |
-| Linux (x86_64) | `gba_emulator-<version>-x86_64.AppImage` |
+> **New to GitHub?** Don't use the green **Code** button at the top of this page, and don't click **Source code (zip)** on the release page. Those download the program's source code, which you can't play. You want one of the files listed below.
 
-The apps aren't signed with a paid certificate, so macOS and Windows ask you to confirm the first time you open them. [Installing a pre-built binary](docs/usage.md#installing-a-pre-built-binary) has step-by-step instructions for each system.
+### How to download
+
+1. Go to the [latest release](https://github.com/amyanger/gba-emulator/releases/latest).
+2. Scroll down to **Assets**. If you don't see the files, click **Assets** to open the list.
+3. Click the file for your computer:
+
+| Your computer | Click this file |
+|---------------|-----------------|
+| Mac with Apple Silicon (M1 or newer, macOS 11+) | the one ending in `macOS-arm64.dmg` |
+| Windows (64-bit) | the one ending in `Windows-AMD64.zip` |
+| Linux | the one ending in `x86_64.AppImage` |
+
+Not sure which Mac you have? Click the Apple menu > **About This Mac**. If it says **Chip: Apple M1** (or M2, M3 and so on) you're good. Intel Macs aren't supported yet.
+
+### How to open it
+
+**Mac**
+1. Open the `.dmg` you downloaded and drag **GBA Emulator** into **Applications**.
+2. Double-click **GBA Emulator** in Applications. The first time, macOS blocks it with a "can't be opened" message, because the app isn't signed with a paid Apple certificate.
+3. Open **System Settings > Privacy & Security**, scroll down and click **Open Anyway**. You only need to do this once.
+
+**Windows**
+1. Right-click the `.zip` you downloaded and choose **Extract All**. The app won't run from inside the zip.
+2. Open the extracted folder, then the `bin` folder, and double-click `gba_emulator.exe`.
+3. If Windows shows "Windows protected your PC", click **More info**, then **Run anyway**. This appears because the app isn't signed with a paid certificate.
+
+**Linux**
+1. Right-click the `.AppImage`, open **Properties** and allow it to run as a program.
+2. Double-click it.
+
+### Playing a game
+
+The emulator doesn't come with any games. You need your own `.gba` game files (ROMs), which you can make from cartridges you own. A GBA BIOS file is optional, the emulator works without one.
+
+When the app opens, click **Choose folder…** and pick the folder where you keep your games. Then double-click a game to play it. Your saves are stored in the same folder as the game. The default keys are in [Quick start](#quick-start).
+
+More detail for each system is in [Installing a pre-built binary](docs/usage.md#installing-a-pre-built-binary).
 
 ## Features
 
@@ -141,6 +173,10 @@ Build options, the architecture, the test suite and the golden-frame checks are 
 - [HQ music](docs/hq-music.md)
 - [Development](docs/development.md): building, what's emulated, architecture, project structure, testing, roadmap, references
 - [Contributing](CONTRIBUTING.md): ground rules and the checks to run before opening a pull request
+
+## Contributing
+
+Bug fixes, accuracy fixes and test ROM results are welcome. For a new feature, open an issue first so we can agree on the approach. Pull requests need a green CI run (Linux, macOS, Windows, sanitizers, Rust and golden-frame checks) and a review before they merge. Never include ROMs, BIOS files, saves or data taken from a game. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full rules and the checks to run before you open a PR.
 
 ## License
 
