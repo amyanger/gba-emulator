@@ -249,7 +249,7 @@ You don't need to unzip a game first. Open, drop or pass a `.zip` anywhere a `.g
 
 - The zip must hold exactly one `.gba` file. Folders inside the zip are fine, and the `__MACOSX` files that Macs add are ignored. A zip with several games is refused; unzip it and open the game you want.
 - Zips made by Finder, Windows, 7-Zip, `zip` and most other tools work. Password-protected zips and compression other than the usual Deflate aren't supported.
-- The save is named after the game inside, as if it were unzipped next to the zip. `Pokemon Emerald.zip` holding `emerald.gba` uses `emerald.gba.sav` in the zip's folder, so if you unzip it later, or already played the unzipped copy there, it's the same save. Save states, cheats and logs follow the same name.
+- The save is named after the zip (`Pokemon Emerald.zip.sav`). If the same game already sits unzipped next to the zip, for example `emerald.gba` with its `emerald.gba.sav`, the zip uses that save instead, so you can switch between them. Save states, cheats and logs follow the same name. To move a zip's save over to an unzipped copy later, rename `Pokemon Emerald.zip.sav` to `emerald.gba.sav`.
 - A patch next to the zip (`Hack.zip` and `Hack.bps`) applies to the game inside, and opening `Hack.bps` looks for `Hack.zip` when there's no `Hack.gba`.
 
 ## ROM patches

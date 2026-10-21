@@ -76,7 +76,7 @@ More detail for each system is in [Installing a pre-built binary](docs/usage.md#
 | **[Settings](docs/usage.md#settings)** | Ctrl+, (Cmd+,) | Change keyboard and controller buttons, set up turbo A and B, and pick the fast-forward speed, volume and BIOS. |
 | **[Cheats](docs/usage.md#cheats)** | | Paste CodeBreaker, GameShark or Action Replay codes as found online. Your save is backed up before any cheat runs. |
 | **[ROM patches](docs/usage.md#rom-patches)** | | Play IPS, UPS and BPS hacks and translations without patching the ROM. Each patched game keeps its own save. |
-| **[Zipped games](docs/usage.md#zipped-games)** | | Open a downloaded `.zip` directly, no unzipping. It shares its save with the unzipped game. |
+| **[Zipped games](docs/usage.md#zipped-games)** | | Open a downloaded `.zip` directly, no unzipping. |
 | **[Link cable](docs/usage.md#link-cable)** | | Two windows on the same machine can trade and battle. |
 | **[Screen filters](docs/usage.md#screen-filters)** | | Smooth out jagged pixel edges and match the colors of a real GBA screen. |
 | **[HQ music](docs/hq-music.md)** | H | Game music re-mixed in high quality for games that use the standard MP2K sound driver. |

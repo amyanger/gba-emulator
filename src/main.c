@@ -827,14 +827,9 @@ int main(int argc, char* argv[]) {
 
     // Set up local link cable if requested. link_peer_listen blocks until a
     // peer connects, so we do this before the main loop starts.
-    // A zipped game's identity file may not exist, and copies of one zip share a save, so lock
-    // the save when there is one, else the zip itself.
-    const char* lock_path = rom_path;
-    if (!file_exists(rom_path))
-        lock_path = gba.cart.save_path[0] && file_exists(gba.cart.save_path) ? gba.cart.save_path : base_path;
-    if ((link_master_path || link_client_path) && !link_lock_rom(lock_path)) {
-        LOG_ERROR("%s is already open in another linked window. Link two copies of the ROM with "
-                  "different names (each keeps its own save), not the same game.", rom_path);
+    if ((link_master_path || link_client_path) && !link_lock_rom(rom_path)) {
+        LOG_ERROR("%s is already open in another linked window. Link two copies of the ROM "
+                  "(each keeps its own save), not the same file.", rom_path);
         gba_destroy(&gba);
         return 1;
     }

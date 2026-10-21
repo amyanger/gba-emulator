@@ -129,6 +129,21 @@ static uint32_t apply_patch_file(Cartridge* cart, const char* patch_path) {
     return rc;
 }
 
+/* Whether the file at path holds exactly data. */
+static bool file_matches(const char* path, const uint8_t* data, uint32_t len) {
+    static uint8_t chunk[64 * 1024];
+    FILE* f = fopen(path, "rb");
+    if (!f) return false;
+    bool same = fseek(f, 0, SEEK_END) == 0 && ftell(f) == (long)len && fseek(f, 0, SEEK_SET) == 0;
+    for (uint32_t at = 0; same && at < len;) {
+        size_t n = fread(chunk, 1, sizeof(chunk), f);
+        same = n > 0 && n <= len - at && memcmp(chunk, data + at, n) == 0;
+        at += (uint32_t)n;
+    }
+    fclose(f);
+    return same;
+}
+
 /* Replaces cart->rom, a zip file's bytes, with the game inside; name gets its base name. */
 static uint32_t unzip_rom(Cartridge* cart, char* name, uint32_t name_n) {
     // Zeroed: Rust takes the whole buffer as an initialized slice.
@@ -222,8 +237,9 @@ bool cartridge_load(Cartridge* cart, const char* path, const char* patch_path) {
     }
 
     // The patch path is the identity of a patched game, so its saves never touch the base ROM's.
-    // A zipped game is named as if unzipped next to the zip, so both share one save.
-    int idn;
+    // A zipped game shares the identity of the same game already unzipped next to it; the name
+    // inside the zip alone is never trusted, or two zips of "rom.gba" would share a save.
+    int idn = -1;
     if (patch_path) {
         idn = snprintf(cart->id_path, sizeof(cart->id_path), "%s", patch_path);
     } else if (game_name[0]) {
@@ -232,9 +248,10 @@ bool cartridge_load(Cartridge* cart, const char* path, const char* patch_path) {
         if (bsep && (!sep || bsep > sep)) sep = bsep;
         int dir_len = sep ? (int)(sep - path + 1) : 0;
         idn = snprintf(cart->id_path, sizeof(cart->id_path), "%.*s%s", dir_len, path, game_name);
-    } else {
-        idn = snprintf(cart->id_path, sizeof(cart->id_path), "%s", path);
+        bool fits = idn >= 0 && (size_t)idn < sizeof(cart->id_path);
+        if (!fits || !file_matches(cart->id_path, cart->rom, cart->rom_size)) idn = -1;
     }
+    if (idn == -1 && !patch_path) idn = snprintf(cart->id_path, sizeof(cart->id_path), "%s", path);
     const char* id = cart->id_path;
     if (idn < 0 || (size_t)idn >= sizeof(cart->id_path)) {
         LOG_ERROR("Path too long: %s", id);

@@ -94,7 +94,7 @@ static void make_rom(void) {
 }
 
 static void clean(void) {
-    const char* names[] = {"Game.zip", "Two.zip", "None.zip", "Far.zip", "Bad.zip", "My Game.gba.sav",
+    const char* names[] = {"My Game.gba", "Game.zip", "Two.zip", "None.zip", "Far.zip", "Bad.zip", "My Game.gba.sav",
                            "Game.zip.sav", "game.gba.sav"};
     char p[256];
     for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
@@ -104,7 +104,7 @@ static void clean(void) {
     remove_dir(T_DIR);
 }
 
-TEST(rom_zip_loads_and_names_saves_after_the_game) {
+TEST(rom_zip_loads_and_shares_saves_only_with_its_copy) {
     clean(); /* a failed earlier run leaves files behind */
     make_dir(T_DIR);
     make_rom();
@@ -119,17 +119,33 @@ TEST(rom_zip_loads_and_names_saves_after_the_game) {
     ASSERT_EQ(cart.rom_size, (uint32_t)sizeof(s_rom));
     ASSERT_TRUE(memcmp(cart.rom, s_rom, sizeof(s_rom)) == 0);
     ASSERT_STR_EQ(cart.game_code, "AZPE");
+    ASSERT_STR_EQ(cart.id_path, T_ZIP); /* no unzipped copy: the zip is the identity */
+    ASSERT_STR_EQ(cart.save_path, T_ZIP ".sav");
+    cartridge_destroy(&cart);
+
+    /* The same game unzipped next to the zip: both share its save. */
+    FILE* f = fopen(T_DIR "/My Game.gba", "wb");
+    ASSERT_TRUE(f != NULL);
+    fwrite(s_rom, 1, sizeof(s_rom), f);
+    fclose(f);
+    memset(&cart, 0, sizeof(cart));
+    ASSERT_TRUE(cartridge_load(&cart, T_ZIP, NULL));
     ASSERT_STR_EQ(cart.id_path, T_DIR "/My Game.gba");
     ASSERT_STR_EQ(cart.save_path, T_DIR "/My Game.gba.sav");
     cartridge_destroy(&cart);
 
-    /* A name that isn't safe as a file name keeps the zip as the identity. */
-    ZipFile odd[] = {{"what?.gba", s_rom, sizeof(s_rom)}};
-    write_zip(T_ZIP, odd, 1);
+    /* A different game with that name keeps its own save. */
+    f = fopen(T_DIR "/My Game.gba", "r+b");
+    ASSERT_TRUE(f != NULL);
+    fseek(f, 0x300, SEEK_SET);
+    fputc(0x11, f);
+    fclose(f);
     memset(&cart, 0, sizeof(cart));
     ASSERT_TRUE(cartridge_load(&cart, T_ZIP, NULL));
     ASSERT_STR_EQ(cart.id_path, T_ZIP);
     cartridge_destroy(&cart);
+    remove(T_DIR "/My Game.gba");
+
     clean();
 }
 
@@ -215,7 +231,7 @@ TEST(rom_zip_library_lists_zipped_games) {
 }
 
 void run_rom_zip_tests(void) {
-    RUN_TEST(rom_zip_loads_and_names_saves_after_the_game);
+    RUN_TEST(rom_zip_loads_and_shares_saves_only_with_its_copy);
     RUN_TEST(rom_zip_failures_say_why);
     RUN_TEST(rom_zip_library_lists_zipped_games);
 }
