@@ -37,6 +37,7 @@ void run_screenshot_tests(void);
 void run_trace_tests(void);
 void run_cartridge_autosave_tests(void);
 void run_rom_patch_tests(void);
+void run_rom_zip_tests(void);
 void run_keymap_tests(void);
 void run_eeprom_tests(void);
 void run_practice_tests(void);
@@ -149,6 +150,7 @@ int main(void) {
     RUN_SUITE(run_trace_tests);
     RUN_SUITE(run_cartridge_autosave_tests);
     RUN_SUITE(run_rom_patch_tests);
+    RUN_SUITE(run_rom_zip_tests);
     RUN_SUITE(run_keymap_tests);
     RUN_SUITE(run_eeprom_tests);
     RUN_SUITE(run_practice_tests);

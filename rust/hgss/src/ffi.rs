@@ -4,7 +4,7 @@ use core::ffi::{c_char, c_void, CStr};
 use core::mem::{offset_of, size_of};
 use core::slice;
 
-use crate::{gfx, msg, nds, patch};
+use crate::{gfx, msg, nds, patch, zip};
 
 /// # Safety
 /// `p` points to `len` readable bytes, or is null.
@@ -307,6 +307,45 @@ pub unsafe extern "C" fn rom_patch_apply(
     match patch::apply(bytes(src, src_len), bytes(patch, patch_len), out) {
         Ok(n) => {
             *out_len = n as u32;
+            0
+        }
+        Err(e) => e as u32,
+    }
+}
+
+/// Unpacks the one .gba in a zip: returns 0 and sets `*out_len` (at most `out_cap`,
+/// less than `*size` when the game didn't fit), the game's `*size` and `*crc`, and in
+/// `name` its base name, NUL-terminated, or "" when it isn't safe as a file name.
+/// Otherwise returns a ROM_ZIP_* error code.
+///
+/// # Safety
+/// Each pointer is null or points to its length in bytes (`out_len`, `size` and
+/// `crc` to one u32). `out` must not overlap `zip`.
+#[no_mangle]
+pub unsafe extern "C" fn rom_zip_read(
+    src: *const u8,
+    src_len: u32,
+    out: *mut u8,
+    out_cap: u32,
+    out_len: *mut u32,
+    size: *mut u32,
+    crc: *mut u32,
+    name: *mut c_char,
+    name_cap: u32,
+) -> u32 {
+    if out.is_null() || out_len.is_null() || size.is_null() || crc.is_null() || name.is_null() || name_cap == 0 {
+        return zip::Error::Damaged as u32;
+    }
+    let z = bytes(src, src_len);
+    match zip::read(z, slice::from_raw_parts_mut(out, out_cap as usize)) {
+        Ok((ent, n)) => {
+            *out_len = n as u32;
+            *size = ent.size;
+            *crc = ent.crc;
+            let dst = slice::from_raw_parts_mut(name.cast::<u8>(), name_cap as usize);
+            let base = zip::name(z, &ent).filter(|b| b.len() < dst.len()).unwrap_or(&[]);
+            dst[..base.len()].copy_from_slice(base);
+            dst[base.len()] = 0;
             0
         }
         Err(e) => e as u32,

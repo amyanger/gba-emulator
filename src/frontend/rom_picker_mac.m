@@ -10,7 +10,7 @@ RomPickResult rom_picker_choose(char* out, size_t out_size) {
         panel.canChooseDirectories = NO;
         panel.allowsMultipleSelection = NO;
         NSMutableArray<UTType*>* types = [NSMutableArray array];
-        for (NSString* ext in @[ @"gba", @"bps", @"ups", @"ips" ]) {
+        for (NSString* ext in @[ @"gba", @"zip", @"bps", @"ups", @"ips" ]) {
             UTType* t = [UTType typeWithFilenameExtension:ext];
             if (t) [types addObject:t];
         }

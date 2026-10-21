@@ -20,7 +20,7 @@
             <key>CFBundleTypeName</key><string>Game Boy Advance ROM</string>
             <key>CFBundleTypeRole</key><string>Viewer</string>
             <key>LSHandlerRank</key><string>Alternate</string>
-            <key>CFBundleTypeExtensions</key><array><string>gba</string><string>bps</string><string>ups</string><string>ips</string></array>
+            <key>CFBundleTypeExtensions</key><array><string>gba</string><string>zip</string><string>bps</string><string>ups</string><string>ips</string></array>
         </dict>
     </array>
 </dict>

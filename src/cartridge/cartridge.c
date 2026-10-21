@@ -4,6 +4,7 @@
 #include "gpio.h"
 #include "rtc.h"
 #include "rom_patch.h"
+#include "rom_zip.h"
 
 #include "fileio.h"
 
@@ -43,6 +44,20 @@ const char* rom_patch_reason(uint32_t code) {
     case ROM_PATCH_BAD_RESULT: return "patching gave a bad result";
     case ROM_PATCH_CANT_READ:  return "couldn't read the patch file";
     default:                   return "unknown error";
+    }
+}
+
+const char* rom_zip_reason(uint32_t code) {
+    switch (code) {
+    case ROM_ZIP_NOT_ZIP:     return "not a zip file";
+    case ROM_ZIP_DAMAGED:     return "the zip file is damaged";
+    case ROM_ZIP_NO_GAME:     return "no .gba game inside the zip";
+    case ROM_ZIP_UNSUPPORTED: return "the zip uses a format this emulator can't read";
+    case ROM_ZIP_MULTI:       return "the zip holds more than one game, unzip it first";
+    case ROM_ZIP_BAD_CRC:     return "the game inside the zip failed its checksum";
+    case ROM_ZIP_TOO_BIG:     return "the game inside the zip is too big";
+    case ROM_ZIP_CANT_READ:   return "couldn't read the zip file";
+    default:                  return "unknown error";
     }
 }
 
@@ -114,9 +129,32 @@ static uint32_t apply_patch_file(Cartridge* cart, const char* patch_path) {
     return rc;
 }
 
+/* Replaces cart->rom, a zip file's bytes, with the game inside; name gets its base name. */
+static uint32_t unzip_rom(Cartridge* cart, char* name, uint32_t name_n) {
+    // Zeroed: Rust takes the whole buffer as an initialized slice.
+    uint8_t* out = (uint8_t*)calloc(1, MAX_ROM_SIZE);
+    if (!out) return ROM_ZIP_TOO_BIG;
+    uint32_t out_len = 0, size = 0, crc = 0;
+    uint32_t rc = rom_zip_read(cart->rom, cart->rom_size, out, MAX_ROM_SIZE, &out_len, &size, &crc,
+                               name, name_n);
+    if (rc == ROM_ZIP_OK && out_len != size) rc = ROM_ZIP_TOO_BIG;
+    if (rc == ROM_ZIP_OK) {
+        uint8_t* shrunk = (uint8_t*)realloc(out, out_len ? out_len : 1);
+        if (shrunk) out = shrunk;
+        free(cart->rom);
+        cart->rom = out;
+        cart->rom_size = out_len;
+    } else {
+        free(out);
+    }
+    return rc;
+}
+
 bool cartridge_load(Cartridge* cart, const char* path, const char* patch_path) {
     cart->patched = false;
     cart->patch_status = ROM_PATCH_OK;
+    cart->zipped = false;
+    cart->zip_status = ROM_ZIP_OK;
 
     FILE* f = fopen(path, "rb");
     if (!f) {
@@ -128,9 +166,19 @@ bool cartridge_load(Cartridge* cart, const char* path, const char* patch_path) {
     fseek(f, 0, SEEK_END);
     long size = ftell(f);
     fseek(f, 0, SEEK_SET);
+    uint8_t magic[4] = {0};
+    bool zipped = fread(magic, 1, 4, f) == 4 && memcmp(magic, "PK\x03\x04", 4) == 0;
+    fseek(f, 0, SEEK_SET);
 
+    // A zip holding a stored (uncompressed) 32 MB game is a little over 32 MB.
+    if (zipped && size > ROM_ZIP_MAX_FILE) {
+        LOG_ERROR("Zip file too big: %ld bytes", size);
+        cart->zip_status = ROM_ZIP_TOO_BIG;
+        fclose(f);
+        return false;
+    }
     // Anything smaller can't hold the 0xC0-byte header parsed below.
-    if (size > MAX_ROM_SIZE || size < 0xC0) {
+    if (!zipped && (size > MAX_ROM_SIZE || size < 0xC0)) {
         LOG_ERROR("Invalid ROM size: %ld bytes", size);
         fclose(f);
         return false;
@@ -155,9 +203,39 @@ bool cartridge_load(Cartridge* cart, const char* path, const char* patch_path) {
     cart->rom_size = (uint32_t)size;
     fclose(f);
 
+    char game_name[256] = "";
+    if (zipped) {
+        cart->zip_status = unzip_rom(cart, game_name, sizeof(game_name));
+        if (cart->zip_status != ROM_ZIP_OK) {
+            LOG_ERROR("Cannot open %s: %s", path, rom_zip_reason(cart->zip_status));
+            free(cart->rom);
+            cart->rom = NULL;
+            return false;
+        }
+        cart->zipped = true;
+        if (cart->rom_size < 0xC0) {
+            LOG_ERROR("Invalid ROM size: %u bytes", cart->rom_size);
+            free(cart->rom);
+            cart->rom = NULL;
+            return false;
+        }
+    }
+
     // The patch path is the identity of a patched game, so its saves never touch the base ROM's.
-    const char* id = patch_path ? patch_path : path;
-    int idn = snprintf(cart->id_path, sizeof(cart->id_path), "%s", id);
+    // A zipped game is named as if unzipped next to the zip, so both share one save.
+    int idn;
+    if (patch_path) {
+        idn = snprintf(cart->id_path, sizeof(cart->id_path), "%s", patch_path);
+    } else if (game_name[0]) {
+        const char* sep = strrchr(path, '/');
+        const char* bsep = strrchr(path, '\\');
+        if (bsep && (!sep || bsep > sep)) sep = bsep;
+        int dir_len = sep ? (int)(sep - path + 1) : 0;
+        idn = snprintf(cart->id_path, sizeof(cart->id_path), "%.*s%s", dir_len, path, game_name);
+    } else {
+        idn = snprintf(cart->id_path, sizeof(cart->id_path), "%s", path);
+    }
+    const char* id = cart->id_path;
     if (idn < 0 || (size_t)idn >= sizeof(cart->id_path)) {
         LOG_ERROR("Path too long: %s", id);
         free(cart->rom);

@@ -63,7 +63,7 @@ No pre-built binaries for Intel Macs yet. Build from source, see [Building from 
 
 ## Game library
 
-Starting the emulator without a ROM opens the game library. It lists every `.gba` file in your games folder, plus games you've played from anywhere else, with the title and game code from each ROM's header. The last game you played sits on top as **Continue playing**, so pressing **Enter** picks up where you left off.
+Starting the emulator without a ROM opens the game library. It lists every `.gba` file in your games folder (and every `.zip` with a game inside), plus games you've played from anywhere else, with the title and game code from each ROM's header. The last game you played sits on top as **Continue playing**, so pressing **Enter** picks up where you left off.
 
 | Input | Action |
 |-------|--------|
@@ -71,7 +71,7 @@ Starting the emulator without a ROM opens the game library. It lists every `.gba
 | A letter or number | Jump to the next game starting with it |
 | Enter, double-click, or **Play** | Start the selected game |
 | Cmd+O (macOS) / Ctrl+O | Open a single file |
-| Drop a `.gba` on the window | Start that file |
+| Drop a `.gba` or `.zip` on the window | Start that file |
 | Esc | Quit |
 
 The folder and the recently played list are kept in `library.txt` in the app's settings folder. Games Pokémon Companion supports get a **Companion** badge.
@@ -243,12 +243,21 @@ Open [Settings](#settings) (Cmd+, on macOS, Ctrl+, elsewhere) and pick **Video**
 
 Filters only change what you see. Screenshots (F12) still save the original pixels.
 
+## Zipped games
+
+You don't need to unzip a game first. Open, drop or pass a `.zip` anywhere a `.gba` works, and the game inside is unpacked in memory each time it starts. The zip on disk is never changed.
+
+- The zip must hold exactly one `.gba` file. Folders inside the zip are fine, and the `__MACOSX` files that Macs add are ignored. A zip with several games is refused; unzip it and open the game you want.
+- Zips made by Finder, Windows, 7-Zip, `zip` and most other tools work. Password-protected zips and compression other than the usual Deflate aren't supported.
+- The save is named after the game inside, as if it were unzipped next to the zip. `Pokemon Emerald.zip` holding `emerald.gba` uses `emerald.gba.sav` in the zip's folder, so if you unzip it later, or already played the unzipped copy there, it's the same save. Save states, cheats and logs follow the same name.
+- A patch next to the zip (`Hack.zip` and `Hack.bps`) applies to the game inside, and opening `Hack.bps` looks for `Hack.zip` when there's no `Hack.gba`.
+
 ## ROM patches
 
 Play a ROM hack, translation or fix patch without making a patched copy of the game. The patch is applied in memory each time the game starts, and neither file on disk is changed. IPS, UPS and BPS patches all work.
 
 - **Patch next to the ROM:** give the patch the same name as the ROM, for example `emerald.gba` and `emerald.bps`, and open the ROM as usual. If there are several, `.bps` is used first, then `.ups`, then `.ips`.
-- **Open the patch itself:** open or drop `Hack.bps` and the emulator plays it on `Hack.gba` from the same folder.
+- **Open the patch itself:** open or drop `Hack.bps` and the emulator plays it on `Hack.gba` (or `Hack.zip`) from the same folder.
 - **Any two files:** `--patch <file>` on the command line.
 
 A patched game is a separate game with its own save. Its save, save states, cheats and logs are named after the patch (`emerald.bps.sav`), so your original `emerald.gba.sav` is never opened. If you already played the hack from a patched copy, rename that save to `<patch>.sav` to keep it.

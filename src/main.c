@@ -11,6 +11,7 @@
 #include "frontend/slot_picker.h"
 #include "frontend/toast.h"
 #include "cartridge/rom_patch.h"
+#include "cartridge/rom_zip.h"
 #include "frontend/game_panel.h"
 #include "frontend/rom_picker.h"
 #include "frontend/run_session.h"
@@ -196,11 +197,14 @@ static bool load_game(GBA* gba, const char* in, const char* explicit_patch, bool
     } else if (has_patch_ext(in)) {
         w = snprintf(patch, n, "%s", in);
         int stem = (int)(strrchr(in, '.') - in);
-        snprintf(base, n, "%.*s.gba", stem, in);
-        if (!file_exists(base)) snprintf(base, n, "%.*s.GBA", stem, in);
+        static const char* const exts[] = {".gba", ".GBA", ".zip", ".ZIP"};
+        for (size_t i = 0; i < 4; i++) {
+            snprintf(base, n, "%.*s%s", stem, in, exts[i]);
+            if (file_exists(base)) break;
+        }
         if (!file_exists(base)) {
             snprintf(base, n, "%.*s.gba", stem, in);
-            snprintf(reason, reason_n, "No %s next to the patch", path_base(base));
+            snprintf(reason, reason_n, "No %s (or .zip) next to the patch", path_base(base));
             return false;
         }
     } else if (probe && cartridge_find_patch(in, patch, n)) {
@@ -217,6 +221,11 @@ static bool load_game(GBA* gba, const char* in, const char* explicit_patch, bool
         s_patch_sep_save = file_exists(a) && !file_exists(b);
     }
     if (gba_load_rom(gba, base, patch[0] ? patch : NULL)) return true;
+    if (gba->cart.zip_status != ROM_ZIP_OK) {
+        snprintf(reason, reason_n, "Couldn't open %s: %s", path_base(base),
+                 rom_zip_reason(gba->cart.zip_status));
+        return false;
+    }
     if (patch[0] && gba->cart.patch_status != ROM_PATCH_OK) {
         if (!sibling) {
             snprintf(reason, reason_n, "Couldn't apply %s: %s", path_base(patch),
@@ -818,9 +827,14 @@ int main(int argc, char* argv[]) {
 
     // Set up local link cable if requested. link_peer_listen blocks until a
     // peer connects, so we do this before the main loop starts.
-    if ((link_master_path || link_client_path) && !link_lock_rom(rom_path)) {
-        LOG_ERROR("%s is already open in another linked window. Link two copies of the ROM "
-                  "(each keeps its own save), not the same file.", rom_path);
+    // A zipped game's identity file may not exist, and copies of one zip share a save, so lock
+    // the save when there is one, else the zip itself.
+    const char* lock_path = rom_path;
+    if (!file_exists(rom_path))
+        lock_path = gba.cart.save_path[0] && file_exists(gba.cart.save_path) ? gba.cart.save_path : base_path;
+    if ((link_master_path || link_client_path) && !link_lock_rom(lock_path)) {
+        LOG_ERROR("%s is already open in another linked window. Link two copies of the ROM with "
+                  "different names (each keeps its own save), not the same game.", rom_path);
         gba_destroy(&gba);
         return 1;
     }

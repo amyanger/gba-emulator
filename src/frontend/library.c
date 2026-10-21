@@ -2,6 +2,8 @@
 #define _DEFAULT_SOURCE  /* realpath, d_type-free dirent */
 #endif
 #include "frontend/library.h"
+#include "cartridge/cartridge.h"
+#include "cartridge/rom_zip.h"
 #include "game/game_profile.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -141,6 +143,15 @@ void library_parse_header(const uint8_t* hdr, uint32_t len, char title[13], char
     }
 }
 
+/* Whether the first n bytes of s end in ext (lowercase), ignoring ASCII case. */
+static bool ends_with(const char* s, size_t n, const char* ext) {
+    size_t e = strlen(ext);
+    if (n < e) return false;
+    for (size_t i = 0; i < e; i++)
+        if ((s[n - e + i] | 0x20) != ext[i]) return false;
+    return true;
+}
+
 static const char* base_name(const char* path) {
     const char* s = strrchr(path, '/');
     const char* b = strrchr(path, '\\');
@@ -152,6 +163,7 @@ void library_display_name(const char* path, char* out, size_t out_size) {
     const char* base = base_name(path);
     const char* dot = strrchr(base, '.');
     size_t len = dot && dot != base ? (size_t)(dot - base) : strlen(base);
+    if (ends_with(base, len, ".gba") && len > 4) len -= 4; /* "game.gba.zip" */
     size_t n = 0;
     bool word_start = true;
     if (out_size == 0) return;
@@ -171,8 +183,7 @@ void library_display_name(const char* path, char* out, size_t out_size) {
 bool library_is_gba(const char* name) {
     size_t n = strlen(name);
     if (n < 5 || name[0] == '.') return false;
-    const char* ext = name + n - 4;
-    return ext[0] == '.' && (ext[1] | 0x20) == 'g' && (ext[2] | 0x20) == 'b' && (ext[3] | 0x20) == 'a';
+    return ends_with(name, n, ".gba") || ends_with(name, n, ".zip");
 }
 
 bool library_abspath(const char* path, char* out, size_t out_size) {
@@ -196,6 +207,42 @@ static FILE* open_file(const char* path) {
     return fopen(path, "rb");  /* UTF-8 paths work on Windows through the manifest code page */
 }
 
+/* Reads n bytes at off into buf + off; false on a short read. */
+static bool read_at(FILE* f, uint8_t* buf, long off, long n) {
+    return fseek(f, off, SEEK_SET) == 0 && fread(buf + off, 1, (size_t)n, f) == (size_t)n;
+}
+
+/* The game header, size and CRC of a zipped game, from the zip's directory, so nothing past
+ * the header is unpacked. When the zip's first file is the game, only the zip's start and end
+ * are read and the buffer between stays zero; any other zip, or one that looks damaged that
+ * way (a directory bigger than the end read), is read whole. */
+static bool read_zip_game(FILE* f, long size, LibGame* g) {
+    if (size <= 0 || size > ROM_ZIP_MAX_FILE) return false;
+    uint8_t* zip = (uint8_t*)calloc(1, (size_t)size);
+    if (!zip) return false;
+    uint8_t hdr[LIB_HEADER_LEN];
+    char name[256];
+    uint32_t got = 0, game_size = 0, crc = 0, rc = ROM_ZIP_CANT_READ;
+    long head = size < 0x10000 ? size : 0x10000, tail = size < 0x20000 ? size : 0x20000;
+    bool sparse = read_at(f, zip, 0, head) && read_at(f, zip, size - tail, tail);
+    uint32_t nlen = head >= 30 ? (uint32_t)(zip[26] | zip[27] << 8) : 0;
+    // shortcut: assumes the game's first 0xC0 bytes are packed within the first 64 KB.
+    if (sparse && nlen >= 4 && 30 + nlen <= (uint32_t)head &&
+        ends_with((const char*)zip + 30, nlen, ".gba"))
+        rc = rom_zip_read(zip, (uint32_t)size, hdr, sizeof(hdr), &got, &game_size, &crc, name, sizeof(name));
+    if ((rc == ROM_ZIP_CANT_READ || rc == ROM_ZIP_DAMAGED) && size > head + tail && read_at(f, zip, 0, size))
+        rc = rom_zip_read(zip, (uint32_t)size, hdr, sizeof(hdr), &got, &game_size, &crc, name, sizeof(name));
+    free(zip);
+    if (rc != ROM_ZIP_OK) return false; /* not listed: no game inside, or unreadable */
+    library_parse_header(hdr, got, g->title, g->code);
+    const GameProfile* p = game_profile_find(g->code);
+    g->size = game_size;
+    // The CRC comes from the zip's directory; loading the game checks it again.
+    g->companion = p && got > 0xBC && hdr[0xBC] == p->version && game_size == p->rom_size &&
+                   crc == p->rom_crc32;
+    return true;
+}
+
 /* Reads the header and size; for files that look like a supported ROM, checks the whole CRC. */
 static bool read_game(const char* path, LibGame* g) {
     static uint8_t chunk[64 * 1024];
@@ -205,6 +252,11 @@ static bool read_game(const char* path, LibGame* g) {
     copy_str(g->path, sizeof(g->path), path);
     library_display_name(path, g->name, sizeof(g->name));
     size_t got = fread(chunk, 1, LIB_HEADER_LEN, f);
+    if (got >= 4 && memcmp(chunk, "PK\x03\x04", 4) == 0 && fseek(f, 0, SEEK_END) == 0) {
+        bool ok = read_zip_game(f, ftell(f), g);
+        fclose(f);
+        return ok;
+    }
     library_parse_header(chunk, (uint32_t)got, g->title, g->code);
     const GameProfile* p = game_profile_find(g->code);
     bool version_ok = p && got > 0xBC && chunk[0xBC] == p->version;

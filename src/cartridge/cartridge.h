@@ -6,6 +6,7 @@
 #include "common.h"
 
 #define MAX_ROM_SIZE 0x2000000 // 32MB
+#define ROM_ZIP_MAX_FILE (64L * 1024 * 1024)
 
 /* Autosave debounce: flush save data at most once every N seconds even
  * when the game writes continuously. Pokemon Emerald's in-game save burst
@@ -126,6 +127,8 @@ struct Cartridge {
     char id_path[1024];
     bool patched;
     uint32_t patch_status;  // ROM_PATCH_* result of the last load
+    bool zipped;            // the ROM was unpacked from a zip
+    uint32_t zip_status;    // ROM_ZIP_* result of the last load
 
     // Autosave bookkeeping
     bool   save_dirty;       // set by cartridge_write8 when save region changes
@@ -133,7 +136,8 @@ struct Cartridge {
 };
 typedef struct Cartridge Cartridge;
 
-/* patch_path is NULL for no patch. On a patch failure the load fails and patch_status says why. */
+/* patch_path is NULL for no patch. On a patch failure the load fails and patch_status says why.
+ * A zip (found by its first bytes) is unpacked first; on failure zip_status says why. */
 bool cartridge_load(Cartridge* cart, const char* path, const char* patch_path);
 /* Looks for a .bps, .ups or .ips next to rom_path (same stem); first one that opens wins. */
 bool cartridge_find_patch(const char* rom_path, char* out, size_t n);
