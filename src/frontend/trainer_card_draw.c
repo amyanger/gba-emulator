@@ -27,7 +27,7 @@ bool card_style_from_name(const char* s, CardStyle* out) {
     return false;
 }
 
-void trainer_card_path(const char* rom_path, time_t now, char* out, size_t out_size) {
+void trainer_card_path(const char* rom_path, const char* dir, time_t now, char* out, size_t out_size) {
     if (out_size == 0) return;
     struct tm tmv;
 #ifdef _WIN32
@@ -37,7 +37,14 @@ void trainer_card_path(const char* rom_path, time_t now, char* out, size_t out_s
 #endif
     char stamp[32];
     strftime(stamp, sizeof stamp, "%Y%m%d-%H%M%S", &tmv);
-    snprintf(out, out_size, "%s.%s.card.png", rom_path, stamp);
+    if (dir) {
+        const char* base = rom_path;
+        for (const char* p = rom_path; *p; p++)
+            if (*p == '/' || *p == '\\') base = p + 1;
+        snprintf(out, out_size, "%s/%s.%s.card.png", dir, base, stamp);
+    } else {
+        snprintf(out, out_size, "%s.%s.card.png", rom_path, stamp);
+    }
 }
 
 const char* trainer_card_display_name(const GamePartyMon* mon) {

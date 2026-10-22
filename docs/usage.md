@@ -138,7 +138,7 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 | D | Switch between the dashboard and the Details sheet, on the Run page (unless bound to a GBA button) |
 | , and . | Pick the nature the Hunt page's Next match looks for, or which of your Pokemon the Battle page shows in a double battle (unless bound to a GBA button; Ctrl+, still opens Settings) |
 | R, twice | Reset the Hunt page's encounter counts: the first press arms it for 3 seconds, the second resets (unless bound to a GBA button) |
-| C, Shift+C | Save a trainer card of your team (original Pokemon Emerald, FireRed or LeafGreen US/English ROM): C makes the team grid, Shift+C the ace showcase (use the left Shift key, because right Shift is the GBA Select button by default and would press Select too). Saved next to the ROM as `<rom>.YYYYMMDD-HHMMSS.card.png`; works with the panel open or closed and while paused (ignored if bound to a GBA button, and reserved in Settings > Controls) |
+| C, Shift+C | Save a trainer card of your team (original Pokemon Emerald, FireRed or LeafGreen US/English ROM): C makes the team grid, Shift+C the ace showcase (use the left Shift key, because right Shift is the GBA Select button by default and would press Select too). Saved to your Desktop as `<rom>.YYYYMMDD-HHMMSS.card.png` (next to the ROM if the Desktop can't be written); works with the panel open or closed and while paused (ignored if bound to a GBA button, and reserved in Settings > Controls) |
 | F5 | Save state to current slot |
 | F6 | Edit label of current save-state slot |
 | F7 | Open save-state slot picker |

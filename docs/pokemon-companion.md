@@ -120,7 +120,7 @@ Steps here are the steps the game counts. Walking and biking count. Steps on ice
 
 ## Trainer card
 
-Press `C` to save a picture of your team as a PNG, ready to share. It works with the panel open or closed, and while the game is paused. The file goes next to the ROM as `<rom>.YYYYMMDD-HHMMSS.card.png`, the same way F12 screenshots do. If you bind `C` to a GBA button, the key is ignored.
+Press `C` to save a picture of your team as a PNG, ready to share. It works with the panel open or closed, and while the game is paused. The file goes on your Desktop as `<rom>.YYYYMMDD-HHMMSS.card.png`, or next to the ROM if the Desktop can't be written. If you bind `C` to a GBA button, the key is ignored.
 
 - **Team grid (`C`).** Your trainer name, ID, play time, Pokedex count and badges across the top, then all six Pokemon with level, types, nature, held item and IVs. The badges are the real badge art from your ROM, in colour once earned and a dark outline until then.
 - **Ace showcase (`Shift+C`).** One Pokemon large on the left with its nature, ability, types and IV bars, your name, play time and badges below it, and the rest of the team listed on the right.

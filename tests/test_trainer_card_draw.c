@@ -8,8 +8,12 @@ static uint32_t s_pics[6][MON_PIC_PIXELS];
 
 TEST(card_path_suffix) {
     char buf[128];
-    trainer_card_path("/r/emerald.gba", 0, buf, sizeof buf);
+    trainer_card_path("/r/emerald.gba", NULL, 0, buf, sizeof buf);
     ASSERT_STR_EQ(buf, "/r/emerald.gba.19700101-000000.card.png");
+    trainer_card_path("/r/emerald.gba", "/home/me/Desktop", 0, buf, sizeof buf);
+    ASSERT_STR_EQ(buf, "/home/me/Desktop/emerald.gba.19700101-000000.card.png");
+    trainer_card_path("C:\\roms\\emerald.gba", "C:\\Users\\me\\Desktop", 0, buf, sizeof buf);
+    ASSERT_STR_EQ(buf, "C:\\Users\\me\\Desktop/emerald.gba.19700101-000000.card.png");
 }
 
 TEST(card_style_names) {

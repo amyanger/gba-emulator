@@ -17,8 +17,8 @@
 typedef enum { CARD_STYLE_GRID, CARD_STYLE_ACE } CardStyle;
 
 bool card_style_from_name(const char* s, CardStyle* out);   /* "grid" | "ace" */
-/* "<rom>.YYYYMMDD-HHMMSS.card.png" */
-void trainer_card_path(const char* rom_path, time_t now, char* out, size_t out_size);
+/* "<rom>.YYYYMMDD-HHMMSS.card.png"; with dir, "<dir>/<rom file name>.YYYYMMDD-HHMMSS.card.png" */
+void trainer_card_path(const char* rom_path, const char* dir, time_t now, char* out, size_t out_size);
 /* Nickname, or the species name when the nickname is empty or only '?' and spaces. Eggs give "Egg". */
 const char* trainer_card_display_name(const GamePartyMon* mon);
 /* ace < 0 (or an unusable slot) draws the Team grid whatever the style. */

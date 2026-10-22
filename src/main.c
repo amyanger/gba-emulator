@@ -282,9 +282,25 @@ static void card_tick(Frontend* fe, GBA* gba) {
     bool has_mvp = run_session_mvp_key(&s_run, &mvp);
     int ace = trainer_card_pick_ace(&cur, sel, has_mvp ? &mvp : NULL);
     CardStyle style = (CardStyle)(fe->card_requested - 1);
-    char path[512];
-    trainer_card_path(fe->rom_path, time(NULL), path, sizeof(path));
-    if (trainer_card_save(&s_game, &gm, &cur, style, ace, path)) {
+    char path[512], desktop[512];
+    time_t now = time(NULL);
+#ifdef _WIN32
+    const char* home = getenv("USERPROFILE");
+#else
+    const char* home = getenv("HOME");
+#endif
+    /* shortcut: assumes <home>/Desktop (misses localized XDG or OneDrive-moved desktops), falls back to the ROM folder */
+    bool saved = false;
+    if (home && *home) {
+        snprintf(desktop, sizeof(desktop), "%s/Desktop", home);
+        trainer_card_path(fe->rom_path, desktop, now, path, sizeof(path));
+        saved = trainer_card_save(&s_game, &gm, &cur, style, ace, path);
+    }
+    if (!saved) {
+        trainer_card_path(fe->rom_path, NULL, now, path, sizeof(path));
+        saved = trainer_card_save(&s_game, &gm, &cur, style, ace, path);
+    }
+    if (saved) {
         LOG_INFO("Trainer card saved: %s", path);
         frontend_toast(fe, TOAST_OK, "Trainer card saved", path_base(path));
     } else {
