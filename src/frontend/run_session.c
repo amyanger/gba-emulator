@@ -253,7 +253,10 @@ static void story_text(const RunSession* s, const GameMem* m, uint8_t id, char* 
     switch (d->text_kind) {
     case STORY_TEXT_STARTER:
         if (s->rf.starter < 3) {
-            species_name(s, m, r->starters[s->rf.starter], name);
+            uint16_t sp = r->starters[s->rf.starter];
+            /* A randomized ROM changes sStarterMon; the rules table holds the vanilla trio. */
+            if (s->profile->starter_mons) game_mem_read16(m, s->profile->starter_mons + 2u * s->rf.starter, &sp);
+            species_name(s, m, sp, name);
             textf(out, size, d->text, name);
         } else {
             textf(out, size, "Chose a starter");

@@ -104,6 +104,7 @@ set(CORE_SOURCES
     src/apu/fifo.c
     src/mp2k/mp2k_detect.c
     src/mp2k/mp2k_mixer.c
+    src/rando/rando.c
     src/timer/timer.c
     src/interrupt/interrupt.c
     src/cartridge/cartridge.c
@@ -202,6 +203,7 @@ set(CORE_SOURCES
     src/frontend/settings_cheats.c
     src/frontend/settings_video.c
     src/frontend/settings_audio.c
+    src/frontend/settings_randomizer.c
     src/frontend/settings_general.c
     src/frontend/settings_controls.c
     src/frontend/hud_draw.c
@@ -352,6 +354,7 @@ set(TEST_SOURCES
     tests/test_audio_out.c
     tests/test_mp2k_detect.c
     tests/test_mp2k_mixer.c
+    tests/test_rando.c
     tests/test_pc_hook.c
     tests/test_ppu.c
     tests/test_input.c

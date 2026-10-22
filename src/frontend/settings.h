@@ -19,6 +19,7 @@ typedef enum {
     SETTINGS_PAGE_GENERAL,
     SETTINGS_PAGE_VIDEO,
     SETTINGS_PAGE_AUDIO,
+    SETTINGS_PAGE_RANDOMIZER,
     SETTINGS_PAGE_COUNT
 } SettingsPage;
 
@@ -76,6 +77,14 @@ typedef struct {
     bool choose_hgss, follower_changed;
 } SettingsGeneralPage;
 
+/* Randomizer (this save only): the frontend fills these when Settings opens and handles the requests. */
+typedef struct {
+    bool available;                      /* supported Emerald with a save path */
+    bool on;
+    uint32_t seed;                       /* 0 = none stored */
+    bool changed, reseed;
+} SettingsRandomizerPage;
+
 typedef enum { CONTROLS_DEV_KEY, CONTROLS_DEV_PAD } ControlsDevice;
 #define CONTROLS_ROWS 12
 typedef struct {
@@ -95,6 +104,7 @@ typedef struct {
     SettingsVideoPage video;
     SettingsAudioPage audio;
     SettingsGeneralPage general;
+    SettingsRandomizerPage rando;
     SettingsControlsPage controls;
 } Settings;
 
@@ -147,6 +157,11 @@ static inline uint32_t settings_id_ff(uint32_t i) { return ui_id("general-ff", i
 #define SETTINGS_ID_BIOS_CLEAR  ui_id("general-bios", 1)
 #define SETTINGS_ID_HGSS_CHOOSE ui_id("general-hgss", 0)
 #define SETTINGS_ID_FOLLOWER    ui_id("general-follower", 0)
+
+/* The Randomizer page: opt-in Emerald randomizer for this save. */
+void settings_randomizer_draw(UiCanvas* c, UiInput* in, SettingsRandomizerPage* p, UiRect content);
+#define SETTINGS_ID_RANDO       ui_id("randomizer", 0)
+#define SETTINGS_ID_RANDO_SEED  ui_id("randomizer", 1)
 
 /* The Audio page: volume, start muted and HQ music. */
 void settings_audio_draw(UiCanvas* c, UiInput* in, SettingsAudioPage* p, UiRect content);

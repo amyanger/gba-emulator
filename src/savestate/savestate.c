@@ -844,6 +844,11 @@ static uint32_t get_rom_crc(const Cartridge* cart) {
     return cached_rom_crc;
 }
 
+void savestate_prime_rom_crc(const Cartridge* cart) {
+    cached_rom_ptr = NULL; /* force a fresh CRC even if a freed ROM left the same pointer */
+    (void)get_rom_crc(cart);
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Label API                                                                 */
 /* -------------------------------------------------------------------------- */

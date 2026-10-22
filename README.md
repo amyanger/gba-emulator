@@ -104,6 +104,7 @@ These need the original, unmodified US/English ROM of Pokémon Emerald, FireRed 
 | &nbsp;&nbsp;[Run stats](docs/pokemon-companion.md#run) | F10 | Your playthrough's story: badge art and times, catches, faints, evolutions, an MVP and the game's own counters. |
 | **[Overworld X-Ray](docs/pokemon-companion.md#overworld-x-ray)** | F4 | Trainer sight lines, item names, NPC gifts and the hidden Feebas tiles drawn right on the map. (Emerald only) |
 | **[Following Pokemon](docs/usage.md#following-pokemon)** | F1 | Your lead Pokemon walks behind you, talks like it does in HeartGold and SoulSilver and reacts to trainers, people, items and weather, using your own HeartGold or SoulSilver ROM (Emerald only). |
+| **[Randomizer](docs/randomizer.md)** | | Shuffle the starters, wild Pokemon and every trainer's team, per save, in Settings. Your save and ROM are never edited. (Emerald only) |
 
 ## Screenshots
 
@@ -175,6 +176,7 @@ Build options, the architecture, the test suite and the golden-frame checks are 
 - [Using the emulator](docs/usage.md): installing, the game library, command-line options, all controls, settings, screen filters, Following Pokemon, headless mode, link cable, cheats
 - [Pokémon Companion and Overworld X-Ray](docs/pokemon-companion.md)
 - [Hardware X-Ray Mode](docs/hardware-xray.md)
+- [Randomizer](docs/randomizer.md)
 - [HQ music](docs/hq-music.md)
 - [Development](docs/development.md): building, what's emulated, architecture, project structure, testing, roadmap, references
 - [Contributing](CONTRIBUTING.md): ground rules and the checks to run before opening a pull request

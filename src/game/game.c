@@ -502,8 +502,16 @@ static void read_encounters(const GameMem* m, const GameProfile* p, uint32_t sb1
 }
 
 void game_init(GameState* gs, const uint8_t* rom, uint32_t rom_size) {
+    GameSupport support;
+    const GameProfile* p = game_profile_detect(rom, rom_size, &support);
+    game_init_with(gs, p, support, rom, rom_size);
+}
+
+void game_init_with(GameState* gs, const GameProfile* p, GameSupport support, const uint8_t* rom,
+                    uint32_t rom_size) {
     memset(gs, 0, sizeof(*gs));
-    gs->profile = game_profile_detect(rom, rom_size, &gs->support);
+    gs->profile = p;
+    gs->support = support;
     GameMem m = { NULL, NULL, rom, rom_size };
     berry_places_build(&gs->places, game_has(gs->profile, FEAT_BERRIES) ? gs->profile : NULL, &m);
     species_index_build(&gs->search, gs->profile, &m);

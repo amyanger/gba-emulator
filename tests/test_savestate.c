@@ -118,6 +118,40 @@ TEST(savestate_snapshot_roundtrip_skips_crc) {
     gba_destroy(&gba);
 }
 
+/* R3: states stay keyed on the unrandomized ROM, so they load across randomizer on/off. */
+TEST(savestate_rom_crc_primed_before_rom_edit) {
+    static uint8_t rom[256];
+    for (uint32_t i = 0; i < sizeof(rom); i++) rom[i] = (uint8_t)(i * 7);
+    GBA gba;
+    gba_init(&gba);
+    gba.cart.rom = rom;
+    gba.cart.rom_size = sizeof(rom);
+    uint8_t *before = NULL, *after = NULL;
+    size_t before_size = 0, after_size = 0;
+
+    /* Saved with a lazily computed CRC (no prime, unchanged ROM): same CRC as a primed one. */
+    cached_rom_ptr = NULL;
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &before, &before_size));
+    const uint8_t* h = before + HEADER_OFF_ROMCRC;
+    uint32_t stored = (uint32_t)h[0] | (uint32_t)h[1] << 8 | (uint32_t)h[2] << 16 | (uint32_t)h[3] << 24;
+    ASSERT_EQ_HEX(stored, crc32(rom, sizeof(rom)));
+
+    cached_rom_ptr = NULL; /* a fresh launch: nothing cached until the prime */
+    savestate_prime_rom_crc(&gba.cart);
+    rom[17] ^= 0xFF; /* the randomizer rewrites the ROM after priming */
+    ASSERT_EQ(SS_OK, savestate_load_from_buffer(&gba, before, before_size));
+    ASSERT_EQ(SS_OK, savestate_save_to_buffer(&gba, &after, &after_size));
+    ASSERT_EQ(SS_OK, savestate_load_from_buffer(&gba, after, after_size));
+    ASSERT_EQ(0, memcmp(before + HEADER_OFF_ROMCRC, after + HEADER_OFF_ROMCRC, 4));
+
+    rom[17] ^= 0xFF;
+    free(before);
+    free(after);
+    gba.cart.rom = NULL; /* static buffer: keep gba_destroy from freeing it */
+    cached_rom_ptr = NULL;
+    gba_destroy(&gba);
+}
+
 TEST(savestate_load_clears_pending_dma_stall) {
     /* pending_stall is transient: the loaded machine must not burn the
      * old machine's DMA stall before its first instruction. */
@@ -713,6 +747,7 @@ void run_savestate_tests(void) {
     RUN_TEST(slot_path_small_buffer);
     RUN_TEST(savestate_buffer_roundtrip);
     RUN_TEST(savestate_snapshot_roundtrip_skips_crc);
+    RUN_TEST(savestate_rom_crc_primed_before_rom_edit);
     RUN_TEST(savestate_load_clears_pending_dma_stall);
     RUN_TEST(savestate_sio_roundtrip);
     RUN_TEST(savestate_v5_loads_with_empty_label);

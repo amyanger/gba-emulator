@@ -170,6 +170,7 @@ typedef struct {
     uint32_t evolution_table;                             /* 5 x 8-byte entries per species */
     uint32_t level_up_learnsets;                          /* gLevelUpLearnsets: u16* per species */
     uint32_t berries;                                     /* gBerries, 28-byte stride, index berry-1 */
+    uint32_t starter_mons;                                /* sStarterMon, 3 x u16; 0 = randomizer unsupported */
 
     /* Overworld X-Ray (docs/superpowers/specs/emerald-game-layer/overworld-*.md) */
     uint32_t object_events;         /* struct ObjectEvent[16], 0x24 each */

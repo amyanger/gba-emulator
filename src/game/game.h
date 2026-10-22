@@ -202,6 +202,10 @@ void game_item_name(const GameMem* m, const GameProfile* p, uint16_t item, char*
 
 /* Pick the profile for this ROM (NULL when unsupported). */
 void game_init(GameState* gs, const uint8_t* rom, uint32_t rom_size);
+/* game_init with an already detected profile: the randomizer detects on the clean ROM, then
+ * rewrites it, so the tables are built from the randomized ROM under the clean ROM's profile. */
+void game_init_with(GameState* gs, const GameProfile* p, GameSupport support, const uint8_t* rom,
+                    uint32_t rom_size);
 /* Rebuild gs->snap from memory. Pure reader: never writes emulated memory. */
 void game_update_mem(GameState* gs, const GameMem* mem);
 /* Builds a GameMem from gba->bus / gba->cart and calls game_update_mem. */

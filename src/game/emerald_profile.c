@@ -164,6 +164,7 @@ const GameProfile g_emerald_profile = {
     .evolution_table = 0x0832531C,
     .level_up_learnsets = 0x0832937C,
     .berries = 0x0858A670,
+    .starter_mons = 0x085B1DF8, /* sStarterMon, 3 x u16 */
 
     .object_events = 0x02037350,
     .sprites = 0x02020630,

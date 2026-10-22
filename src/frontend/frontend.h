@@ -104,6 +104,7 @@ typedef struct Frontend {
     /* Following Pokemon (F1): the lead walks behind the player as an extra OBJ. */
     FollowerView follower;        /* follower.enabled is the F1 state */
     FollowerFeed* fol_feed;       /* set by main; NULL when the ROM is not supported */
+    bool rando_ok;                /* set by main: supported Emerald, the randomizer can run */
     HgssAssets* hgss;             /* set by main; !hgss->ok when no HeartGold ROM is set */
     uint8_t fol_step;             /* talk step whose data was last handed to the player */
     uint16_t fol_prev_keys;       /* host GBA keys held last frame (pressed = 1) */

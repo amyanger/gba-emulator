@@ -10,7 +10,7 @@
 #define DIM_COLOR  0x9E08090Du   /* ~62% black over the game */
 #define SIDEBAR_BG 0xFF0D0F15u
 
-static const char* const k_pages[SETTINGS_PAGE_COUNT] = {"Cheats", "Controls", "General", "Video", "Audio"};
+static const char* const k_pages[SETTINGS_PAGE_COUNT] = {"Cheats", "Controls", "General", "Video", "Audio", "Randomizer"};
 
 void settings_init(Settings* s) {
     memset(s, 0, sizeof(*s));
@@ -108,6 +108,8 @@ void settings_draw(UiCanvas* c, UiInput* in, Settings* s, SettingsContext* ctx) 
         settings_general_draw(c, in, &s->general, content);
     } else if (s->page == SETTINGS_PAGE_AUDIO) {
         settings_audio_draw(c, in, &s->audio, content);
+    } else if (s->page == SETTINGS_PAGE_RANDOMIZER) {
+        settings_randomizer_draw(c, in, &s->rando, content);
     } else {
         settings_controls_draw(c, in, &s->controls, content);
     }

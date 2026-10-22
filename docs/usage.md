@@ -166,7 +166,7 @@ Save files (`<rom>.sav`) and save states (`<rom>.ss<N>`) are written next to the
 
 ## Settings
 
-Press Ctrl+, (Cmd+, on macOS), or use the Settings entry in the macOS menu bar. Settings has five pages: Cheats, Controls, General, Video and Audio. Changes apply right away and are remembered between launches. The **Video** page is described under [Screen filters](#screen-filters) and the **Cheats** page under [Cheats](#cheats).
+Press Ctrl+, (Cmd+, on macOS), or use the Settings entry in the macOS menu bar. Settings has six pages: Cheats, Controls, General, Video, Audio and Randomizer. Changes apply right away (the Randomizer page applies the next time you open the game) and are remembered between launches. The **Video** page is described under [Screen filters](#screen-filters) and the **Cheats** page under [Cheats](#cheats). The **Randomizer** page is described in [Randomizer](randomizer.md).
 
 ### Controls
 
@@ -314,6 +314,7 @@ FNV-1a hash of the 240×160 framebuffer per frame:
 | `--overworld-out <file>` | After the run, write the final frame at 3x (720x480 PNG) with the Overworld X-Ray drawn on it. Requires `--headless`; original Pokemon Emerald (US) only. |
 | `--gift-audit <file>` | Walk every NPC in the ROM and list the Overworld X-Ray gift tags it would show, one line per NPC (`<group>.<map> lid=<id> <item>:<flag>`, hex). For checking the gift detection; original Pokemon Emerald (US) only. Requires `--headless`. |
 | `--follower-hgss <rom>` | Turn on Following Pokemon for the run, using this HeartGold or SoulSilver ROM. `--screenshot-out` then includes the text box during a talk. Never writes the mood file. Requires `--headless`; original Pokemon Emerald (US) only. |
+| `--rando-seed <hex>` | Randomize Pokemon Emerald with this seed (up to 8 hex digits) for the run. Headless runs never read a `.rando` file, so without this flag they stay vanilla. Savestates still match the unrandomized ROM. See [Randomizer](randomizer.md). Requires `--headless`; original Pokemon Emerald (US) only, other ROMs run unchanged. |
 | `--game-dump <file>` | After the run, write the decoded game state (party, battle, encounters; on Emerald also an `[overworld]` section matching the final frame and a `[feebas]` section listing the Route 119 Feebas tiles) to `file`. Requires `--headless`. |
 
 An input script has one event per line, `<frame> <press|release> <KEY>`,

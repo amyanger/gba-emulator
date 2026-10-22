@@ -411,6 +411,27 @@ TEST(run_session_feed_needs_ram_bit) {
     ASSERT_TRUE(!feed_has("Entered the Elite Four"));
 }
 
+/* The starter is named from the ROM's starter table, so a randomized starter shows correctly. */
+TEST(run_session_starter_from_rom_table) {
+    static GameProfile p;
+    p = k_profile;
+    p.starter_mons = 0x08007000;
+    remove(FILE_A);
+    build();
+    fixture_put16(at(p.starter_mons + 2), 3);   /* index 1 = POOCHYENA */
+    fixture_put16(at(SB1 + 0x139C + 2u * 0x23), 1);   /* VAR_STARTER_MON */
+    nuz_session_init(&s_nuz, &p, NULL, NULL);
+    run_session_init(&s_a, &p, NULL, NULL);
+    frames(&s_a, 130, 1);
+    RunEvent st = ev_new(RUN_EV_STORY);
+    st.id = RUN_STORY_STARTER;
+    st.untimed = true;
+    inject(&st);
+    set_flag(0x860);   /* the feed only lists events whose RAM bit is set */
+    frames(&s_a, 30, 1);
+    ASSERT_TRUE(feed_has("Chose Poochyena"));
+}
+
 TEST(run_session_view_waits_for_tid_switch) {
     ready();
     uint32_t version = s_a.view_version;
@@ -650,6 +671,7 @@ void run_run_session_tests(void) {
     RUN_TEST(run_session_view_badges_and_feed);
     RUN_TEST(run_session_write_failure_keeps_memory);
     RUN_TEST(run_session_feed_needs_ram_bit);
+    RUN_TEST(run_session_starter_from_rom_table);
     RUN_TEST(run_session_view_waits_for_tid_switch);
     RUN_TEST(run_session_unset_storage_boxes_are_backfill);
     RUN_TEST(run_session_team_total);

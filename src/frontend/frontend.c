@@ -7,6 +7,7 @@
 #include "frontend/follower_glue.h"
 #include "frontend/macos_menu.h"
 #include "gba.h"
+#include "rando/rando.h"
 #include "apu/apu.h"
 #include "cartridge/rtc.h"
 #include "input/input.h"
@@ -742,6 +743,10 @@ void frontend_settings_open(Frontend* fe, GBA* gba) {
     fe->ui_input.my = my;
     fe->ui_input.focus = SETTINGS_ID_PASTE;
     settings_open(&fe->settings);
+    SettingsRandomizerPage* rp = &fe->settings.rando;
+    rp->available = fe->rando_ok && gba->cart.save_path[0];
+    rp->seed = 0;
+    rp->on = rp->available && rando_load(gba->cart.save_path, &rp->seed);
     settings_alloc(fe);
     SDL_StartTextInput();
 }
@@ -998,6 +1003,25 @@ void frontend_update_settings(Frontend* fe, GBA* gba) {
         if (gp->follower_changed) {
             gp->follower_changed = false;
             if (gp->follower != fe->follower.enabled) frontend_toggle_follower(fe, gba);
+            settle = true;
+        }
+        SettingsRandomizerPage* rp = &fe->settings.rando;
+        if (rp->changed || rp->reseed) {
+            bool reseed = rp->reseed && rp->on;
+            rp->changed = rp->reseed = false;
+            if (rp->on && (reseed || !rp->seed)) {
+                /* Not cryptographic: the seed only has to differ between presses. */
+                rp->seed = (SDL_GetTicks() * 2654435761u) ^ (uint32_t)time(NULL) ^ (rp->seed * 40503u);
+                if (!rp->seed) rp->seed = 1;
+            }
+            const char* sp = gba->cart.save_path;
+            if (rp->on ? rando_store(sp, rp->seed) : rando_clear(sp)) {
+                if (!rp->on) rp->seed = 0;
+                frontend_toast(fe, TOAST_OK, rp->on ? "Randomizer on next launch" : "Randomizer off next launch", NULL);
+            } else {
+                frontend_toast(fe, TOAST_ERROR, "Couldn't save the randomizer setting", "Check that the save folder is writable");
+                rp->on = rando_load(sp, &rp->seed);
+            }
             settle = true;
         }
         if (gp->clear_bios) {

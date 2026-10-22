@@ -28,6 +28,7 @@ void run_apu_tests(void);
 void run_audio_out_tests(void);
 void run_mp2k_detect_tests(void);
 void run_mp2k_mixer_tests(void);
+void run_rando_tests(void);
 void run_pc_hook_tests(void);
 void run_ppu_tests(void);
 void run_input_tests(void);
@@ -141,6 +142,7 @@ int main(void) {
     RUN_SUITE(run_audio_out_tests);
     RUN_SUITE(run_mp2k_detect_tests);
     RUN_SUITE(run_mp2k_mixer_tests);
+    RUN_SUITE(run_rando_tests);
     RUN_SUITE(run_pc_hook_tests);
     RUN_SUITE(run_ppu_tests);
     RUN_SUITE(run_input_tests);

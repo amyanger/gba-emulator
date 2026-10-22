@@ -424,6 +424,20 @@ TEST(settings_preview_png) {
     remove(ctx.cht_path);
 
     setup();
+    st.page = SETTINGS_PAGE_RANDOMIZER;
+    st.rando.available = st.rando.on = true;
+    st.rando.seed = 0x7F3A91C2;
+    draw();
+    ASSERT_TRUE(save_preview("settings_randomizer_preview.png"));
+    remove(ctx.cht_path);
+
+    setup();
+    st.page = SETTINGS_PAGE_RANDOMIZER;
+    draw();
+    ASSERT_TRUE(save_preview("settings_randomizer_off_preview.png"));
+    remove(ctx.cht_path);
+
+    setup();
     keymap_reset_defaults();
     st.page = SETTINGS_PAGE_CONTROLS;
     draw();

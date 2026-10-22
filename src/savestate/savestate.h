@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 typedef struct GBA GBA;
+typedef struct Cartridge Cartridge;
 
 /* v3: PPU chunk size fixed (was overcounted by 36 bytes; v2 files silently
  * dropped APU/timer/IRQ/cart/input chunks on load). v2 files are rejected.
@@ -40,6 +41,9 @@ SaveStateResult savestate_load(GBA* gba, const char* path);
  * on failure. */
 SaveStateResult savestate_write_file_atomic(const char* path, const uint8_t* buf, size_t size);
 void savestate_slot_path(const char* rom_path, int32_t slot, char* out, size_t out_size);
+/* Caches the ROM CRC that savestates store and check, now. Call before the randomizer rewrites
+ * the ROM so states stay keyed on the unrandomized ROM (the cache is keyed on ROM pointer + size). */
+void savestate_prime_rom_crc(const Cartridge* cart);
 
 /* Buffer-based variants — used by rewind and (internally) by the file API.
  * On success, savestate_save_to_buffer transfers ownership of *out to the

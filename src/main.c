@@ -27,6 +27,7 @@
 #include "headless/headless.h"
 #include "mp2k/mp2k_detect.h"
 #include "mp2k/mp2k_mixer.h"
+#include "rando/rando.h"
 #ifdef ENABLE_REWIND
 #include "rewind/rewind.h"
 #endif
@@ -180,6 +181,8 @@ static bool has_patch_ext(const char* p) {
 /* Set by load_game for the startup toasts. */
 static char s_patch_warn[48];
 static bool s_patch_sep_save;
+static bool s_rando_on, s_rando_bad; /* bad: a .rando file that didn't parse */
+static uint32_t s_rando_seed;
 
 /* Picks the ROM/patch pair (--patch, an opened patch, then a sibling patch) and loads it. A bad
  * sibling patch falls back to the plain ROM; any other patch failure fails with a reason. */
@@ -435,6 +438,7 @@ static void print_usage(const char* prog) {
     printf("  --video-out <file>     Headless: final frame through the screen filter for --scale, as PNG\n");
     printf("  --gift-audit <file>    Headless: list every NPC gift tag in the ROM (Emerald only)\n");
     printf("  --follower-hgss <rom>  Headless: Following Pokemon on, using this HeartGold/SoulSilver ROM\n");
+    printf("  --rando-seed <hex>     Headless: randomize with this seed (Emerald only; .rando files are ignored)\n");
     printf("  --link-master <path>   Listen for SIO peer at AF_UNIX path\n");
     printf("  --link-client <path>   Connect to SIO peer at AF_UNIX path\n");
     printf("  --trace <file>         Write per-instruction trace to file\n");
@@ -490,6 +494,7 @@ int main(int argc, char* argv[]) {
     const char* library_folder = NULL;
     const char* library_out_path = NULL;
     const char* follower_hgss_path = NULL;
+    const char* rando_seed_arg = NULL;
 
     // Parse arguments
     for (int i = no_rom ? 1 : 2; i < argc; i++) {
@@ -569,6 +574,8 @@ int main(int argc, char* argv[]) {
             panel_select_arg = argv[++i];
         } else if (strcmp(argv[i], "--panel-search") == 0 && i + 1 < argc) {
             panel_search_arg = argv[++i];
+        } else if (strcmp(argv[i], "--rando-seed") == 0 && i + 1 < argc) {
+            rando_seed_arg = argv[++i];
         } else {
             /* Also catches value-taking options with the value missing:
              * they fail the i + 1 < argc guard and fall through here. */
@@ -635,6 +642,16 @@ int main(int argc, char* argv[]) {
     if (follower_hgss_path && !headless) {
         LOG_ERROR("--follower-hgss requires --headless (in the window, set the ROM in Settings > General)");
         return 1;
+    }
+    uint32_t rando_seed_cli = 0;
+    if (rando_seed_arg) {
+        size_t len = strlen(rando_seed_arg);
+        if (!headless || len == 0 || len > 8 ||
+            strspn(rando_seed_arg, "0123456789abcdefABCDEF") != len) {
+            LOG_ERROR("--rando-seed needs --headless and a hex seed of up to 8 digits");
+            return 1;
+        }
+        rando_seed_cli = (uint32_t)strtoul(rando_seed_arg, NULL, 16);
     }
     if (video_out_path && !headless) {
         LOG_ERROR("--video-out requires --headless");
@@ -857,7 +874,27 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    game_init(&s_game, gba.cart.rom, gba.cart.rom_size);
+    /* Savestates keep the unrandomized ROM's CRC, so prime it before the randomizer rewrites
+     * the ROM. Headless never reads .rando, only --rando-seed. */
+    savestate_prime_rom_crc(&gba.cart);
+    GameSupport support;
+    const GameProfile* profile = game_profile_detect(gba.cart.rom, gba.cart.rom_size, &support);
+    if (rando_supported(profile) && support == GAME_SUPPORT_OK) {
+        if (headless) {
+            s_rando_on = rando_seed_arg != NULL;
+            s_rando_seed = rando_seed_cli;
+        } else if (gba.cart.save_path[0]) {
+            s_rando_on = rando_load(gba.cart.save_path, &s_rando_seed);
+            char rp[300];
+            snprintf(rp, sizeof(rp), "%s%s", gba.cart.save_path, RANDO_FILE_EXT);
+            s_rando_bad = !s_rando_on && file_exists(rp);
+        }
+        if (s_rando_on) {
+            rando_apply(gba.cart.rom, gba.cart.rom_size, profile, s_rando_seed);
+            LOG_INFO("Randomizer on, seed %08X", (unsigned)s_rando_seed);
+        }
+    }
+    game_init_with(&s_game, profile, support, gba.cart.rom, gba.cart.rom_size);
     overworld_feed_init(&s_ow, game_has(s_game.profile, FEAT_OVERWORLD) ? s_game.profile : NULL);
     follower_feed_init(&s_fol, game_has(s_game.profile, FEAT_FOLLOWER) ? s_game.profile : NULL);
     s_nuz_on = !headless || nuzlocke_file;
@@ -1027,7 +1064,7 @@ int main(int argc, char* argv[]) {
         }
         static GameState dump_state;  /* large; keep off the stack */
         if (rc == 0 && (game_dump_path || panel_out_path || card_out_path)) {
-            game_init(&dump_state, gba.cart.rom, gba.cart.rom_size);
+            game_init_with(&dump_state, profile, support, gba.cart.rom, gba.cart.rom_size);
             game_update(&dump_state, &gba);
         }
         /* The whole Next match search at once: nothing renders in between to spread it out. */
@@ -1251,6 +1288,7 @@ int main(int argc, char* argv[]) {
     if (fe.ow_feed && prefs_get_bool(&s_prefs, "overworld_xray", false)) fe.overworld_xray = true;
     /* Following Pokemon: a saved HeartGold ROM that no longer opens counts as unset. */
     fe.fol_feed = game_has(s_game.profile, FEAT_FOLLOWER) ? &s_fol : NULL;
+    fe.rando_ok = rando_supported(s_game.profile) && s_game.support == GAME_SUPPORT_OK;
     fe.hgss = &s_hgss;
     {
         const char* hp = prefs_get(&s_prefs, "hgss_rom");
@@ -1272,6 +1310,14 @@ int main(int argc, char* argv[]) {
             frontend_toast(&fe, TOAST_INFO, "Separate save", "Your original save is untouched");
     } else if (s_patch_warn[0]) {
         frontend_toast(&fe, TOAST_WARN, "Patch not applied", s_patch_warn);
+    }
+    if (s_rando_on) {
+        char seed[24];
+        snprintf(seed, sizeof(seed), "Seed %04X-%04X", (unsigned)(s_rando_seed >> 16),
+                 (unsigned)(s_rando_seed & 0xFFFF));
+        frontend_toast(&fe, TOAST_INFO, "Randomizer on", seed);
+    } else if (s_rando_bad) {
+        frontend_toast(&fe, TOAST_WARN, "Randomizer file not read", NULL);
     }
     if (s_game.support == GAME_SUPPORT_MODIFIED || s_game.support == GAME_SUPPORT_OTHER_REVISION)
         frontend_toast(&fe, TOAST_WARN, "Pok\xC3\xA9mon Companion is off",
