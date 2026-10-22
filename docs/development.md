@@ -226,6 +226,8 @@ src/
     hgss_rs.h              Layout probe that keeps the Rust structs in step with C
     hgss_talk.c/h          Follower talk rules
     hgss_model_lut.h       Species to follower model table
+  rando/
+    rando.c/h              Randomizer: rewrites Emerald's species tables in the loaded ROM, .rando seed file
   ui/
     ui_canvas.c/h          Software canvas: rects, rounded shapes, alpha blending
     ui_font.c/h            Text measuring and drawing from the embedded Inter font
@@ -252,6 +254,7 @@ src/
     settings_video.c       Video page
     settings_audio.c       Audio page
     settings_cheats.c      Cheats page
+    settings_randomizer.c  Randomizer page
     prefs.c/h              prefs.ini for settings remembered between launches
     library.c/h            Game library data and library.txt
     library_view.c/h       Game library screen

@@ -14,7 +14,7 @@ Thanks for wanting to help. Bug fixes, accuracy fixes and test ROM results are a
 The design rules are in [docs/development.md](docs/development.md#design-principles). The ones that come up most in review:
 
 - The CPU never calls the PPU, APU or other hardware directly. Everything goes through memory-mapped I/O in `bus.c`.
-- No dynamic allocation in the emulated core (cpu, bus, ppu, apu, timers, dma, cartridge) or in `src/game/`, `src/ui/`, `src/mp2k/`, `src/hgss/`.
+- No dynamic allocation in the emulated core (cpu, bus, ppu, apu, timers, dma, cartridge) or in `src/game/`, `src/ui/`, `src/mp2k/`, `src/hgss/`, `src/rando/`.
 - `src/game/` only observes: it reads RAM and ROM arrays, never goes through the bus and never writes emulated memory.
 - Use fixed-width types (`uint32_t`, not `int`) for hardware state, and the `BIT`/`BITS` macros from `common.h`.
 - One file per hardware component.
