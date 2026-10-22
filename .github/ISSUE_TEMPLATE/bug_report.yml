@@ -7,7 +7,7 @@ body:
     attributes:
       label: Emulator version
       description: From the release you downloaded, or the commit if you built it yourself.
-      placeholder: v0.14.0
+      placeholder: v0.15.0
     validations:
       required: true
   - type: dropdown
