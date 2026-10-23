@@ -119,6 +119,7 @@ bool frontend_init(Frontend* fe, int scale) {
     fe->input_display_enabled = false;
     fe->ff_hold = false;
     fe->ff_toggle = false;
+    fe->ff_hint_shown = false;
     fe->ff_frame_skip = 4;
     fe->ff_frame_count = 0;
     fe->ff_speed = 3;
@@ -1459,6 +1460,11 @@ void frontend_poll_input(Frontend* fe, GBA* gba) {
             }
             if (event.key.keysym.scancode == SDL_SCANCODE_TAB) {
                 fe->ff_hold = true;
+                // Players who hold Tab rarely find the toggle on their own
+                if (!fe->ff_hint_shown && !fe->ff_toggle) {
+                    fe->ff_hint_shown = true;
+                    frontend_toast_keyed(fe, "ff", TOAST_INFO, "Fast forward", "Press ` to keep it on");
+                }
             }
 #ifdef ENABLE_REWIND
             if (event.key.keysym.scancode == SDL_SCANCODE_BACKSPACE) {

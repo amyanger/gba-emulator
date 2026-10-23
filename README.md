@@ -70,7 +70,7 @@ More detail for each system is in [Installing a pre-built binary](docs/usage.md#
 |---------|-----|--------------|
 | **[Hardware X-Ray Mode](docs/hardware-xray.md)** | F2 | A second window showing background layers, sprites, tiles, palettes, audio channels, CPU registers, timers, DMA and interrupts as the game runs. |
 | **[Save states and rewind](docs/usage.md#controls)** | F5 / F8, Backspace | 10 save-state slots, plus hold Backspace to rewind up to 60 seconds. |
-| **[Fast-forward](docs/usage.md#controls)** | Tab | Hold to speed up. Screenshots and fullscreen are in the controls list. |
+| **[Fast-forward](docs/usage.md#controls)** | Tab, `` ` `` | Hold Tab to speed up, or press `` ` `` (the key left of 1) to keep it on. Screenshots and fullscreen are in the controls list. |
 | **[Input display and frame advance](docs/usage.md#controls)** | F3, `\` | Show the buttons you're holding on screen, or step through the game one frame at a time. |
 | **[Game library](docs/usage.md#game-library)** | | Opens when you start the app without a game, with your games folder, recently played games and a Continue playing button. |
 | **[Settings](docs/usage.md#settings)** | Ctrl+, (Cmd+,) | Change keyboard and controller buttons, set up turbo A and B, and pick the fast-forward speed, volume and BIOS. |
@@ -153,6 +153,7 @@ Open the app and pick a game from the library, or run it from a terminal:
 | F9 | Pokémon Companion (Emerald, FireRed, LeafGreen) |
 | F5 / F8 | Save / load state |
 | Tab (hold) | Fast-forward |
+| `` ` `` | Toggle fast-forward (stays on until pressed again) |
 | Backspace (hold) | Rewind |
 | Space | Pause |
 | F11 | Fullscreen |

@@ -134,6 +134,7 @@ typedef struct Frontend {
     // Fast-forward
     bool ff_hold;            // true while Tab is held
     bool ff_toggle;          // persistent toggle via backtick
+    bool ff_hint_shown;      // the "press ` to keep it on" toast, once per game
     uint32_t ff_frame_skip;  // render every N frames during FF (default 4)
     uint32_t ff_frame_count; // rolling counter for frame skip
 

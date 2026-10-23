@@ -145,7 +145,7 @@ These are the default bindings. Change them in Settings under **Controls** (see 
 | F8 | Load state from current slot |
 | 0–9 | Select save state slot |
 | Tab (hold) | Fast-forward |
-| `` ` `` | Toggle fast-forward |
+| `` ` `` | Toggle fast-forward: stays on until you press it again. The first time you hold Tab, a notice reminds you of this key |
 | `\` | Frame advance: pauses if running, then steps one frame per press (hold to keep stepping). Ignored during fast-forward or rewind |
 | Backspace (hold) | Rewind (60s window, audio muted) |
 | M | Toggle audio mute |
