@@ -856,6 +856,9 @@ static void settings_handle_event(Frontend* fe, const SDL_Event* e) {
         if (cmd && e->key.keysym.scancode == SDL_SCANCODE_V) {
             char* clip = SDL_GetClipboardText();
             if (clip) {
+                /* Clicking the Cheats tab focuses the tab, so a paste would land nowhere. */
+                if (fe->settings.page == SETTINGS_PAGE_CHEATS && in->focus != SETTINGS_ID_NAME)
+                    in->focus = SETTINGS_ID_PASTE;
                 ui_input_text(in, clip);
                 SDL_free(clip);
             }

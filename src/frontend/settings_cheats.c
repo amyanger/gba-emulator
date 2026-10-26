@@ -260,8 +260,12 @@ void settings_cheats_draw(UiCanvas* c, UiInput* in, SettingsCheatsPage* p, Setti
             ctx->cht_path ? sub : "Paste codes from a cheat site.");
 
     float y = r.y + 50.0f;
-    bool changed = ui_text_area(c, in, SETTINGS_ID_PASTE, (UiRect){r.x, y, r.w, PASTE_H}, &p->paste,
-                                "Paste codes here (\xE2\x8C\x98V)", true);
+#ifdef __APPLE__
+    const char* hint = "Paste codes here (\xE2\x8C\x98V)";
+#else
+    const char* hint = "Paste codes here (Ctrl+V)";
+#endif
+    bool changed = ui_text_area(c, in, SETTINGS_ID_PASTE, (UiRect){r.x, y, r.w, PASTE_H}, &p->paste, hint, true);
     y += PASTE_H + 10.0f;
     /* Refresh before drawing the name and Add, so they match this keystroke. */
     if (changed) {
